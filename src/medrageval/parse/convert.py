@@ -86,8 +86,24 @@ def _visible_chars(text: str) -> int:
     return sum(c.isalnum() for c in _TAG.sub("", text))
 
 
+def _font_style(spans: list[dict], rect: pymupdf.Rect) -> tuple[float | None, bool]:
+    """Typical font size and boldness of the native text inside rect (None for OCR'd text)."""
+    sizes, bold, total = [], 0, 0
+    for s in spans:
+        x0, y0, x1, y1 = s["bbox"]
+        n = len(s["text"].strip())
+        if n and rect.contains(pymupdf.Point((x0 + x1) / 2, (y0 + y1) / 2)):
+            sizes += [s["size"]] * n
+            total += n
+            bold += n if (s["flags"] & 16 or "bold" in s["font"].lower()) else 0
+    if not sizes:
+        return None, False
+    return round(sorted(sizes)[len(sizes) // 2], 1), bold >= 0.5 * total
+
+
 def _page_record(page: pymupdf.Page, chunk: dict) -> dict:
     text = chunk["text"]
+    spans = [s for b in page.get_text("dict")["blocks"] for line in b.get("lines", []) for s in line["spans"]]
     boxes = []
     for b in chunk["page_boxes"]:
         rect = pymupdf.Rect(b["bbox"])
@@ -97,6 +113,7 @@ def _page_record(page: pymupdf.Page, chunk: dict) -> dict:
         if b["class"] in ("page-header", "page-footer") and not box_text.strip():
             # pymupdf4llm blanks these; keep the text so cleaning can read page labels.
             box_text = native
+        font_size, bold = _font_style(spans, rect)
         boxes.append({
             "class": b["class"],
             "bbox": [round(v, 1) for v in rect],
@@ -104,6 +121,9 @@ def _page_record(page: pymupdf.Page, chunk: dict) -> dict:
             # OCR only covers images, so a box whose text is missing from the
             # PDF's own text layer was produced by OCR.
             "source": "ocr" if _visible_chars(native) < 0.5 * _visible_chars(box_text) else "native",
+            # Heading depth comes partly from typography: the converter marks every heading "######".
+            "font_size": font_size,
+            "bold": bold,
             "redaction_boxes": 0,
             "redacted_tokens": [],
         })

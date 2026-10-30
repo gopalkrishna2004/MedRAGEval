@@ -191,6 +191,8 @@ def clean_pages(pages: list[dict], settings: dict) -> list[dict]:
                 "bbox": box["bbox"],
                 "text": text,
                 "source": box["source"],
+                "font_size": box.get("font_size"),
+                "bold": box.get("bold", False),
                 "redactions": text.count(REDACTED),
             })
         cleaned.append({

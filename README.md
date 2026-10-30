@@ -46,6 +46,8 @@ uv run python -m medrageval.parse.convert data/raw/source_document.pdf $D/pages.
 uv run python -m medrageval.parse.clean $D/pages.jsonl $D/pages_clean.jsonl --md $D/pages_clean.md
 # 3. split the bundle into its documents
 uv run python -m medrageval.parse.segment $D/pages_clean.jsonl $D/pages.meta.json $D/documents.json
+# 4. section tree per document + element list (paragraphs, tables, figures with captions)
+uv run python -m medrageval.parse.structure $D/pages_clean.jsonl $D/documents.json $D
 ```
 
 Run the tests with `uv run pytest`.
