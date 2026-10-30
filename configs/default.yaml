@@ -1,0 +1,25 @@
+# Pipeline settings. Values here change the generated dataset, so treat edits
+# like code changes and re-run the affected stages.
+
+parse:
+  # html keeps merged cells (rowspan/colspan). Markdown tables put a merged
+  # value into a single row, e.g. a total spanning 9 rows landed on row 5.
+  table_output: html
+  ocr:
+    # OCR runs only on pages the layout model detects as image-only.
+    enabled: true
+    # Only rapidocr is supported; the parser errors out instead of falling back.
+    engine: rapidocr
+    # 150 dpi dropped whole sentences on the scanned statements; 300 did not.
+    dpi: 300
+
+clean:
+  # A running header/footer repeats on nearby pages AND sits in the top/bottom
+  # margin. Requiring both keeps repeated body notes ("Source: data on file")
+  # and form-template headings that recur once per document ("About you").
+  header_footer:
+    margin: 0.25         # share of page height counted as top or bottom margin
+    min_pages: 3         # must repeat on at least this many pages...
+    max_gap: 3           # ...each at most this many pages after the previous one
+    min_in_margin: 0.8   # and be in the margin on at least this share of repeats
+    fuzzy_ratio: 0.85    # similarity for OCR'd copies of a known header/footer
