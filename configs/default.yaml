@@ -23,3 +23,17 @@ clean:
     max_gap: 3           # ...each at most this many pages after the previous one
     min_in_margin: 0.8   # and be in the margin on at least this share of repeats
     fuzzy_ratio: 0.85    # similarity for OCR'd copies of a known header/footer
+
+segment:
+  # A page starts a new document when its signal weights sum to the threshold.
+  # Only a page-number reset is decisive alone; weaker signals must agree.
+  use_outline: true      # PDF bookmarks, when present
+  weights:
+    page_reset: 2
+    title_page: 1
+    footer_change: 1
+    outline: 1
+  threshold: 2
+  # Below this share of numbered pages, page resets cannot fire, so a title
+  # page alone starts a document.
+  min_numbered_pages: 0.5

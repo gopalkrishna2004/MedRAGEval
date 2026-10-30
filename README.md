@@ -36,8 +36,16 @@ All settings that affect the output live in [configs/default.yaml](configs/defau
 
 ## Usage
 
-Convert a PDF to per-page Markdown:
+Parse a PDF (each step reads the previous step's output):
 
 ```bash
-uv run python -m medrageval.parse.convert data/raw/source_document.pdf data/interim/pages.jsonl
+D=data/interim/ta1063
+# 1. PDF -> per-page layout boxes (+ pages.meta.json: hash, settings, versions, bookmarks)
+uv run python -m medrageval.parse.convert data/raw/source_document.pdf $D/pages.jsonl
+# 2. drop running headers/footers, normalise redactions and superscripts
+uv run python -m medrageval.parse.clean $D/pages.jsonl $D/pages_clean.jsonl --md $D/pages_clean.md
+# 3. split the bundle into its documents
+uv run python -m medrageval.parse.segment $D/pages_clean.jsonl $D/pages.meta.json $D/documents.json
 ```
+
+Run the tests with `uv run pytest`.

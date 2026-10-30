@@ -180,7 +180,15 @@ def main() -> None:
     with open(args.out, "w") as f:
         for r in records:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    meta = {"pdf": str(args.pdf), "sha256": _sha256(args.pdf), "settings": settings, "versions": parser_versions()}
+    with pymupdf.open(args.pdf) as doc:
+        outline = [{"level": lvl, "title": title, "page": page} for lvl, title, page in doc.get_toc()]
+    meta = {
+        "pdf": str(args.pdf),
+        "sha256": _sha256(args.pdf),
+        "settings": settings,
+        "versions": parser_versions(),
+        "outline": outline,  # PDF bookmarks; often missing, so only a supporting signal
+    }
     args.out.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2))
     print(f"Wrote {len(records)} pages to {args.out}")
 
