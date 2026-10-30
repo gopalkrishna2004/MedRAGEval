@@ -40,6 +40,13 @@ def test_named_levels_contain_numbered_and_are_siblings():
     assert parents["3a) How it works"] == "SECTION 3: The treatment"
 
 
+def test_year_is_not_a_section_number():
+    parents, _ = _tree([[_h("B.3 Cost", 16), _h("B.3.1 Published studies", 14), _h("2021 SLR", 12),
+                         _h("B.3.2 Economic analysis", 14)]])
+    assert parents["2021 SLR"] == "B.3.1 Published studies"
+    assert parents["B.3.2 Economic analysis"] == "B.3 Cost"
+
+
 def test_unnumbered_headings_nest_by_typography():
     parents, _ = _tree([[_h("Living with the condition", 14), _h("Symptoms", 12), _h("Diagnosis", 12),
                          _h("Treatment", 14)]])

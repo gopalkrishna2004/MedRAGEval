@@ -16,6 +16,16 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.scripts]
+medrageval = "medrageval.cli:main"
+
+[tool.pytest.ini_options]
+# Regression tests parse the real PDFs (minutes on first run): uv run pytest -m regression
+markers = ["regression: end-to-end checks on the real PDFs in data/raw"]
+addopts = "-m 'not regression'"
+# Emitted by PyMuPDF's SWIG bindings on import; not actionable here.
+filterwarnings = ["ignore:builtin type .* has no __module__ attribute:DeprecationWarning"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

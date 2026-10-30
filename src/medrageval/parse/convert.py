@@ -196,21 +196,26 @@ def main() -> None:
         ap.error("pdf and out are required unless --check is given")
 
     records = convert_pdf(args.pdf, settings)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.out, "w") as f:
+    write_pages(args.pdf, records, args.out, settings)
+    print(f"Wrote {len(records)} pages to {args.out}")
+
+
+def write_pages(pdf: Path, records: list[dict], out: Path, settings: dict) -> None:
+    """Write page records plus <out>.meta.json (hash, settings, versions, bookmarks)."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w") as f:
         for r in records:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    with pymupdf.open(args.pdf) as doc:
+    with pymupdf.open(pdf) as doc:
         outline = [{"level": lvl, "title": title, "page": page} for lvl, title, page in doc.get_toc()]
     meta = {
-        "pdf": str(args.pdf),
-        "sha256": _sha256(args.pdf),
+        "pdf": str(pdf),
+        "sha256": _sha256(pdf),
         "settings": settings,
         "versions": parser_versions(),
         "outline": outline,  # PDF bookmarks; often missing, so only a supporting signal
     }
-    args.out.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2))
-    print(f"Wrote {len(records)} pages to {args.out}")
+    out.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2))
 
 
 if __name__ == "__main__":

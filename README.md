@@ -36,7 +36,21 @@ All settings that affect the output live in [configs/default.yaml](configs/defau
 
 ## Usage
 
-Parse a PDF (each step reads the previous step's output):
+Parse a PDF into documents, sections and elements, and print a report:
+
+```bash
+uv run medrageval parse data/raw/source_document.pdf --out data/interim/ta1063
+```
+
+Conversion (a few minutes) is cached on the PDF hash, settings and parser versions;
+the other steps rerun in about a second. `--force` re-converts. Outputs in the
+directory: `elements.jsonl` (the element store), `sections.json`, `documents.json`,
+`parse_report.json`, and `pages_clean.md` for reading the cleaned text.
+
+Tests: `uv run pytest` (unit, fast) and `uv run pytest -m regression` (end to end
+on the PDFs in `data/raw`, checking facts verified by hand).
+
+The individual steps can also be run on their own (each reads the previous step's output):
 
 ```bash
 D=data/interim/ta1063

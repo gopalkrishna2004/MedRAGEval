@@ -40,6 +40,9 @@ _XS = r"[xX]+(?:[.,][xX]+)*"
 # Asterisks attached to a word or closing bracket are footnote markers.
 _STAR_SPAN = re.compile(rf"(?<![^\W_])(?<![*)\]]){_STARS}(?:{_BREAK}{_STARS})*(?![^\W_]|\*)")
 _X_SPAN = re.compile(rf"(?<![^\W_]){_XS}(?:{_BREAK}{_XS})*(?![^\W_])")
+# Extraction sometimes glues a placeholder onto the previous word ("exemestan exxxxxxxx");
+# no English word ends in four x's.
+_X_TAIL = re.compile(r"(?<=[^\W\d_])[xX]{4,}(?![^\W_])")
 _REDACTED_RUN = re.compile(rf"{re.escape(REDACTED)}(?:{_BREAK}{re.escape(REDACTED)})+")
 
 _PAGE_OF = re.compile(r"(?:page\s+)?(\d+)\s+of\s+(\d+)", re.I)
@@ -90,6 +93,7 @@ def clean_text(text: str, redacted_tokens: list[str] = ()) -> str:
     text = _STYLE_TAG.sub("", text)
     text = _redact_spans(text, _STAR_SPAN, "*")
     text = _redact_spans(text, _X_SPAN, "x")
+    text = _X_TAIL.sub(" " + REDACTED, text)
     text = _REDACTED_RUN.sub(REDACTED, text)
     return _tidy(text)
 
@@ -128,6 +132,10 @@ def find_running_boxes(
     pages: list[dict], margin: float, min_pages: int, max_gap: int, min_in_margin: float, fuzzy_ratio: float
 ) -> set[tuple[int, int]]:
     """Return (page index, box index) of every running header/footer box."""
+    return _find_running(pages, margin, min_pages, max_gap, min_in_margin, fuzzy_ratio)
+
+
+def _find_running(pages, margin, min_pages, max_gap, min_in_margin, fuzzy_ratio) -> set[tuple[int, int]]:
     occurrences = defaultdict(list)
     for pi, page in enumerate(pages):
         for bi, box in enumerate(page["boxes"]):
@@ -160,6 +168,75 @@ def find_running_boxes(
     return running
 
 
+_EDGE_FILLER = re.compile(r"(?:\s|<[^>]+>|[*_#>|.,;:()\[\]©])*")
+_TABLE_ROW = re.compile(r"<tr>.*?</tr>", re.S)
+_WORD = re.compile(r"[^\W\d_]+")
+
+
+def _edge_pattern(text: str) -> re.Pattern | None:
+    """Pattern for a header/footer text, tolerant of spacing/punctuation and any page number."""
+    tokens = re.findall(r"[^\W_]+", _TAG.sub("", text))
+    if len(tokens) < 2 or len("".join(tokens)) < 10:
+        return None
+    return re.compile(r"[\W_]*".join(re.sub(r"\d+", r"\\d+", re.escape(t)) for t in tokens), re.I)
+
+
+def _strip_edges(text: str, patterns: list[re.Pattern], at_start: bool, at_end: bool) -> tuple[str, list[str]]:
+    """Remove header/footer text glued to the start or end of a body box.
+
+    The layout model sometimes merges the footer line into the last paragraph
+    or table on a page ("...upper limit of normal. Company evidence submission
+    template for ..."). Only text at the very edge is removed, never mid-text.
+    """
+    removed, changed = [], True
+    while changed:
+        changed = False
+        for p in patterns:
+            matches = list(p.finditer(text))
+            if not matches:
+                continue
+            first, last = matches[0], matches[-1]
+            if at_end and _EDGE_FILLER.fullmatch(text[last.end():]):
+                removed.append(last.group(0))
+                text, changed = text[: last.start()] + text[last.end():], True
+            elif at_start and _EDGE_FILLER.fullmatch(text[: first.start()]):
+                removed.append(first.group(0))
+                text, changed = text[: first.start()] + text[first.end():], True
+    return text, removed
+
+
+def _strip_table_edge_rows(html: str, vocabulary: set[str], at_start: bool, at_end: bool) -> tuple[str, list[str]]:
+    """Drop rows at a table's top/bottom whose words all come from nearby headers/footers.
+
+    When the layout model pulls a footer into a table it splits it across rows
+    ("...HER2-" | "negative advanced ... [ID6370]" | "©"), so text patterns
+    cannot match it. A real edge row ("Total | 155 | 134") has other words.
+    """
+    rows = _TABLE_ROW.findall(html)
+
+    def footer_words(row: str) -> int:
+        """Number of words if the row could be footer text, else 0."""
+        words = [w.lower() for w in _WORD.findall(_TAG.sub(" ", row))]
+        return len(words) if words and all(w in vocabulary for w in words) else 0
+
+    def edge_run(ordered: list[str]) -> int:
+        # Rows of numbers or redactions stop the run; together the run needs
+        # 3+ words, so a single shared word ("fulvestrant") stays as data.
+        n = words = 0
+        while n < len(ordered) - 1 and (w := footer_words(ordered[n])):
+            n, words = n + 1, words + w
+        return n if words >= 3 else 0
+
+    removed = []
+    if at_end and (n := edge_run(rows[::-1])):
+        removed, rows = rows[-n:], rows[:-n]
+    if at_start and (n := edge_run(rows)):
+        removed, rows = removed + rows[:n], rows[n:]
+    if not removed:
+        return html, []
+    return "<table>" + "".join(rows) + "</table>", [_tidy(_TAG.sub(" ", r)) for r in removed]
+
+
 def _page_label(removed_texts: list[str]) -> str | None:
     for t in removed_texts:
         if m := _PAGE_OF.search(t):
@@ -173,15 +250,38 @@ def _page_label(removed_texts: list[str]) -> str | None:
 # --- pages ------------------------------------------------------------------------
 
 def clean_pages(pages: list[dict], settings: dict) -> list[dict]:
-    running = find_running_boxes(pages, **settings["header_footer"])
+    hf = settings["header_footer"]
+    running = find_running_boxes(pages, **hf)
+
+    # Header/footer texts seen on each page, to strip copies glued into body boxes nearby.
+    patterns_on, words_on = defaultdict(dict), defaultdict(set)
+    for pi, bi in running:
+        text = pages[pi]["boxes"][bi]["text"]
+        if p := _edge_pattern(text):
+            patterns_on[pi][p.pattern] = p
+        words_on[pi] |= {w.lower() for w in _WORD.findall(_TAG.sub(" ", text))}
+
     cleaned = []
     for pi, page in enumerate(pages):
+        nearby, vocabulary = {}, set()
+        for pj in range(pi - hf["max_gap"], pi + hf["max_gap"] + 1):
+            nearby |= patterns_on.get(pj, {})
+            vocabulary |= words_on.get(pj, set())
+        height = page["height"]
         boxes, removed = [], []
         for bi, box in enumerate(page["boxes"]):
             if (pi, bi) in running:
                 removed.append({"class": box["class"], "bbox": box["bbox"], "text": _tidy(_TAG.sub("", box["text"]))})
                 continue
-            text = clean_text(box["text"], box["redacted_tokens"])
+            # Bottom edge only, and never headings: a document's title at the top
+            # of its first page reads like the footer that quotes it.
+            at_end = box["bbox"][3] >= (1 - hf["margin"]) * height and box["class"] not in ("title", "section-header")
+            if box["class"] == "table":
+                text, glued = _strip_table_edge_rows(box["text"], vocabulary, False, at_end)
+            else:
+                text, glued = _strip_edges(box["text"], list(nearby.values()), False, at_end)
+            removed += [{"class": "glued-" + box["class"], "bbox": box["bbox"], "text": g} for g in glued]
+            text = clean_text(text, box["redacted_tokens"])
             if not text and box["redaction_boxes"]:
                 text = REDACTED  # e.g. a figure blacked out entirely
             if not text and box["class"] != "picture":

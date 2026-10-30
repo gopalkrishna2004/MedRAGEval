@@ -42,6 +42,8 @@ def heading_text(text: str) -> str:
 def _number(title: str) -> tuple[str, ...] | None:
     if m := _NUMBER.match(title):
         parts = re.split(r"\.", m.group(1))
+        if len(parts) == 1 and parts[0].isdigit() and int(parts[0]) > 99:
+            return None  # a year ("2021 SLR update"), not a section number
         # "2a" -> ("2", "a") so that "2a)" sits under "2"
         return tuple(p for part in parts for p in re.fullmatch(r"(\d+)([a-z]?)", part).groups() if p) \
             if all(re.fullmatch(r"\d+[a-z]?", p) for p in parts) else tuple(parts)

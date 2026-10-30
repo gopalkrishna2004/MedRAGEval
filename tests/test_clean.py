@@ -33,6 +33,7 @@ def test_inline_markup(raw, expected):
         ("£X,XXX.XX per pack", f"£{REDACTED} per pack"),
         ("discontinued in <mark>xxx</mark> patients", f"discontinued in {REDACTED} patients"),
         ("Lower bound  xxxxxxx xxxxxxx", f"Lower bound  {REDACTED}"),
+        ("plus exemestan exxxxxxxxx) . Total", f"plus exemestan e {REDACTED}) . Total"),
         # inside Markdown italics
         ("[95% CI:_ _**********] versus_ _*** months", f"[95% CI:_ _{REDACTED}] versus_ _{REDACTED} months"),
     ],
@@ -49,6 +50,7 @@ def test_redactions(raw, expected):
         "not publicly available; ***Cheapest cost per mg",
         "**Table 7. PFS by investigator assessment**",
         "30 x 2.5 mg tablets",
+        "a complex reflex",
         "*Does not include RECIST progression events",
     ],
 )
@@ -99,6 +101,38 @@ def test_template_heading_repeated_once_per_document_kept():
         pages[i]["boxes"].insert(1, _box("###### **About you**", 120, 135))
     cleaned = clean_pages(pages, {"header_footer": HEADER_FOOTER})
     assert [i for i, p in enumerate(cleaned) if "###### **About you**" in [b["text"] for b in p["boxes"]]] == [0, 4, 8]
+
+
+def test_footer_glued_into_last_paragraph_removed():
+    pages = _pages()
+    pages[2]["boxes"][1] = _box("Treatments aiming to slow decline. Company evidence submission [ID6370] Page 3 of 5",
+                                700, 790)
+    pages[3]["boxes"][1] = _box("Company evidence submission [ID6370] is discussed in the body.", 300, 400)
+    # a title at the top of a page that reads like the footer stays
+    pages[4]["boxes"].insert(1, _box("Overview. Company evidence submission [ID6370]", 80, 100, cls="title"))
+    cleaned = clean_pages(pages, {"header_footer": HEADER_FOOTER})
+    assert cleaned[2]["boxes"][0]["text"] == "Treatments aiming to slow decline."
+    assert cleaned[2]["page_label"] == "3 of 5"
+    # same words in a body box away from the margin are left alone
+    assert cleaned[3]["boxes"][0]["text"] == "Company evidence submission [ID6370] is discussed in the body."
+    assert cleaned[4]["boxes"][0]["text"] == "Overview. Company evidence submission [ID6370]"
+
+
+def test_footer_split_into_table_rows_removed():
+    pages = _pages()
+    # Rows of numbers, redactions or a single footer word at the edge are data and stay.
+    rows = ("<tr><td>Table 42. Key variables</td><td>112</td></tr>"
+            "<tr><td>Total</td><td>155</td></tr>"
+            "<tr><td>3</td><td>-0.5 (-1.2, 0.3)</td></tr><tr><td>[REDACTED]</td></tr>"
+            "<tr><td>Company evidence</td></tr><tr><td>submission [ID6370]</td></tr><tr><td>Page 3 of 5</td></tr>")
+    pages[2]["boxes"][1] = _box(f"<table>{rows}</table>", 500, 790, cls="table")
+    one_word = "<table><tr><td>Arm</td></tr><tr><td>Company</td></tr></table>"
+    pages[3]["boxes"][1] = _box(one_word, 500, 790, cls="table")
+    cleaned = clean_pages(pages, {"header_footer": HEADER_FOOTER})
+    assert cleaned[2]["boxes"][0]["text"] == (
+        "<table><tr><td>Table 42. Key variables</td><td>112</td></tr><tr><td>Total</td><td>155</td></tr>"
+        "<tr><td>3</td><td>-0.5 (-1.2, 0.3)</td></tr><tr><td>[REDACTED]</td></tr></table>")
+    assert cleaned[3]["boxes"][0]["text"] == one_word
 
 
 def test_ocr_variant_of_known_footer_removed():
