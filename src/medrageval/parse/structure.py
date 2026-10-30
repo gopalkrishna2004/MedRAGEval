@@ -21,6 +21,8 @@ import json
 import re
 from pathlib import Path
 
+from medrageval.text import to_plain
+
 HEADING_CLASSES = {"title", "section-header"}
 ELEMENT_TYPES = {"text": "paragraph", "list-item": "list_item", "footnote": "footnote",
                  "table": "table", "picture": "figure", "caption": "caption"}
@@ -207,6 +209,9 @@ def build(pages: list[dict], docs: list[dict]) -> tuple[list[dict], list[dict]]:
         for i, el in enumerate(elements, start=1):
             el["element_id"] = f"{doc['doc_id']}-e{i:04d}"
             el["doc_id"] = doc["doc_id"]
+            # Flattened text for keyword search and quote matching; the caption is
+            # part of what a reader sees as the table, so it is included.
+            el["plain"] = to_plain(f"{el['caption']}\n{el['text']}" if el.get("caption") else el["text"])
         all_sections += sections
         all_elements += elements
     return all_sections, all_elements
