@@ -12,7 +12,7 @@ import json
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.corpus import Corpus, Unit
 
-PROMPT_VERSION = "5"
+PROMPT_VERSION = "6"
 
 SCHEMA = ('{"question": str, "answer": str, "answer_keys": [str, ...], '
           '"quotes": [{"unit_id": str, "quote": str}, ...]}')
@@ -90,6 +90,10 @@ def build_generation(cand: Candidate, corpus: Corpus, cfg: dict) -> list[dict]:
     task = TYPE_INSTRUCTIONS[key].format(**fmt)
     if cand.type == "attribution" and h.get("claim"):
         task += f"\nThe claim to use: \"{h['claim'][:400]}\""
+    if h.get("must_mention"):
+        phrases = ", ".join(f"\"{p}\"" for p in h["must_mention"])
+        task += (f"\nThe same document has other tables with exactly the same rows. The question must contain the words {phrases}, "
+                 f"as written in this table's caption, so a reader knows which table is meant.")
     body = _excerpts(cand, corpus)
     if cand.subtype == "not_covered":
         near = corpus.neighbours(cand.units[0], cfg["unanswerable"]["neighbours"])

@@ -11,7 +11,7 @@ unanswerable). A failed check names its reason, which goes to rejects.jsonl.
 import re
 from dataclasses import dataclass, field
 
-from medrageval.generate.candidates import Candidate
+from medrageval.generate.candidates import Candidate, garbled
 from medrageval.generate.corpus import REDACTED, Corpus, tokenize
 from medrageval.text import contains_quote, normalize
 
@@ -123,6 +123,9 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
             v.check("answer_key_in_quotes", contains_quote(k, joined), f"answer_key_not_in_quotes:{k[:40]}")
         if not any(normalize(k) in lb or lb in normalize(k) for lb in labels if lb):   # a comparative question has to name both compared things
             v.check("answer_key_not_in_question", not contains_quote(k, q), f"answer_key_in_question:{k[:40]}")
+    v.check("keys_clean", not any(garbled(k) for k in keys), "answer_key_garbled")
+    for phrase in cand.hint.get("must_mention", []):   # a table with twins: the question has to say which one
+        v.check("question_mentions_discriminator", contains_quote(phrase, q), f"question_lacks_discriminator:{phrase[:40]}")
 
     if t == "numerical":
         nums = [n for k in keys for n in NUMBER.findall(k)]

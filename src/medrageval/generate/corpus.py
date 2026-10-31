@@ -21,6 +21,7 @@ import math
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from medrageval.text import normalize, table_rows
@@ -31,7 +32,7 @@ there these they this those to was were which while with within will would can c
 than then so such but if also any all each both into onto over under between about after before during per vs versus
 """.split())
 
-CAPTION_RE = re.compile(r"^\W*(Table|Figure)\s+([A-Z]?\d+(?:\.\d+)?)\b", re.I)
+CAPTION_RE = re.compile(r"^[\W_]*(Table|Figure)\s+([A-Z]?\d+(?:\.\d+)?)\b", re.I)   # "_Table 14: ..._": an italic caption
 REFERENCE_RE = re.compile(
     r"\b(?:see|in|shown in|presented in|reported in|summari[sz]ed in|described in|outlined in|detailed in|listed in)"
     r"\s+(Table|Figure)\s+([A-Z]?\d+(?:\.\d+)?)\b", re.I)
@@ -57,6 +58,7 @@ class Unit:
     redactions: int
     row_index: int | None = None
     evidence: bool = True                     # False: searchable, but too long to cite
+    source: str = "native"                    # "ocr" text carries glyph errors, so selectors avoid it
     tokens: list[str] = field(default_factory=list)
 
     @property
@@ -116,6 +118,8 @@ def is_noise(el: dict, cfg: dict) -> str | None:
     plain = el["plain"]
     if el["type"] in ("figure", "caption"):
         return el["type"]
+    if CAPTION_RE.match(el.get("caption") or "") and CAPTION_RE.match(el["caption"]).group(1).lower() == "figure":
+        return "figure"   # an OCR'd chart stored as a table (a forest plot's value column) is still a figure
     for title in el["section_path"]:
         core = _NUMBERING.sub("", title)   # "B.4 References" -> "References"
         for pat in cfg["noise"]["section_title_patterns"]:
@@ -136,7 +140,7 @@ def make_units(el: dict, cfg: dict) -> list[Unit]:
     lim = cfg["limits"]
     common = dict(element_id=el["element_id"], doc_id=el["doc_id"], type=el["type"], caption=el.get("caption"),
                   section_id=el["section_id"], section_path=el["section_path"],
-                  page_start=el["page_start"], page_end=el["page_end"])
+                  page_start=el["page_start"], page_end=el["page_end"], source=el.get("source", "native"))
     whole = Unit(unit_id=el["element_id"], text=el["text"], plain=el["plain"], redactions=el["redactions"], **common)
     if el["type"] == "table" and len(el["plain"]) > lim["max_table_chars"]:
         rows = table_rows(el["text"])
@@ -262,6 +266,34 @@ def mentions(plain: str, key: str) -> bool:
     return key in entity_key(plain)
 
 
+def _caption_words(caption: str | None) -> list[str]:
+    text = CAPTION_RE.sub("", caption or "", count=1).strip(" :.-*_")
+    return re.sub(r"\*\*|(?<!\w)_|_(?!\w)", "", text).split()
+
+
+def _distinct_phrase(mine: list[str], theirs: list[str]) -> str:
+    """The shortest run of `mine` around its first difference from `theirs` that is not a run of `theirs`."""
+    fold = lambda ws: [w.strip("(),;:.").lower() for w in ws]   # noqa: E731
+    a, b = fold(mine), fold(theirs)
+    ops = [op for op in SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] in ("replace", "delete")]
+    if not ops:
+        return ""
+    lo, hi = ops[0][1], ops[0][1] + 1   # the first differing word, widened until the run is not in the twin's caption
+
+    def in_theirs(lo: int, hi: int) -> bool:
+        run = a[lo:hi]
+        return any(b[i:i + len(run)] == run for i in range(len(b) - len(run) + 1))
+
+    while in_theirs(lo, hi) and (hi < len(a) or lo > 0):
+        if hi < len(a):
+            hi += 1
+        if in_theirs(lo, hi) and lo > 0:
+            lo -= 1
+    while lo > 0 and not re.search(r"[^\W\d_]", " ".join(a[lo:hi])):
+        lo -= 1   # "1" or "0-12" alone is no phrase to put in a question: "Scenario 1", "Weeks 0-12"
+    return " ".join(w.strip("(),;:.") for w in mine[lo:hi]).strip()
+
+
 class Corpus:
     def __init__(self, interim_dir: Path, docs: list[dict], sections: list[dict], elements: list[dict], cfg: dict):
         self.interim_dir = interim_dir
@@ -303,6 +335,7 @@ class Corpus:
         self.df = self.bm25.df
         self.captions = self._caption_index(elements)
         self.entities, self.unit_entities, self.entity_names = self._entity_index()
+        self.twins = self._twin_index()
 
     # ----- indexes -----
     def _caption_index(self, elements: list[dict]) -> dict[tuple[str, str, str], str]:
@@ -350,6 +383,43 @@ class Corpus:
             for x in uids:
                 per_unit[x].add(key)
         return keep, per_unit, surface
+
+    def _twin_index(self) -> dict[str, list[str]]:
+        """unit_id -> other tables in the same document with the same row labels.
+
+        Appraisals repeat a table per arm, population or data cut (TA1063's
+        clarification response has AIC tables for the capivasertib arm and
+        the fulvestrant arm with identical rows). A question about one of
+        them has to say which, so selectors ask `discriminator` for the
+        caption words that tell it apart.
+        """
+        groups: dict[tuple, list[str]] = defaultdict(list)
+        for uid, u in self.units.items():
+            if u.type != "table" or u.row_index is not None or not u.caption:
+                continue
+            rows = table_rows(u.text)
+            labels = frozenset(r[0] for r in rows[1:] if r and r[0].strip())
+            if len(labels) >= 3:   # same rows under the same columns; a different header is told apart by naming the measure
+                groups[(u.doc_id, " | ".join(rows[0]), labels)].append(uid)
+        return {uid: [o for o in members if o != uid] for members in groups.values() if len(members) > 1 for uid in members}
+
+    def discriminator(self, unit: Unit) -> list[str] | None:
+        """Caption phrases that set this table apart from each twin; None without twins; "" for a twin it cannot be told from.
+
+        Each phrase is the shortest run of caption words around a difference
+        that does not occur in the twin's caption ("fulvestrant arm" against
+        "capivasertib arm"). The table number is left out: questions must not
+        rely on it.
+        """
+        twins = self.twins.get(unit.unit_id)
+        if not twins:
+            return None
+        mine = _caption_words(unit.caption)
+        out = []
+        for t in twins:
+            theirs = _caption_words(self.units[t].caption)
+            out.append(_distinct_phrase(mine, theirs))
+        return sorted(set(out))
 
     # ----- queries -----
     def unit_for_element(self, element_id: str) -> Unit | None:

@@ -90,11 +90,17 @@ Seven item types, each with its own evidence selector and validity rules:
 |---|---|---|
 | Factual | one complete paragraph | the quote is in the element and contains the answer keys |
 | Numerical | a paragraph with a number and unit, or a captioned table | the answer's number is in the quote and among the evidence's numbers |
-| Comparative | a table with two arm columns or labelled rows, or a paragraph with two values of one unit | both values quoted, direction consistent with the values, answer names the winner |
+| Comparative | a table with two arm columns or labelled rows (rows under a merged group cell are compared within their group), or a paragraph with two values of one unit | both values quoted, direction consistent with the values, answer names the winner |
 | Multi-hop | two parts of one document linked by "see Table N" or a trial name | quotes from both, question draws words from both |
 | Cross-document | a reviewing passage (EAG, clarification) paired with the company passage it refers to, shares numbers with, or best matches lexically | quotes from two documents, not copies of each other |
 | Attribution | a stance sentence ("The EAG considers..."), an expert's form answer, or a company response | answer is the speaker, speaker not named in the question, claim not restated unattributed elsewhere (BM25) |
-| Unanswerable | a value shown as `[REDACTED]`, or a plausible question the bundle does not cover | the quote carries the marker; or BM25 hits plus an LLM check find no answer |
+| Unanswerable | a value shown as `[REDACTED]` that no other passage prints, or a plausible question the bundle does not cover | the quote carries the marker; or BM25 hits plus an LLM check find no answer |
+
+Every selector skips OCR'd text (its glyph errors would end up in questions
+and answer keys) and figures that OCR turned into tables. A table that has a
+twin in its document (same rows and columns, as in per-arm AIC tables) is used
+only when its caption tells it apart, and the question must then contain those
+words ("fulvestrant arm").
 
 After these checks an LLM judge reviews the comparative, multi-hop and
 cross-document items (the types where a check needs reading, such as a table

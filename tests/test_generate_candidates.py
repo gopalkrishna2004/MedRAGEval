@@ -1,18 +1,19 @@
 from random import Random
 
 import pytest
-from synthetic import build_corpus, config
+from synthetic import ELEMENTS, EXTRA_ELEMENTS, GROUPED, build_corpus, config
 
-from medrageval.generate.candidates import SELECTORS, arm_columns, clean_prose, numeric_hits, spread, table_comparison
+from medrageval.generate.candidates import SELECTORS, arm_columns, clean_prose, garbled, numeric_hits, spread, stated_elsewhere, table_comparison, whole_table
 from medrageval.text import table_rows
 
 CFG = config()
 CFG["limits"]["max_per_section"] = 5     # the synthetic bundle has few sections; do not hide candidates behind the coverage cap
 CORPUS = build_corpus(CFG)
+EXTRA = build_corpus(CFG, ELEMENTS + EXTRA_ELEMENTS)
 
 
-def run(name, seed=1):
-    return list(SELECTORS[name](CORPUS, CFG, Random(seed)))
+def run(name, seed=1, corpus=CORPUS):
+    return list(SELECTORS[name](corpus, CFG, Random(seed)))
 
 
 def test_factual_uses_complete_clean_paragraphs_only():
@@ -50,6 +51,43 @@ def test_comparative_rows_mode_for_treatment_rows():
     assert hint["mode"] == "rows" and hint["measure"] == "Total costs (£)"
     assert hint["labels"] == ["Capivasertib + fulvestrant", "Alpelisib + fulvestrant", "Everolimus + exemestane"]   # the redacted row is skipped
     assert hint["rows"][0] == "Capivasertib + fulvestrant | £61,210 | 2.85"
+
+
+def test_comparative_rows_mode_compares_within_a_group():
+    hint = table_comparison(table_rows(GROUPED), CFG, Random(0))
+    assert hint["mode"] == "rows" and hint["measure"] == "Sample size"   # the arm column is a label, not a measure
+    assert hint["labels"] in (["FAKTION Capivasertib + fulvestrant 500", "FAKTION Fulvestrant 500"],
+                              ["BOLERO-2 Everolimus + exemestane", "BOLERO-2 Exemestane"])
+    assert hint["rows"][1] == "FAKTION | Fulvestrant 500 | 71 | 61"
+
+
+def test_garbled_ocr_words():
+    assert garbled("<65 yéárs") and not garbled("endocrine-naïve patients") and not garbled("≥65 years")
+
+
+def test_ocr_units_are_not_evidence_unless_allowed():
+    ocr = EXTRA.units["d02-e0025"]
+    assert not whole_table(ocr, CFG, allow_redacted=True)
+    assert all(ocr.unit_id not in {u.unit_id for u in c.units} for name in SELECTORS for c in run(name, corpus=EXTRA))
+    cfg = {**CFG, "limits": {**CFG["limits"], "allow_ocr": True}}
+    assert whole_table(ocr, cfg, allow_redacted=True)
+    assert "d02-e0026" not in EXTRA.units   # a figure stored as a table is noise
+
+
+def test_redacted_value_printed_elsewhere_is_not_unanswerable():
+    assert stated_elsewhere(EXTRA, EXTRA.units["d02-e0027"], CFG) == "d02-e0028"   # Table 42 gives the body surface area Table 14 redacts
+    assert stated_elsewhere(EXTRA, EXTRA.units["d02-e0004"], CFG) is None
+    picked = {c.units[0].unit_id for c in run("unanswerable_redacted", corpus=EXTRA)}
+    assert "d02-e0004" in picked and "d02-e0027" not in picked
+
+
+def test_twin_tables_need_a_discriminator_or_are_skipped():
+    hints = {c.units[0].unit_id: c.hint for c in run("numerical", corpus=EXTRA) if c.subtype == "table"}
+    assert hints["d02-e0021"]["must_mention"] == ["fulvestrant arm"] and hints["d02-e0020"]["must_mention"] == ["capivasertib arm"]
+    assert "must_mention" not in hints["d02-e0003"]
+    assert "d02-e0022" not in hints and "d02-e0023" not in hints   # identical captions
+    comp = {c.units[0].unit_id: c.hint for c in run("comparative", corpus=EXTRA) if c.subtype == "table"}
+    assert comp["d02-e0021"]["must_mention"] == ["fulvestrant arm"] and "d02-e0022" not in comp
 
 
 def test_multihop_pairs_cross_reference_and_trial_name():

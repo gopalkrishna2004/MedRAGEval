@@ -1,5 +1,5 @@
 import pytest
-from synthetic import build_corpus, config
+from synthetic import ELEMENTS, EXTRA_ELEMENTS, build_corpus, config
 
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.validate import is_duplicate, validate
@@ -27,6 +27,20 @@ GOOD_FACTUAL = item("What kind of trial was CAPItello-291 and which patients did
 def test_good_factual_item_passes():
     v = validate(GOOD_FACTUAL, cand("factual", "d02-e0001"), CORPUS, CFG, [])
     assert v.ok and v.reasons == []
+
+
+def test_garbled_answer_key_rejected():
+    v = validate({**GOOD_FACTUAL, "answer_keys": ["phase 3", "yéárs"]}, cand("factual", "d02-e0001"), CORPUS, CFG, [])
+    assert "answer_key_garbled" in v.reasons
+
+
+def test_twin_table_question_must_say_which_table():
+    corpus = build_corpus(CFG, ELEMENTS + EXTRA_ELEMENTS)
+    c = Candidate("numerical", "table", [corpus.units["d02-e0021"]], {"numbers": ["608.6"], "must_mention": ["fulvestrant arm"]})
+    it = item("What AIC did the exponential model have for time to discontinuation of capivasertib in CAPItello-291?", "608.6", ["608.6"], [("d02-e0021", "Exponential | 608.6 | 611.3")])
+    assert "question_lacks_discriminator:fulvestrant arm" in validate(it, c, corpus, CFG, []).reasons
+    it["question"] = "What AIC did the exponential model have for time to discontinuation in the fulvestrant arm of CAPItello-291?"
+    assert validate(it, c, corpus, CFG, []).ok
 
 
 @pytest.mark.parametrize(

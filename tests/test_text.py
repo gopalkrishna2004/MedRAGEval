@@ -58,5 +58,17 @@ def test_table_rows_cells_match_plain_lines():
 
 def test_table_rows_handles_colspan_markup_and_no_table():
     html = '<table><tr><th colspan="2">**Arm**</th></tr><tr><td>a<br/>b</td><td>&amp;</td></tr></table>'
-    assert table_rows(html) == [["Arm"], ["a b", "&"]]
+    assert table_rows(html) == [["Arm", ""], ["a b", "&"]]   # a colspan keeps the later columns under their header
     assert table_rows("no table here") == []
+
+
+def test_rowspan_group_label_repeats_on_every_row():
+    html = ('<table><tr><th>Study</th><th>Arm</th><th>N</th></tr>'
+            '<tr><td rowspan="2">FAKTION</td><td>Capivasertib</td><td>69</td></tr>'
+            '<tr><td>Fulvestrant</td><td>71</td></tr>'
+            '<tr><td>BOLERO-2</td><td>Everolimus</td><td>485</td></tr></table>')
+    assert table_rows(html)[1:] == [["FAKTION", "Capivasertib", "69"], ["FAKTION", "Fulvestrant", "71"], ["BOLERO-2", "Everolimus", "485"]]
+    assert to_plain(html).splitlines()[2] == "FAKTION | Fulvestrant | 71"   # a row quoted alone still names its study
+    # a value spanning two rows (one odds ratio for both arms) is on both rows too
+    html = ('<table><tr><td>Capivasertib</td><td>132</td><td rowspan="2">3.93</td></tr><tr><td>Placebo</td><td>124</td></tr></table>')
+    assert table_rows(html) == [["Capivasertib", "132", "3.93"], ["Placebo", "124", "3.93"]]

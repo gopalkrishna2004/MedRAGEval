@@ -93,6 +93,10 @@ generate:
     quote_tokens: [3, 80]        # a short table row ("CAPItello-291 | Strong | Weak") is 4 tokens
     question_words: [8, 45]       # multi-hop questions carry two descriptions; 40 cut good ones in the smoke run
     answer_max_chars: 400        # cross-document answers report two documents' positions
+    # OCR text carries glyph errors that end up in questions and answer keys
+    # ("<65 yéárs", "Capivas ertib" in TA1063's Figure 10, 11 of 256 tables
+    # and 14 of 1432 paragraphs are OCR). OCR units stay searchable.
+    allow_ocr: false
   dedupe_jaccard: 0.7            # token-set overlap above which two questions are the same
 
   # Elements that must never become evidence or search hits. Counts are for
@@ -230,6 +234,15 @@ generate:
     top_k: 6                     # BM25 hits per question shown to the coverage check (one call per anchor)
     neighbours: 4                # same-section units shown to the generator as off limits and to the check
     questions_per_anchor: 3
+    # A redacted value may be printed elsewhere (TA1063 Table 14 redacts body
+    # surface area; Table 42 gives 1.82 / 1.70). A redacted line is not used
+    # when its rare words (in at most stated_rare_df_max of units: "surface",
+    # "male", not "capivasertib") all reappear with a number on a short line
+    # (a table row or one sentence) of a top BM25 hit. Matching any words on
+    # a whole paragraph skipped 32 candidates in TA1063, nearly all wrongly.
+    stated_top_k: 5
+    stated_rare_df_max: 0.03
+    stated_max_tokens: 40
     # "partly" = a passage gives a closely related fact but not the one asked.
     # Those are kept: the right answer is still "not stated", and a near miss
     # in the retrieved context is exactly what a RAG should not turn into an

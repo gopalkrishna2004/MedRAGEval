@@ -10,8 +10,9 @@ from random import Random
 import pytest
 
 from medrageval.config import load_config
-from medrageval.generate.candidates import SELECTORS, candidate_counts
+from medrageval.generate.candidates import SELECTORS, candidate_counts, stated_elsewhere, table_comparison
 from medrageval.generate.corpus import load_corpus
+from medrageval.text import table_rows
 
 pytestmark = pytest.mark.regression
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,11 @@ EXPECTED = {
         "min_candidates": {"factual": 300, "numerical": 100, "comparative": 60, "multihop": 60, "crossdoc": 35,
                            "attribution": 50, "unanswerable_redacted": 30, "unanswerable_not_covered": 25},
         "crossdoc_pair": ("d12", "d02"),
+        # Tables 35 and 36 of the clarification response repeat the AIC/BIC rows for the two components of the regimen
+        "twins": {"d04-e0361": ["TTD", "capivasertib arm"], "d04-e0374": ["TTD", "fulvestrant arm"], "d04-e0295": ["Scenario 1"]},
+        "redacted_but_stated": {"d02-e0249": "d02-e0441#r00"},   # Table 14 redacts body surface area; Table 42 prints 1.82 / 1.70
+        "figure_as_table": "d02-e0160",                           # Figure 10 (forest plot) came out of OCR as a table with "<65 yéárs"
+        "grouped_table": ("d12-e0327", "CAPItello-291 (PI3K/AKT altered population) | Placebo + fulvestrant 500 | 134"),
     },
     "document2": {
         "roles": {"d01": "cover", "d02": "company_submission", "d03": "patient_summary", "d04": "clarification", "d06": "professional_org",
@@ -35,6 +41,10 @@ EXPECTED = {
         "min_candidates": {"factual": 400, "numerical": 150, "comparative": 100, "multihop": 60, "crossdoc": 60,
                            "attribution": 100, "unanswerable_redacted": 15, "unanswerable_not_covered": 30},
         "crossdoc_pair": ("d08", "d02"),
+        # base-case results at list and PAS price (company and clarification), transition matrices per arm and period (EAG)
+        "twins": {"d02-e0685": ["List"], "d02-e0687": ["PAS"], "d08-e0391": ["Weeks 0-12", "group", "sparsentan"], "d08-e0399": ["Weeks 12-108", "irbesartan"]},
+        "redacted_but_stated": {"d05-e0009": "d10-e0015"},       # a redacted job title on one form, printed on another
+        "italic_caption": ("d04", "table", "14", "d04-e0371"),   # "_Table 14: ..._" is still a caption
     },
 }
 
@@ -83,6 +93,42 @@ def test_attribution_has_more_than_one_speaker(bundle):
     name, c = bundle
     speakers = {x.hint["speaker"] for x in SELECTORS["attribution"](c, CFG, Random(CFG["seed"]))}
     assert "the EAG" in speakers and len(speakers) >= 3
+
+
+def test_twin_tables_get_their_discriminating_words(bundle):
+    name, c = bundle
+    for uid, phrases in EXPECTED[name]["twins"].items():
+        assert c.discriminator(c.units[uid]) == phrases, uid
+    assert all(all(p for p in c.discriminator(c.units[uid])) for uid in c.twins), "a twin with nothing to tell it apart"
+
+
+def test_redacted_values_printed_elsewhere_are_skipped(bundle):
+    name, c = bundle
+    for uid, where in EXPECTED[name]["redacted_but_stated"].items():
+        assert stated_elsewhere(c, c.units[uid], CFG) == where
+        assert uid not in {x.units[0].unit_id for x in SELECTORS["unanswerable_redacted"](c, CFG, Random(CFG["seed"]))}
+
+
+def test_ocr_and_figures_are_not_evidence(bundle):
+    name, c = bundle
+    if "figure_as_table" in EXPECTED[name]:
+        assert EXPECTED[name]["figure_as_table"] not in c.units
+    ocr = {uid for uid, u in c.units.items() if u.source == "ocr"}
+    assert ocr, "no OCR units at all; the check is vacuous"
+    for sel in SELECTORS:
+        assert not any(u.unit_id in ocr for x in SELECTORS[sel](c, CFG, Random(CFG["seed"])) for u in x.units), sel
+
+
+def test_grouped_table_rows_carry_their_group(bundle):
+    name, c = bundle
+    if "grouped_table" in EXPECTED[name]:
+        uid, line = EXPECTED[name]["grouped_table"]
+        assert any(l.startswith(line) for l in c.units[uid].plain.splitlines())
+        labels = table_comparison(table_rows(c.units[uid].text), CFG, Random(CFG["seed"]))["labels"]
+        assert len({lb.split(" ")[0] for lb in labels}) == 1, labels   # one study per comparison
+    if "italic_caption" in EXPECTED[name]:
+        doc, kind, number, element = EXPECTED[name]["italic_caption"]
+        assert c.captions[(doc, kind, number)] == element
 
 
 def test_selection_is_reproducible(bundle):

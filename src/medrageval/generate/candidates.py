@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from random import Random
 
-from medrageval.generate.corpus import REDACTED, Corpus, Unit, mentions, significant_numbers
+from medrageval.generate.corpus import REDACTED, Corpus, Unit, mentions, significant_numbers, tokenize
 from medrageval.text import normalize, table_rows
 
 DESCRIPTIVE = re.compile(r"\b(randomi[sz]ed|phase|double[- ]blind|placebo[- ]controlled|enrolled|recruited|multicentre|"
@@ -24,6 +24,12 @@ REDACTED_LABEL = [
     re.compile(r"(£|\$|€)\s?\[REDACTED\]"),
     re.compile(r"\[REDACTED\]\s*(%|patients|participants|months|years|weeks|QALYs?|per cent|percent)\b", re.I),
 ]
+# A word mixing ASCII letters with two or more non-ASCII ones ("yéárs") is an OCR glyph error. One accent ("naïve") is a word.
+GARBLED = re.compile(r"\b(?=[^\W\d_]*[A-Za-z])(?=(?:[^\W\d_]*[^\x00-\x7F\W\d_]){2})[^\W\d_]+\b")
+
+
+def garbled(text: str) -> bool:
+    return bool(GARBLED.search(text))
 
 
 @dataclass
@@ -72,19 +78,33 @@ def section_key(u: Unit) -> tuple:
     return (u.doc_id, u.section_id)
 
 
+def native(u: Unit, cfg: dict) -> bool:
+    return cfg["limits"]["allow_ocr"] or u.source != "ocr"
+
+
 def clean_prose(u: Unit, cfg: dict, allow_redacted: bool = False) -> bool:
-    """A complete paragraph of evidence: right length, starts and ends like a sentence, no redactions."""
+    """A complete paragraph of evidence: right length, starts and ends like a sentence, no redactions, not OCR."""
     lim = cfg["limits"]
     p = u.plain
-    return (u.evidence and u.type in ("paragraph", "list_item", "footnote")
+    return (u.evidence and u.type in ("paragraph", "list_item", "footnote") and native(u, cfg)
             and lim["min_chars"] <= len(p) <= lim["max_chars"]
             and bool(re.match(r"[A-Z0-9\"'(\[]", p)) and bool(re.search(r"[.!?)\"'%\]]$", p))
             and (allow_redacted or u.redactions == 0))
 
 
 def whole_table(u: Unit, cfg: dict, allow_redacted: bool = False) -> bool:
-    return (u.evidence and u.type == "table" and u.row_index is None
+    return (u.evidence and u.type == "table" and u.row_index is None and native(u, cfg)
             and len(u.plain) <= cfg["limits"]["max_table_chars"] and (allow_redacted or u.redactions == 0))
+
+
+def twin_hint(corpus: Corpus, u: Unit) -> dict | None:
+    """Hint fields for a table: {} without twins, {"must_mention": [...]} when its caption tells it apart, None when nothing does."""
+    phrases = corpus.discriminator(u)
+    if phrases is None:
+        return {}
+    if any(not p for p in phrases):
+        return None
+    return {"must_mention": phrases}
 
 
 def numeric_hits(plain: str, cfg: dict) -> list[tuple[str, str]]:
@@ -130,14 +150,15 @@ def select_numerical(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candida
         if clean_prose(u, cfg):
             hits = numeric_hits(u.plain, cfg)
             if hits:
-                items.append((u, "prose", sorted({n for n, _ in hits} | significant_numbers(u.plain))))
+                items.append((u, "prose", sorted({n for n, _ in hits} | significant_numbers(u.plain)), {}))
         elif whole_table(u, cfg) and u.caption:
             cells = [c for r in table_rows(u.text) for c in r]
             numbers = sorted({c for c in cells if re.fullmatch(r"[£$€]?\s?-?\d[\d,]*(?:\.\d+)?\s?%?", c.strip())})
-            if len(numbers) >= 4:
-                items.append((u, "table", [re.sub(r"[£$€%,\s]", "", n) for n in numbers]))
-    for u, sub, numbers in spread(items, lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"]):
-        yield Candidate("numerical", sub, [u], {"numbers": numbers[:40]})
+            twin = twin_hint(corpus, u)
+            if len(numbers) >= 4 and twin is not None:
+                items.append((u, "table", [re.sub(r"[£$€%,\s]", "", n) for n in numbers], twin))
+    for u, sub, numbers, twin in spread(items, lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"]):
+        yield Candidate("numerical", sub, [u], {"numbers": numbers[:40], **twin})
 
 
 NUMCELL = re.compile(r"^[£$€]?\s?[<>≤≥]?-?\d[\d,]*(?:\.\d+)?\s?%?(?:\s?\([^()]*\))?[*†‡a-c]?$")   # a value, maybe with (95% CI) and a footnote mark
@@ -175,12 +196,38 @@ def table_comparison(rows: list[list[str]], cfg: dict, rng: Random, extra: list[
     if not rows:
         return None
     header = rows[0]
-    for j in range(1, max(len(r) for r in rows)):
-        good = [r for r in rows[1:] if j < len(r) and r[0].strip() and NUMCELL.match(r[j].strip()) and REDACTED not in r[j]]
-        if len(good) >= cc["min_numeric_rows"] and len({r[0] for r in good}) >= 2 and j < len(header) and header[j].strip():
-            return {"mode": "rows", "labels": [r[0] for r in good][:8], "measure": header[j] if j < len(header) else "",
-                    "header": " | ".join(header), "rows": [" | ".join(r) for r in good][:cc["max_rows"]]}
+    width = label_width(rows)
+    for j in range(width, max(len(r) for r in rows)):
+        good = [r for r in rows[1:] if j < len(r) and all(c.strip() for c in r[:width]) and NUMCELL.match(r[j].strip())
+                and REDACTED not in r[j] and not garbled(" ".join(r[:width]))]
+        if len(good) < cc["min_numeric_rows"] or not (j < len(header) and header[j].strip()):
+            continue
+        if width > 1:
+            # a group column (the study over its arms): compare rows of one group only, under group-qualified labels
+            groups = defaultdict(list)
+            for r in good:
+                groups[r[0]].append(r)
+            pick = [g for g in groups.values() if len({" ".join(r[:width]) for r in g}) >= 2]
+            labels = [" ".join(r[:width]) for r in (pick[rng.randrange(len(pick))] if pick else good)]   # no repeating group: both columns just name the row
+            if len(set(labels)) < 2:
+                continue
+        else:
+            labels = [r[0] for r in good]
+            if len(set(labels)) < 2:
+                continue
+        return {"mode": "rows", "labels": labels[:8], "measure": header[j],
+                "header": " | ".join(header), "rows": [" | ".join(r) for r in good][:cc["max_rows"]]}
     return None
+
+
+def label_width(rows: list[list[str]]) -> int:
+    """How many leading columns name a row: the usual count of cells before the first numeric one (2 when a group column spans arms)."""
+    counts = []
+    for r in rows[1:]:
+        n = next((i for i, c in enumerate(r) if NUMCELL.match(c.strip())), None)
+        if n:
+            counts.append(n)
+    return max(set(counts), key=counts.count) if counts else 1
 
 
 def select_comparative(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidate]:
@@ -190,8 +237,9 @@ def select_comparative(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candi
     for u in corpus.units.values():
         if whole_table(u, cfg, allow_redacted=True):
             hint = table_comparison(table_rows(u.text), cfg, rng, extra)
-            if hint:
-                items.append((u, "table", hint))
+            twin = twin_hint(corpus, u)
+            if hint and twin is not None:
+                items.append((u, "table", {**hint, **twin}))
         elif clean_prose(u, cfg):
             hits = numeric_hits(u.plain, cfg)
             by_unit = defaultdict(list)
@@ -219,12 +267,13 @@ def select_multihop(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidat
             rng.shuffle(desc); rng.shuffle(num)
             for d in desc[:6]:
                 for n in num:
-                    if n.unit_id != d.unit_id and n.section_id != d.section_id and (d.unit_id, n.unit_id) not in seen:
+                    twin = twin_hint(corpus, n) if n.type == "table" else {}
+                    if n.unit_id != d.unit_id and n.section_id != d.section_id and (d.unit_id, n.unit_id) not in seen and twin is not None:
                         seen.add((d.unit_id, n.unit_id))
-                        pairs.append((d, n, corpus.entity_names[key]))
+                        pairs.append((d, n, corpus.entity_names[key], twin))
                         break
-    for d, n, name in spread(pairs, lambda x: (x[0].doc_id, x[2]), rng, 4):
-        yield Candidate("multihop", "entity", [d, n], {"link": name, "link_kind": "entity"})
+    for d, n, name, twin in spread(pairs, lambda x: (x[0].doc_id, x[2]), rng, 4):
+        yield Candidate("multihop", "entity", [d, n], {"link": name, "link_kind": "entity", **twin})
 
     xrefs = []
     for u in corpus.units.values():
@@ -234,12 +283,13 @@ def select_multihop(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidat
             t = corpus.unit_for_element(element_id)
             if not t or t.element_id == u.element_id or not whole_table(t, cfg, allow_redacted=True):
                 continue
-            if (u.unit_id, t.unit_id) in seen:
+            twin = twin_hint(corpus, t)
+            if (u.unit_id, t.unit_id) in seen or twin is None:
                 continue
             seen.add((u.unit_id, t.unit_id))
-            xrefs.append((u, t, f"{kind.capitalize()} {number}"))
-    for u, t, link in spread(xrefs, lambda x: (x[0].doc_id, x[2]), rng, 2):
-        yield Candidate("multihop", "xref", [u, t], {"link": link, "link_kind": "xref"})
+            xrefs.append((u, t, f"{kind.capitalize()} {number}", twin))
+    for u, t, link, twin in spread(xrefs, lambda x: (x[0].doc_id, x[2]), rng, 2):
+        yield Candidate("multihop", "xref", [u, t], {"link": link, "link_kind": "xref", **twin})
 
 
 def _role_sets(corpus: Corpus, cfg: dict) -> tuple[set[str], set[str]]:
@@ -282,10 +332,11 @@ def select_crossdoc(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidat
                 if m.lastindex and m.lastindex >= 2:
                     for doc_id in primary_docs:
                         t = corpus.unit_for_element(corpus.captions.get((doc_id, m.group(1).lower(), m.group(2)), ""))
-                        if t and t.unit_id in b_ids and whole_table(t, cfg, allow_redacted=True) and ok_pair(a, t):
-                            refs.append((a, t, f"{m.group(1).capitalize()} {m.group(2)}"))
-    for a, t, link in spread(refs, lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"]):
-        yield Candidate("crossdoc", "reference", [a, t], {"link": link})
+                        twin = twin_hint(corpus, t) if t else None
+                        if t and t.unit_id in b_ids and whole_table(t, cfg, allow_redacted=True) and twin is not None and ok_pair(a, t):
+                            refs.append((a, t, f"{m.group(1).capitalize()} {m.group(2)}", twin))
+    for a, t, link, twin in spread(refs, lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"]):
+        yield Candidate("crossdoc", "reference", [a, t], {"link": link, **twin})
 
     # 2. shared significant numbers between a stance-bearing passage and a reviewed passage
     numbers_index = defaultdict(set)
@@ -373,11 +424,36 @@ def select_attribution(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candi
         yield Candidate("attribution", sub, [u], {"speaker": speaker, "claim": claim})
 
 
+def stated_elsewhere(corpus: Corpus, u: Unit, cfg: dict) -> str | None:
+    """A unit that gives a value for something this unit redacts: a line with the redacted line's words and a number.
+
+    TA1063's Table 14 redacts body surface area by sex, but Table 42 (model
+    inputs) prints both values. A question built on the redaction would mark
+    a correct answer wrong.
+    """
+    uc = cfg["unanswerable"]
+    own = set(corpus.by_element.get(u.element_id, ())) | {u.unit_id}
+    limit = uc["stated_rare_df_max"] * len(corpus.units)
+    for line in u.plain.splitlines():
+        if REDACTED not in line:
+            continue
+        # the label's distinctive words ("surface", "male"), not the drug and trial names on every line
+        rare = {t for t in tokenize(line.replace(REDACTED, " ")) if len(t) >= 3 and not t.isdigit() and corpus.df.get(t, 0) <= limit}
+        if len(rare) < 2:
+            continue
+        for hit, _ in corpus.bm25.search(sorted(rare), k=uc["stated_top_k"], exclude=own):
+            for hl in corpus.units[hit].plain.splitlines():
+                toks = tokenize(hl)
+                if REDACTED not in hl and len(toks) <= uc["stated_max_tokens"] and re.search(r"\d", hl) and rare <= set(toks):
+                    return hit
+    return None
+
+
 def select_unanswerable_redacted(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidate]:
     uc = cfg["unanswerable"]
     items = []
     for u in corpus.units.values():
-        if not (1 <= u.redactions <= uc["max_redactions"] and u.evidence):
+        if not (1 <= u.redactions <= uc["max_redactions"] and u.evidence and native(u, cfg)):
             continue
         if not (clean_prose(u, cfg, allow_redacted=True) or whole_table(u, cfg, allow_redacted=True) or (u.row_index is not None and len(u.plain) <= cfg["limits"]["max_table_chars"])):
             continue
@@ -386,7 +462,7 @@ def select_unanswerable_redacted(corpus: Corpus, cfg: dict, rng: Random) -> Iter
         labels = []
         for pat in REDACTED_LABEL:
             labels += [m.group(1).strip() for m in pat.finditer(u.plain) if m.group(1).strip() and "REDACTED" not in m.group(1)]
-        if labels:
+        if labels and not stated_elsewhere(corpus, u, cfg):
             items.append((u, sorted(set(labels))[:6]))
     for u, labels in spread(items, lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"]):
         yield Candidate("unanswerable", "redacted", [u], {"labels": labels})

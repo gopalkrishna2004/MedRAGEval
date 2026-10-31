@@ -1,5 +1,5 @@
 import pytest
-from synthetic import ELEMENTS, build_corpus, config
+from synthetic import ELEMENTS, EXTRA_ELEMENTS, build_corpus, config
 
 from medrageval.generate.corpus import BM25, corpus_topic, detect_roles, extract_entities, is_noise, make_units, mentions, significant_numbers, tokenize
 from medrageval.text import contains_quote
@@ -25,6 +25,24 @@ def test_noise_reasons(element_id, reason):
 def test_figures_are_noise():
     el = dict(next(e for e in ELEMENTS if e["element_id"] == "d02-e0001"), type="figure")
     assert is_noise(el, CFG) == "figure"
+    chart = next(e for e in EXTRA_ELEMENTS if e["element_id"] == "d02-e0026")   # an OCR'd forest plot stored as a table
+    assert chart["type"] == "table" and is_noise(chart, CFG) == "figure"
+
+
+def test_units_carry_source():
+    ocr = next(e for e in EXTRA_ELEMENTS if e["element_id"] == "d02-e0025")
+    assert make_units(ocr, CFG)[0].source == "ocr"
+    assert make_units(next(e for e in ELEMENTS if e["element_id"] == "d02-e0001"), CFG)[0].source == "native"
+
+
+def test_twin_tables_and_their_discriminating_caption_words():
+    corpus = build_corpus(CFG, ELEMENTS + EXTRA_ELEMENTS)
+    assert corpus.twins["d02-e0020"] == ["d02-e0021"] and corpus.twins["d02-e0021"] == ["d02-e0020"]
+    assert corpus.discriminator(corpus.units["d02-e0021"]) == ["fulvestrant arm"]   # "fulvestrant" alone is in both captions
+    assert corpus.discriminator(corpus.units["d02-e0020"]) == ["capivasertib arm"]
+    assert corpus.discriminator(corpus.units["d02-e0022"]) == [""]                  # identical captions: nothing tells them apart
+    assert corpus.discriminator(corpus.units["d02-e0003"]) is None                   # no twin
+    assert "d02-e0024" not in corpus.twins and "d02-e0027" not in corpus.twins
 
 
 def test_long_table_splits_into_row_units_with_header():

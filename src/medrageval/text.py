@@ -13,7 +13,8 @@ import unicodedata
 
 _PICTURE = re.compile(r"<!--\s*(?:Start|End) of picture text\s*-->")
 _ROW = re.compile(r"<tr>(.*?)</tr>", re.S)
-_CELL = re.compile(r"<t[hd][^>]*>(.*?)</t[hd]>", re.S)
+_CELL = re.compile(r"<t[hd]([^>]*)>(.*?)</t[hd]>", re.S)
+_SPAN = re.compile(r"\b(rowspan|colspan)=\"(\d+)\"")
 _TABLE = re.compile(r"<table>.*?</table>", re.S)
 _BR = re.compile(r"<br\s*/?>")
 _KNOWN_TAG = re.compile(r"</?(?:table|tr|td|th|br|sup|sub|mark|u)\b[^>]*>")  # leaves "<insert deadline>"
@@ -27,12 +28,42 @@ _QUOTES = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
 _TOKEN = re.compile(r"\d+(?:\.\d+)?|[^\W\d_]+|[%<>≤≥=±+]")
 
 
+def _grid(table_html: str) -> list[list[str]]:
+    """Raw cell contents of an HTML table as a rectangular grid.
+
+    A cell with rowspan is repeated in the rows it spans, so a merged group
+    label ("CAPItello-291" over two arm rows) stays on every row it covers
+    and a row quoted on its own still says which group it belongs to. A cell
+    with colspan keeps its text in its first column and leaves the others
+    empty, so later columns line up with the header.
+    """
+    rows: list[list[str]] = []
+    pending: dict[int, tuple[str, int]] = {}   # column -> (text, rows still to fill)
+    for row in _ROW.findall(table_html):
+        cells: list[str] = []
+
+        def take_pending():
+            while len(cells) in pending:
+                text, left = pending.pop(len(cells))
+                if left > 1:
+                    pending[len(cells)] = (text, left - 1)
+                cells.append(text)
+
+        for attrs, content in _CELL.findall(row):
+            take_pending()
+            spans = {k: int(v) for k, v in _SPAN.findall(attrs)}
+            for i in range(max(spans.get("colspan", 1), 1)):
+                text = content if i == 0 else ""
+                if spans.get("rowspan", 1) > 1:
+                    pending[len(cells)] = (text, spans["rowspan"] - 1)
+                cells.append(text)
+        take_pending()
+        rows.append(cells)
+    return rows
+
+
 def _table_to_plain(m: re.Match) -> str:
-    rows = []
-    for row in _ROW.findall(m.group(0)):
-        cells = [_BR.sub(" ", c).strip() for c in _CELL.findall(row)]
-        rows.append(" | ".join(cells))
-    return "\n".join(rows)
+    return "\n".join(" | ".join(_BR.sub(" ", c).strip() for c in row) for row in _grid(m.group(0)))
 
 
 def table_rows(text: str) -> list[list[str]]:
@@ -40,7 +71,7 @@ def table_rows(text: str) -> list[list[str]]:
     m = _TABLE.search(text)
     if not m:
         return []
-    return [[" ".join(to_plain(_BR.sub(" ", c)).split()) for c in _CELL.findall(row)] for row in _ROW.findall(m.group(0))]
+    return [[" ".join(to_plain(_BR.sub(" ", c)).split()) for c in row] for row in _grid(m.group(0))]
 
 
 def to_plain(text: str) -> str:
