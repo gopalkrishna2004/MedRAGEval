@@ -37,3 +37,213 @@ segment:
   # Below this share of numbered pages, page resets cannot fire, so a title
   # page alone starts a document.
   min_numbered_pages: 0.5
+
+generate:
+  # The LLM. OpenRouter speaks the OpenAI chat-completions API, so any chat
+  # model id listed on openrouter.ai works. The key is read from
+  # OPENROUTER_API_KEY, or from a gitignored .env (see .env.example).
+  model: openai/gpt-6-luna
+  judge_model: null             # null: the judge uses the same model
+  base_url: https://openrouter.ai/api/v1
+  # Generation samples (varied phrasing across items). Reproducibility comes
+  # from the seed (which evidence is picked) and the response cache, not from
+  # temperature 0. The judge is deterministic so verdicts do not drift.
+  temperature: 0.75
+  judge_temperature: 0.0
+  max_tokens: 2000              # 1200 truncated multi-hop items that quote two long rows
+  max_workers: 6                # smoke run: 78 calls in 182 s at 6 workers, no rate-limit errors
+  # Responses are cached by (model, temperature, messages); a rerun with the
+  # same config makes no calls and writes an identical dataset.
+  cache_dir: data/cache/llm
+  seed: 20251030
+  # Candidates tried per accepted item before a type gives up; below
+  # min_share_of_target the run fails after writing what it has. Smoke runs
+  # accepted about half of the single-excerpt candidates, but one in four
+  # multi-hop ones (the judge rejects questions the value table answers alone)
+  # and one in five "not covered" questions (the bundle usually does answer).
+  attempts_per_item:
+    default: 4
+    multihop: 8
+    unanswerable: 8
+  min_share_of_target: 0.5
+  abort_after_consecutive_failures: 5   # five bad calls in a row means a wrong key or model
+
+  # Items per type; the sum is the dataset size (150).
+  targets:
+    factual: 22
+    numerical: 22
+    comparative: 21
+    multihop: 21
+    crossdoc: 21
+    attribution: 21
+    unanswerable: 22     # half redacted values, half not covered by the documents
+
+  limits:
+    # Evidence paragraphs. Paragraph plain text: median ~250 chars, p90 ~730.
+    # Under 120 chars are mostly headings and fragments.
+    min_chars: 120
+    max_chars: 1500
+    # Tables above this are split into row groups (table p90 is ~4300 chars;
+    # expert statement forms are a single 14-19k char table each). A row group
+    # keeps a form's "question | answer" pair together.
+    max_table_chars: 4000
+    row_group_chars: 1200
+    max_paragraph_chars: 2500    # longer paragraphs are searchable but not used as evidence
+    max_per_section: 2           # items drawn from one section, for coverage
+    quote_tokens: [3, 80]        # a short table row ("CAPItello-291 | Strong | Weak") is 4 tokens
+    question_words: [8, 45]       # multi-hop questions carry two descriptions; 40 cut good ones in the smoke run
+    answer_max_chars: 400        # cross-document answers report two documents' positions
+  dedupe_jaccard: 0.7            # token-set overlap above which two questions are the same
+
+  # Elements that must never become evidence or search hits. Counts are for
+  # TA1063 / document2: reference lists 227 / 303 elements, elements under 25
+  # chars 84 / 54 (labels and page fragments), figures (their text is OCR'd
+  # chart axes), tables of contents stored as tables with dot leaders.
+  noise:
+    min_chars: 25
+    section_title_patterns:
+      - '^references\b'
+      - '^(list of )?(tables|figures)\b'
+      - '^(table of )?contents\b'
+      - '\babbreviations\b'
+      - '^glossary\b'
+    text_patterns:
+      - '\.{6,}'
+      - 'all rights reserved'
+      - '^©'
+      - '^file name \|'
+      - '^thank you for (your time|taking)'
+      - '^please (complete|underline|return|note that this)'
+      - '^you are asked to'
+      - 'committed to meeting the requirements of copyright'
+
+  # Document roles, scored on a document's headings, running text and first
+  # 30 elements (TA1063's EAG report has no "EAG" heading; it is identified by
+  # "Rider on responsibility for report"). A document with no hit is "other";
+  # one with at most cover_max_units units is "cover". `override` maps doc_id
+  # to role for a PDF the patterns get wrong.
+  roles:
+    cover_max_units: 30
+    patterns:
+      company_submission: ['\bDocument B\b', 'Company evidence submission']
+      patient_summary: ['Summary of Information for Patients']
+      clarification: ['Clarification questions']
+      patient_org: ['Patient organisation submission']
+      professional_org: ['Professional organisation submission']
+      clinical_expert: ['Clinical expert statement']
+      patient_expert: ['Patient expert statement']
+      eag_report: ['External Assessment Group', 'Evidence Review Group', 'Rider on responsibility for report', '\bEAG report\b', '\bERG report\b']
+      factual_accuracy: ['factual accuracy check', 'Description of problem']
+      guidance: ['draft guidance', 'final appraisal document', 'appraisal consultation document']
+      cover: ['^Committee Papers$']
+    labels:
+      company_submission: Company evidence submission
+      patient_summary: Summary of information for patients
+      clarification: Clarification questions and company responses
+      patient_org: Patient organisation submission
+      professional_org: Professional organisation submission
+      clinical_expert: Clinical expert statement
+      patient_expert: Patient expert statement
+      eag_report: EAG report
+      factual_accuracy: Factual accuracy check
+      guidance: Committee guidance
+      cover: Cover pages
+      other: Document
+    primary: [company_submission, patient_summary]
+    secondary: [eag_report, clarification, factual_accuracy, guidance]
+    override: {}
+
+  # Trial and study names that link parts of a document (CAPItello-291 is in
+  # 278 elements of TA1063, PROTECT in 479 of document2). A name is learned
+  # from the capture group of a pattern ("the PROTECT trial", "SOLAR-1 study";
+  # a plain regex over capitalised words caught genes like CDK4 and missed
+  # PROTECT), then counted wherever it appears. Kept only when it occurs in at
+  # least min_units units and at most max_doc_share of a document's units.
+  entities:
+    patterns: ['\b([A-Za-z][A-Za-z]*[- ]?\d{0,4})\s+(?:trial|study)\b', '\b([A-Z][A-Za-z]{2,}-\d{1,4})\b', '\b(NCT\d{8})\b']
+    stoplist: ['^(I|II|III|IV|RCT|UK|US|NICE|NHS|EAG|ERG|CS|PAS|EQ-?5D|SF-?36|COVID-?19|MAIC|ITC|NMA|SLR|HTA|HRQoL|QoL|EVPI|SACT|CSR|ITT|PP|SG|AE|SAE|OS|PFS|ORR|HCRU|CKD|IgAN|QALY|ICER)$', '^phase\s*\d', '^(ICD|ISO|SF|EQ|CTCAE|CDK|HER|PIK|AKT|KDIGO|KDQOL|BMI|CKD)-?\d']
+    min_units: 2
+    max_doc_share: 0.4
+
+  # A number counts as "numeric evidence" when it carries a unit.
+  numeric_patterns: ['%', '\bmonths?\b', '\byears?\b', '\bweeks?\b', '\bdays?\b', '\bmg\b', '£', '\bQALYs?\b', '\bICER\b', '\bpatients\b', '\bparticipants\b', '\bevents\b', '\bn\s*=']
+
+  cross_doc:
+    # Explicit pointers from a reviewing document into the company submission.
+    reference_patterns:
+      - '(?:\bCS\b|company submission|Document B)[^.]{0,30}?(Table|Figure)\s+([A-Z]?\d+(?:\.\d+)?)'
+      - 'clarification question\s+([A-C]\s?\d+)'
+    min_shared_numbers: 2        # two shared significant numbers pair two passages
+    min_shared_rare: 3           # or one number plus three rare content tokens
+    max_overlap: 0.8             # above this token overlap the passages are copies (the EAG quotes the company verbatim)
+    query_terms: 20
+    top_k: 5
+    min_margin: 0.1              # BM25 top hit must beat the runner-up by this share
+
+  comparative:
+    # A header cell that names an arm, group, timepoint or scenario.
+    arm_header_patterns: ['\(?\bN\s*=\s*\d+', '\b(placebo|comparator|control|intervention|arm|group|cohort|baseline|week|month|year|scenario|base[ -]case|company|EAG|ERG|plus|versus|vs)\b', '\+']
+    min_numeric_rows: 3
+    max_rows: 25
+    direction_words: [higher, lower, greater, less, longer, shorter, more, fewer, larger, smaller, better, worse, increase, increased, decrease, decreased, exceed, exceeds]
+
+  attribution:
+    # Canonical answer label -> aliases accepted when scoring. Speakers with no
+    # document of their own (the committee) are still found through stance sentences.
+    speakers:
+      the company: [company, manufacturer, applicant, sponsor]
+      the EAG: [EAG, ERG, External Assessment Group, Evidence Review Group, assessment group, review group]
+      the clinical experts: [clinical expert, clinical experts, clinicians, clinical advisers]
+      the patient experts: [patient expert, patient experts]
+      the patient organisations: [patient organisation, patient organisations, patient group]
+      the professional organisations: [professional organisation, professional organisations]
+      the committee: [committee, appraisal committee]
+    role_speakers:
+      company_submission: the company
+      patient_summary: the company
+      clarification: the company
+      factual_accuracy: the company
+      eag_report: the EAG
+      clinical_expert: the clinical experts
+      patient_expert: the patient experts
+      patient_org: the patient organisations
+      professional_org: the professional organisations
+      guidance: the committee
+    # "The EAG considers that ...", "The company stated that ...": 50 / 62 such
+    # sentences in TA1063 / document2, nearly all in the EAG report.
+    stance_patterns:
+      - "\\b(?:the\\s+)?(EAG|ERG|company|manufacturer|clinical experts?|patient experts?|patient organisations?|professional organisations?|committee)(?:'s)?\\s+(?:also\\s+|therefore\\s+|however\\s+)?(considers?|notes?d?|argue[sd]?|believes?|agree[sd]?|disagree[sd]?|suggest(?:s|ed)?|conclude[sd]?|state[sd]?|acknowledge[sd]?|recommend(?:s|ed)?|prefer(?:s|red)?|highlight(?:s|ed)?|is concerned|was concerned|assume[sd]?|expect(?:s|ed)?|propose[sd]?|request(?:s|ed)?|advise[sd]?|indicate[sd]?|report(?:s|ed)?|emphasise[sd]?|view is|views?)\\b"
+    response_section_patterns: ['^company response']
+    min_answer_chars: 80         # form rows need a real answer, not a tick box
+    max_share_per_speaker: 0.5
+    # Exclusivity: a claim restated in a document with a different role is not
+    # attributable. Rare tokens are those in at most rare_df_max of all units;
+    # at 0.01 / 3 tokens, stances like "the partitioned survival model approach
+    # is appropriate" had no rare token at all and were dropped as generic.
+    rare_df_max: 0.03
+    min_rare_tokens: 2
+    restated_containment: 0.7
+
+  unanswerable:
+    max_redactions: 12           # tables with 180 markers leave no label to ask about
+    min_clear_chars: 60
+    top_k: 6                     # BM25 hits per question shown to the coverage check (one call per anchor)
+    neighbours: 4                # same-section units shown to the generator as off limits and to the check
+    questions_per_anchor: 3
+    # "partly" = a passage gives a closely related fact but not the one asked.
+    # Those are kept: the right answer is still "not stated", and a near miss
+    # in the retrieved context is exactly what a RAG should not turn into an
+    # answer. The verdict is stored in the item's `search` field for filtering.
+    accept_partly: true
+
+  judge:
+    max_chars_per_unit: 2500
+  # The judge pass costs a call per item. In the smoke runs it only ever
+  # changed the outcome for the paired and comparative types (a missing
+  # timepoint, a value table that answers alone); the others were already
+  # settled by the programmatic checks.
+  judge_types: [comparative, multihop, crossdoc]
+
+  validate:
+    # A question must stand on its own: no pointing at the excerpt.
+    deictic_patterns: ['\b(this|that|these|those) (table|figure|excerpt|passage|document|section|paragraph|study|trial|row|text)\b', '\b(above|below|the following)\b', '\baccording to the (excerpt|passage|text)\b']

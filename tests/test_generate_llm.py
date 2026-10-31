@@ -1,0 +1,67 @@
+import json
+
+import pytest
+
+from medrageval.generate.llm import ENV_KEY, LLM, FakeLLM, LLMJsonError, api_key, parse_json_object
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ('{"a": 1}', {"a": 1}),
+        ('```json\n{"a": 1}\n```', {"a": 1}),
+        ('Here is the item:\n{"question": "q", "n": [1, 2]}\nDone.', {"question": "q", "n": [1, 2]}),
+    ],
+)
+def test_parse_json_object(text, expected):
+    assert parse_json_object(text) == expected
+
+
+@pytest.mark.parametrize("text", ["not json", "[1, 2]", ""])
+def test_parse_json_object_rejects(text):
+    with pytest.raises((json.JSONDecodeError, ValueError)):
+        parse_json_object(text)
+
+
+def test_fake_llm_records_calls_and_runs_dry():
+    llm = FakeLLM([{"a": 1}])
+    assert llm.complete_json([{"role": "user", "content": "x"}], "t") == {"a": 1}
+    assert llm.calls[0][1] == "t" and llm.stats["calls"] == 1
+    with pytest.raises(LLMJsonError):
+        llm.complete_json([], "t")
+
+
+def _llm(tmp_path, answers):
+    llm = LLM("test-model", "http://localhost:1/v1", "key", 0.5, 100, cache_dir=tmp_path / "cache")
+    llm._call = lambda messages: (answers.pop(0), {"prompt_tokens": 10, "completion_tokens": 5})   # no network
+    return llm
+
+
+def test_cache_round_trip(tmp_path):
+    messages = [{"role": "user", "content": "hello"}]
+    llm = _llm(tmp_path, ['{"x": 1}'])
+    assert llm.complete_json(messages, "a") == {"x": 1}
+    assert llm.complete_json(messages, "a") == {"x": 1}          # second call served from disk; no answer left to pop
+    assert llm.stats["cache_hits"] == 1
+    files = list((tmp_path / "cache").rglob("*.json"))
+    assert len(files) == 1 and json.loads(files[0].read_text())["response"] == '{"x": 1}'
+    other = _llm(tmp_path, ['{"x": 2}'])
+    other.temperature = 0.9                                       # temperature is part of the key
+    assert other.complete_json(messages, "a") == {"x": 2}
+
+
+def test_bad_json_is_asked_again_then_raised(tmp_path):
+    llm = _llm(tmp_path, ["garbage", '{"ok": true}'])
+    assert llm.complete_json([{"role": "user", "content": "q"}], "t") == {"ok": True}
+    llm = _llm(tmp_path, ["garbage", "still garbage"])
+    with pytest.raises(LLMJsonError):
+        llm.complete_json([{"role": "user", "content": "q2"}], "t")
+    assert not list((tmp_path / "cache").rglob("*q2*"))
+
+
+def test_missing_api_key_fails_loudly(tmp_path, monkeypatch):
+    monkeypatch.delenv(ENV_KEY, raising=False)
+    with pytest.raises(RuntimeError, match=ENV_KEY):
+        api_key(tmp_path / "absent.env")
+    (tmp_path / ".env").write_text(f"{ENV_KEY}=sk-test\n")
+    assert api_key(tmp_path / ".env") == "sk-test"

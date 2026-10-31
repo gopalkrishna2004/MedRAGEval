@@ -64,4 +64,46 @@ uv run python -m medrageval.parse.segment $D/pages_clean.jsonl $D/pages.meta.jso
 uv run python -m medrageval.parse.structure $D/pages_clean.jsonl $D/documents.json $D
 ```
 
+### Generate the evaluation dataset
+
+Question generation picks the evidence programmatically and asks an LLM, through
+[OpenRouter](https://openrouter.ai), to write each item. Put a key in `.env`:
+
+```bash
+cp .env.example .env            # then set OPENROUTER_API_KEY=...
+uv run medrageval generate data/interim/ta1063 --dry-run     # roles, noise and candidate counts; no LLM calls
+uv run medrageval generate data/interim/ta1063 --per-type 2  # smoke run: 2 items per type
+uv run medrageval generate data/interim/ta1063               # full run: 150 items into data/datasets/ta1063/
+```
+
+Outputs: `dataset.jsonl` (one item per line), `rejects.jsonl` (every rejected
+candidate with the reason) and `generate_report.json` (counts per type and
+reason, document roles, LLM usage). Responses are cached in `data/cache/llm/`
+by model, temperature and prompt, so rerunning the same configuration makes no
+calls and writes an identical dataset; `--no-cache` disables that. The model,
+the per-type targets and every selection threshold live under `generate:` in
+[configs/default.yaml](configs/default.yaml).
+
+Seven item types, each with its own evidence selector and validity rules:
+
+| Type | Evidence the system picks | Checks before the LLM judge |
+|---|---|---|
+| Factual | one complete paragraph | the quote is in the element and contains the answer keys |
+| Numerical | a paragraph with a number and unit, or a captioned table | the answer's number is in the quote and among the evidence's numbers |
+| Comparative | a table with two arm columns or labelled rows, or a paragraph with two values of one unit | both values quoted, direction consistent with the values, answer names the winner |
+| Multi-hop | two parts of one document linked by "see Table N" or a trial name | quotes from both, question draws words from both |
+| Cross-document | a reviewing passage (EAG, clarification) paired with the company passage it refers to, shares numbers with, or best matches lexically | quotes from two documents, not copies of each other |
+| Attribution | a stance sentence ("The EAG considers..."), an expert's form answer, or a company response | answer is the speaker, speaker not named in the question, claim not restated unattributed elsewhere (BM25) |
+| Unanswerable | a value shown as `[REDACTED]`, or a plausible question the bundle does not cover | the quote carries the marker; or BM25 hits plus an LLM check find no answer |
+
+After these checks an LLM judge reviews the comparative, multi-hop and
+cross-document items (the types where a check needs reading, such as a table
+that answers a multi-hop question alone); the other types are settled by the
+programmatic checks. Rejected candidates are replaced from the selector's
+queue, up to `attempts_per_item` per accepted item.
+
+Document roles (company submission, EAG report, clarification, expert
+statements...) are detected from headings and front matter with the patterns
+under `generate.roles`; `--dry-run` prints them so a new bundle can be checked.
+
 Run the tests with `uv run pytest`.

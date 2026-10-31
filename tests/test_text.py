@@ -1,6 +1,6 @@
 import pytest
 
-from medrageval.text import contains_quote, normalize, to_plain
+from medrageval.text import contains_quote, normalize, table_rows, to_plain
 
 TABLE = (
     "<table><tr><th>Progression or death</th><th>Capivasertib<br/>(N=155)</th></tr>"
@@ -44,3 +44,19 @@ def test_quotes_with_different_content_do_not_match(quote):
 
 def test_normalize_keeps_decimals_and_symbols():
     assert normalize("Grade ≥3: 7.3% (n<5)") == "grade ≥ 3 7.3 % n < 5"
+
+
+def test_table_rows_cells_match_plain_lines():
+    rows = table_rows(TABLE)
+    assert rows == [
+        ["Progression or death", "Capivasertib (N=155)"],
+        ["Median PFS (months)†", "7.3"],
+        ["Grade ≥3 AEs", "<1"],
+    ]
+    assert [" | ".join(r) for r in rows] == to_plain(TABLE).splitlines()
+
+
+def test_table_rows_handles_colspan_markup_and_no_table():
+    html = '<table><tr><th colspan="2">**Arm**</th></tr><tr><td>a<br/>b</td><td>&amp;</td></tr></table>'
+    assert table_rows(html) == [["Arm"], ["a b", "&"]]
+    assert table_rows("no table here") == []

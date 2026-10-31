@@ -1,0 +1,112 @@
+import pytest
+from synthetic import ELEMENTS, build_corpus, config
+
+from medrageval.generate.corpus import BM25, corpus_topic, detect_roles, extract_entities, is_noise, make_units, mentions, significant_numbers, tokenize
+from medrageval.text import contains_quote
+
+CFG = config()
+
+
+@pytest.mark.parametrize(
+    "element_id, reason",
+    [
+        ("d02-e0005", "section:^references\\b"),   # reference list
+        ("d02-e0006", "short"),                    # page label fragment
+        ("d02-e0010", "text:committed to meeting the requirements of copyright"),
+        ("d01-e0002", "text:\\.{6,}"),             # contents line with dot leaders
+        ("d02-e0001", None),
+    ],
+)
+def test_noise_reasons(element_id, reason):
+    el = next(e for e in ELEMENTS if e["element_id"] == element_id)
+    assert is_noise(el, CFG) == reason
+
+
+def test_figures_are_noise():
+    el = dict(next(e for e in ELEMENTS if e["element_id"] == "d02-e0001"), type="figure")
+    assert is_noise(el, CFG) == "figure"
+
+
+def test_long_table_splits_into_row_units_with_header():
+    form = next(e for e in ELEMENTS if e["element_id"] == "d04-e0001")
+    assert len(form["plain"]) > CFG["limits"]["max_table_chars"]
+    units = make_units(form, CFG)
+    assert len(units) > 3 and all(u.unit_id.startswith("d04-e0001#r") for u in units)
+    assert all(u.element_id == "d04-e0001" and u.row_index is not None for u in units)
+    header = "1. Your name | Charlotte Moss"
+    assert all(u.plain.startswith(header) for u in units)
+    # every row line of a row unit is a line of the parent element, so a quote from it is a quote from the element
+    for u in units:
+        for line in u.plain.splitlines()[1:]:
+            assert contains_quote(line, form["plain"])
+    assert all(len(u.plain) <= CFG["limits"]["row_group_chars"] + 400 for u in units)
+
+
+def test_short_table_stays_whole():
+    table = next(e for e in ELEMENTS if e["element_id"] == "d02-e0003")
+    (u,) = make_units(table, CFG)
+    assert u.unit_id == "d02-e0003" and u.row_index is None and u.evidence
+
+
+def test_roles_from_headings_and_body():
+    c = build_corpus()
+    assert {d: c.docs[d].role for d in c.docs} == {
+        "d01": "cover", "d02": "company_submission", "d03": "eag_report", "d04": "clinical_expert", "d05": "clarification"}
+    assert c.docs["d03"].label == "EAG report"
+
+
+def test_role_override_and_other():
+    cfg = config()
+    cfg["roles"]["override"] = {"d03": "guidance"}
+    c = build_corpus(cfg)
+    assert c.docs["d03"].role == "guidance"
+    docs = [{"doc_id": "d09", "headings": ["Something else entirely"] * 3, "running_text": None}]
+    els = [dict(ELEMENTS[2], doc_id="d09", element_id=f"d09-e{i:04d}") for i in range(40)]
+    assert detect_roles(docs, els, CFG)["d09"][0] == "other"
+
+
+def test_topic_is_the_common_prefix_of_the_most_shared_title():
+    titles = [
+        "Capivasertib with fulvestrant for treating advanced breast cancer [ID6370] Patient expert statement",
+        "Capivasertib with fulvestrant for treating advanced breast cancer [ID6370] Clinical expert statement",
+        "Patient Organisation Submission", "Patient Organisation Submission",
+        "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
+    ]
+    assert corpus_topic(titles) == "Capivasertib with fulvestrant for treating advanced breast cancer [ID6370]"
+
+
+def test_cross_reference_resolves_within_document_only():
+    c = build_corpus()
+    assert c.resolve_references(c.units["d02-e0002"]) == [("table", "7", "d02-e0003")]
+    assert c.resolve_references(c.units["d03-e0004"]) == []   # "CS Table 7" is in d02, not d03
+
+
+def test_entities_learned_from_trial_context():
+    c = build_corpus()
+    assert c.entity_names == {"CAPITELLO291": "CAPItello-291"}
+    assert c.units["d02-e0001"].unit_id in c.entities["CAPITELLO291"]
+    assert extract_entities("the phase 3 trial and the PROTECT study and the ITT study", CFG) == {"PROTECT": "PROTECT"}
+    assert extract_entities("SOLAR-1 and BOLERO-2 data; HER2-negative; EQ-5D; SF-36; COVID-19", CFG) == {"SOLAR1": "SOLAR-1", "BOLERO2": "BOLERO-2"}
+    assert mentions("results of CAPItello291 were", "CAPITELLO291")
+
+
+def test_significant_numbers():
+    assert significant_numbers("£24,567 per QALY in 2023 with 0.61 QALYs and 50% of 155 patients, n=12") == {"24567", "0.61", "50", "155"}
+
+
+def test_bm25_ranks_rare_number_first_and_respects_filters():
+    c = build_corpus()
+    hits = c.bm25.search(tokenize("£24,567"), k=3)         # "24,567" tokenises as "24", "567"
+    assert {h for h, _ in hits} == {"d02-e0008", "d03-e0001", "d03-e0003"}
+    only = c.bm25.search(["567"], k=3, only={"d03-e0001"})
+    assert [h for h, _ in only] == ["d03-e0001"]
+    assert "d03-e0001" not in [h for h, _ in c.bm25.search(["567"], k=5, exclude={"d03-e0001"})]
+    assert BM25({"a": ["x"], "b": ["y"]}).search(["z"]) == []
+
+
+def test_render_has_context_header_and_flat_section_titles():
+    c = build_corpus()
+    text = c.render(c.units["d02-e0002"])
+    head, body = text.split("\n", 1)
+    assert head.startswith("[d02-e0002] Document: Company evidence submission (d02) | Section: B.2 Clinical effectiveness > B.2.6")
+    assert "Pages: 20-20" in head and body.startswith("Progression-free survival")

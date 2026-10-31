@@ -3,4 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 data/interim/
-CLAUDE.md 
+CLAUDE.md
+.env
+data/cache/
+data/

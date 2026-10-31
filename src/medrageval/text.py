@@ -35,6 +35,14 @@ def _table_to_plain(m: re.Match) -> str:
     return "\n".join(rows)
 
 
+def table_rows(text: str) -> list[list[str]]:
+    """Cells of the first HTML table in text, one list per row, cleaned like `to_plain` does."""
+    m = _TABLE.search(text)
+    if not m:
+        return []
+    return [[" ".join(to_plain(_BR.sub(" ", c)).split()) for c in _CELL.findall(row)] for row in _ROW.findall(m.group(0))]
+
+
 def to_plain(text: str) -> str:
     text = _PICTURE.sub("", text)
     text = _TABLE.sub(_table_to_plain, text)
