@@ -156,6 +156,26 @@ generate:
     primary: [company_submission, patient_summary]
     secondary: [eag_report, clarification, factual_accuracy, guidance]
     override: {}
+    # How a question names a document when that is what tells a table from
+    # its twin in another document (TA1063: the clarification response
+    # reprints the submission's goodness-of-fit table, same rows, new values).
+    mention:
+      company_submission: company submission
+      patient_summary: summary for patients
+      clarification: clarification
+      eag_report: EAG
+      factual_accuracy: factual accuracy check
+      guidance: committee
+
+  # Evidence used only when nothing else is left, for the single-passage
+  # types (factual, numerical, comparative, not-covered anchors). The
+  # summary for patients restates the submission in lay terms; in the smoke
+  # run it produced "how many men are diagnosed with breast cancer each
+  # year", which has nothing to do with the appraisal. It is 12% of TA1063's
+  # factual candidates (57 of 456) and 9% of document2's.
+  demote:
+    roles: [patient_summary, cover, other]
+    section_patterns: ['\bbackground\b', 'epidemiolog', '\bthe condition\b', 'disease overview', 'burden of (the )?(disease|illness)']
 
   # Trial and study names that link parts of a document (CAPItello-291 is in
   # 278 elements of TA1063, PROTECT in 479 of document2). A name is learned
@@ -227,6 +247,15 @@ generate:
     rare_df_max: 0.03
     min_rare_tokens: 2
     restated_containment: 0.7
+    # A claim is contested when a top BM25 hit shares half its rare words and
+    # carries another party's stance verb ("the company considers ... appropriate"
+    # against "the EAG considers ... inappropriate"). Contested claims are
+    # offered first: the answerer has to tell two positions apart instead of
+    # guessing the speaker from the subject. Stance sentences naming a second
+    # party ("the EAG agrees with the company that") are not used at all:
+    # 13 of 48 in TA1063, 18 of 70 in document2.
+    contested_top_k: 10
+    contested_containment: 0.5
 
   unanswerable:
     max_redactions: 12           # tables with 180 markers leave no label to ask about
@@ -244,10 +273,11 @@ generate:
     stated_rare_df_max: 0.03
     stated_max_tokens: 40
     # "partly" = a passage gives a closely related fact but not the one asked.
-    # Those are kept: the right answer is still "not stated", and a near miss
-    # in the retrieved context is exactly what a RAG should not turn into an
-    # answer. The verdict is stored in the item's `search` field for filtering.
-    accept_partly: true
+    # Not accepted: in the smoke run the one "partly" item asked which country
+    # contributed most participants to FAKTION, a trial the bundle calls
+    # UK-based three times, so the answer followed from the documents. The
+    # verdict is stored in the item's `search` field either way.
+    accept_partly: false
 
   judge:
     max_chars_per_unit: 2500

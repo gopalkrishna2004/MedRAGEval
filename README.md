@@ -91,10 +91,10 @@ Seven item types, each with its own evidence selector and validity rules:
 | Factual | one complete paragraph | the quote is in the element and contains the answer keys |
 | Numerical | a paragraph with a number and unit, or a captioned table | the answer's number is in the quote and among the evidence's numbers |
 | Comparative | a table with two arm columns or labelled rows (rows under a merged group cell are compared within their group), or a paragraph with two values of one unit | both values quoted, direction consistent with the values, answer names the winner |
-| Multi-hop | two parts of one document linked by "see Table N" or a trial name | quotes from both, question draws words from both |
+| Multi-hop | two parts of one document linked by "see Table N", or a sentence that describes a trial paired with a passage that gives its value | quotes from both, bridge not named or identified by its place in a list |
 | Cross-document | a reviewing passage (EAG, clarification) paired with the company passage it refers to, shares numbers with, or best matches lexically | quotes from two documents, not copies of each other |
-| Attribution | a stance sentence ("The EAG considers..."), an expert's form answer, or a company response | answer is the speaker, speaker not named in the question, claim not restated unattributed elsewhere (BM25) |
-| Unanswerable | a value shown as `[REDACTED]` that no other passage prints, or a plausible question the bundle does not cover | the quote carries the marker; or BM25 hits plus an LLM check find no answer |
+| Attribution | a stance sentence ("The EAG considers..."), an expert's form answer, or a company response; claims another party disputes come first, claims two parties share are skipped | answer is the speaker, speaker not named in the question, claim not restated unattributed elsewhere (BM25) |
+| Unanswerable | a value shown as `[REDACTED]` that no other passage prints, or a plausible question the bundle does not cover | the quote carries the marker; or BM25 hits plus an LLM check find no answer, not even partly |
 
 The generation prompt tells the model that the answerer will search the whole
 bundle, so a question has to say what sets its fact apart (population, arm,
@@ -102,10 +102,13 @@ data cut, whose figure), and asks for the question in its own words with short
 answer keys; the model may also decline evidence it cannot write a sound item
 on, and the reason is kept in `rejects.jsonl`. Every selector skips OCR'd text
 (its glyph errors would end up in questions and answer keys) and figures that
-OCR turned into tables. A table that has a
-twin in its document (same rows and columns, as in per-arm AIC tables) is used
-only when its caption tells it apart, and the question must then contain those
-words ("fulvestrant arm").
+OCR turned into tables, and uses the summary for patients and background
+sections only when nothing else is left. A table that has a twin anywhere in
+the bundle (same rows and columns, as in per-arm AIC tables or a table the
+clarification response reprints with new values) is used only when its
+caption or its document tells it apart, and the question must then contain
+those words ("fulvestrant arm", "company submission"); a table reprinted
+unchanged in another document is recorded on the item as `also_in`.
 
 After these checks an LLM judge reviews the comparative, multi-hop and
 cross-document items (the types where a check needs reading, such as a table

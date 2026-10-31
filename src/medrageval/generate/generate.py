@@ -208,7 +208,7 @@ class Run:
         }
         if cand.type == "attribution":
             sp = cand.hint.get("speaker", "")
-            rec["answer_aliases"] = [sp.removeprefix("the ")] + list(self.cfg["attribution"]["speakers"].get(sp, []))
+            rec["answer_aliases"] = list(dict.fromkeys([sp.removeprefix("the ")] + list(self.cfg["attribution"]["speakers"].get(sp, []))))
         if cand.type == "comparative":
             rec["comparison"] = {k: item.get(k) for k in ("measure", "label_a", "value_a", "label_b", "value_b", "higher")}
         if cand.type == "multihop":

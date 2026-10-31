@@ -12,7 +12,7 @@ import json
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.corpus import Corpus, Unit
 
-PROMPT_VERSION = "7"
+PROMPT_VERSION = "8"
 
 SCHEMA = ('{"question": str, "answer": str, "answer_keys": [str, ...], '
           '"quotes": [{"unit_id": str, "quote": str}, ...]}')
@@ -38,7 +38,8 @@ TYPE_INSTRUCTIONS = {
                    "The answer must say which is higher (or lower) and give both values. Add the fields \"measure\", \"label_a\", \"value_a\", \"label_b\", \"value_b\" (the two values as written) and \"higher\" (\"a\", \"b\" or \"equal\"). "
                    "Quote each row holding a value as its own entry; add the header row as another entry if the labels are only there.",
     "multihop": "Write a MULTI-HOP question with a bridge. The bridge is {link}: excerpt A describes or characterises it, excerpt B states a value or fact about it. "
-                "Ask for the value or fact in B, but refer to the bridge ONLY through A's description (what it is, how it was chosen, what was said about it). "
+                "Ask for the value or fact in B, but refer to the bridge ONLY through A's description (what it is, how it was chosen, what was said about it){bridge}. "
+                "Describe it by a property from that description, never by its place in a list or the order in which A names things (\"the second trial mentioned\" is not a description). "
                 "The question must not contain the bridge's name as written in B ({link}), nor the table or figure number, nor B's row or column label verbatim. "
                 "Test yourself: a reader holding only B must be unable to tell which row or value is asked for; a reader holding only A must not know the answer. "
                 "Add \"hop_a\" and \"hop_b\": one short sentence each on what each excerpt contributes. Quote from both excerpts.",
@@ -46,12 +47,14 @@ TYPE_INSTRUCTIONS = {
                 "Ask what the two documents say about it, or what document A concluded about document B's figure. The answer must draw on both, and you must quote from both excerpts.",
     "attribution": "Write an ATTRIBUTION question: the excerpt contains a position, argument or claim made by {speaker}. Ask WHO made it (\"Who argued that ...?\", \"Which party considered that ...?\"), "
                    "stating the claim precisely enough to identify it, but do NOT name or hint at the speaker in the question. "
+                   "State the claim as a position any of the parties in the bundle could have taken: no first person, no wording that only the speaker would use (\"our model\", \"the submission\", \"the EAG's critique\"). "
                    "The answer must be exactly \"{speaker}\" and answer_keys must be [\"{speaker_key}\"]. Quote the sentence that carries the claim.",
     "unanswerable_redacted": "Write an UNANSWERABLE question about a value that is redacted in the excerpt (shown as [REDACTED]); candidates: {labels}. "
                              "Ask for that value exactly as a reader would who expects it to be there (\"What was the ...?\"). The correct response of a QA system is that the value is not disclosed. "
                              "Set \"answer\" to null and \"answer_keys\" to []. Quote the row or sentence containing the [REDACTED] marker, including the marker.",
     "unanswerable_not_covered": "Write 3 UNANSWERABLE questions anchored in the excerpt: specific questions a reader of this appraisal ({topic}) would plausibly ask, on the same subject as the excerpt, whose answers are NOT in the excerpt, NOT in the nearby passages shown, and would not normally be in appraisal documents at all. "
-                                "Each asks for ONE specific fact (a number, date, name, value or defined category), phrased as if the answer existed, and stays within the clinical or economic subject of the excerpt: the same trial, outcome, model, population or cost. Good kinds: a timepoint, subgroup, endpoint, parameter or comparator that the appraisal does not report for this subject; a later data cut; a different dose; the value in another country's appraisal. Not: company finances, manufacturing, addresses, personnel. "
+                                "Each asks for ONE specific fact (a number, date, name, value or defined category), phrased as if the answer existed, and stays within the clinical or economic subject of the excerpt: the same trial, outcome, model, population or cost. "
+                                "The fact must not follow from what the documents do say (do not ask which country enrolled most patients in a trial the documents call UK-based). Good kinds: a timepoint, subgroup, endpoint, parameter or comparator that the appraisal does not report for this subject; a later data cut; a different dose; the value in another country's appraisal. Not: company finances, manufacturing, addresses, personnel. "
                                 "Never ask open questions that any passage on the topic answers (\"which issue did the EAG raise\"). "
                                 "Return {{\"questions\": [{{\"question\": str, \"missing_fact\": str}}, ...]}} and nothing else.",
 }
@@ -87,7 +90,7 @@ def build_generation(cand: Candidate, corpus: Corpus, cfg: dict) -> list[dict]:
     key = cand.type if cand.type != "unanswerable" else f"unanswerable_{cand.subtype}"
     fmt = dict(numbers=", ".join(h.get("numbers", [])[:25]), labels=" / ".join(h.get("labels", [])),
                what="arms, groups, timepoints or scenarios" if h.get("mode") != "rows" else "rows (treatments, states or categories) on the measure " + repr(h.get("measure", "")),
-               link=h.get("link", ""), speaker=h.get("speaker", ""), speaker_key=h.get("speaker", "").removeprefix("the ").strip(),
+               link=h.get("link", ""), bridge=f': "{h["bridge"]}"' if h.get("bridge") else "", speaker=h.get("speaker", ""), speaker_key=h.get("speaker", "").removeprefix("the ").strip(),
                topic=h.get("topic", corpus.topic))
     if cand.type == "comparative" and h.get("mode") == "prose":
         fmt["labels"] = "the two things the excerpt compares, using numbers " + ", ".join(h.get("numbers", [])[:10])
@@ -96,8 +99,8 @@ def build_generation(cand: Candidate, corpus: Corpus, cfg: dict) -> list[dict]:
         task += f"\nThe claim to use: \"{h['claim'][:400]}\""
     if h.get("must_mention"):
         phrases = ", ".join(f"\"{p}\"" for p in h["must_mention"])
-        task += (f"\nThe same document has other tables with exactly the same rows. The question must contain the words {phrases}, "
-                 f"as written in this table's caption, so a reader knows which table is meant.")
+        task += (f"\nThe bundle has other tables with exactly the same rows. The question must contain the words {phrases} "
+                 f"(from this table's caption, or the document it is in), so a reader knows which table is meant.")
     body = _excerpts(cand, corpus)
     if cand.subtype == "not_covered":
         near = corpus.neighbours(cand.units[0], cfg["unanswerable"]["neighbours"])
@@ -112,7 +115,7 @@ JUDGE_CRITERIA = {
     "numerical": "The answer's number and unit appear in the quotes and belong to the measure, arm and population the question names.",
     "comparative": "Both values appear in the quotes, the direction (higher/lower) is correct, and the two labels are the right ones. The question is not answerable from one value alone.",
     "multihop": "The question identifies its subject by a property, description or role (hop A) and asks for a value or fact about that subject (hop B). Pass when the identifying property is stated in one excerpt and the value in the other, and the value excerpt does not itself state that property. "
-                "The value excerpt naming the subject (the trial's or model's name) does NOT make it sufficient on its own: without the other excerpt a reader cannot tell that this named subject is the one the question describes. Fail only if one excerpt contains both the identifying property and the value, or if the question names the subject outright.",
+                "The value excerpt naming the subject (the trial's or model's name) does NOT make it sufficient on its own: without the other excerpt a reader cannot tell that this named subject is the one the question describes. Fail if one excerpt contains both the identifying property and the value, if the question names the subject outright, or if it identifies the subject only by its position in a list (\"the second trial named\").",
     "crossdoc": "The quotes come from two different documents and the answer reports what each says about the same figure, assumption or claim. It is fine that one document restates the other's figure; fail only if the answer is not supported by the quotes or the question does not say which documents and subject it is about.",
     "attribution": "The quoted claim is made by the party given as the answer, the question identifies that claim unambiguously, and the question does not name or hint at the party.",
     "unanswerable": "The question asks for a value that is redacted in the quote, as a reader who expected it to be present would ask.",
@@ -146,7 +149,7 @@ def build_unanswerable_check(questions: list[str], passages: list[Unit], corpus:
         {"role": "system", "content":
             f"You check whether questions about one health technology appraisal (\"{corpus.topic}\") are answered by passages retrieved from its documents. "
             'Return only a JSON object: {"results": [{"n": int, "answered": "yes" | "partly" | "no", "passage_ids": [str, ...], "answer_if_any": str | null}, ...]} with one entry per question, in order. '
-            "\"yes\" means a passage states the answer, or the question is open enough that a passage on its topic answers it; "
+            "\"yes\" means a passage states the answer, the answer follows directly from what a passage states (a trial described as UK-based answers which country enrolled its patients), or the question is open enough that a passage on its topic answers it; "
             "\"partly\" means a passage gives a closely related fact but not the fact asked for; \"no\" means nothing here bears on it. "
             f"(prompt version {PROMPT_VERSION})"},
         {"role": "user", "content": f"Questions:\n{qs}\n\nPassages:\n{shown}"},

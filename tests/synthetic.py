@@ -123,7 +123,35 @@ EXTRA_ELEMENTS = [
         path=["B.3 Cost effectiveness", "B.3.9.1 Summary of base-case analysis inputs"], caption="**Table 42. Key model variables for base case analysis**", page=115),
 ]
 
+# Elements for the third batch of selection rules: twins and copies across documents, a contested claim, a sentence that
+# lists trials without describing one, and background text that is used last. The patient summary d06 goes with them.
+MORE_ELEMENTS = [
+    _el("d03", 20, TABLE7, "table", section="d03-s003", path=["3 Clinical effectiveness", "3.2.4 Efficacy results"],
+        caption="**Table 3.3: PFS by investigator assessment in the PI3K/AKT pathway-altered population**", page=66),          # the EAG's copy
+    _el("d05", 20, TABLE7.replace("7.3", "7.2").replace("3.1", "3.6").replace("0.50 (0.38, 0.65)", "0.52 (0.40, 0.68)"), "table", section="d05-s001",
+        path=["Clarification questions", "Company response:"], caption="**Table 7. PFS by investigator assessment in the PI3K/AKT pathway-altered population**", page=131),   # new data cut
+    _el("d03", 21, "The EAG considers that the use of time to treatment discontinuation data from CAPItello-291 to model treatment duration is "
+        "inappropriate, because discontinuation and progression were not aligned in the trial.",
+        section="d03-s001", path=["5 Cost effectiveness", "5.2 EAG critique of the economic model"], page=92),
+    _el("d05", 21, "The company considers that the use of time to treatment discontinuation data from CAPItello-291 to model treatment duration is "
+        "appropriate, since discontinuation and progression were closely aligned in the trial.",
+        section="d05-s001", path=["Clarification questions", "Company response:"], page=132),
+    _el("d02", 30, "Relative effects were taken from CAPItello-291 and SOLAR-1 rather than their absolute values, because the trial populations differ "
+        "in prior treatment. Each was a phase 3 trial.", section="d02-s005", path=["B.3 Cost effectiveness", "B.3.10 Base-case results"], page=52),
+    _el("d02", 31, "Breast cancer is the most common cancer in the UK, with an estimated 600,000 prevalent diagnosed cases, and most cases are "
+        "hormone receptor-positive and HER2-negative at diagnosis.", section="d02-s008", path=["B.1 Decision problem", "B.1.3 Disease background"], page=12),
+    _el("d06", 1, "Breast cancer is the most common cancer in the UK. Over 99% of cases occur in women; around 56,400 women and 390 men are "
+        "diagnosed with breast cancer in the UK each year.", section="d06-s001", path=["Summary of Information for Patients", "2a) The condition"], page=150),
+    _el("d06", 2, "Capivasertib is taken as tablets twice a day for four days, followed by three days off, together with a fulvestrant injection "
+        "given by a nurse every four weeks after the first month.", section="d06-s001", path=["Summary of Information for Patients", "3a) How the treatment works"], page=151),
+]
+MORE_DOCUMENTS = [
+    {"doc_id": "d06", "start_page": 150, "end_page": 160, "n_pages": 11, "signals": [], "running_text": None, "headings": ["Summary of Information for Patients"]},
+]
+
 SECTIONS = [
+    {"section_id": "d02-s008", "doc_id": "d02", "parent_id": None, "depth": 1, "title": "B.1.3 Disease background", "page": 12},
+    {"section_id": "d06-s001", "doc_id": "d06", "parent_id": None, "depth": 1, "title": "Summary of Information for Patients", "page": 150},
     {"section_id": "d01-s001", "doc_id": "d01", "parent_id": None, "depth": 1, "title": "Committee Papers", "page": 1},
     {"section_id": "d02-s006", "doc_id": "d02", "parent_id": None, "depth": 1, "title": "B.3.2 Economic analysis", "page": 45},
     {"section_id": "d02-s007", "doc_id": "d02", "parent_id": None, "depth": 1, "title": "B.3.2.1 Patient population", "page": 78},
@@ -159,8 +187,8 @@ def config() -> dict:
     return cfg
 
 
-def build_corpus(cfg: dict | None = None, elements=None) -> Corpus:
-    return Corpus(Path("synthetic"), copy.deepcopy(DOCUMENTS), copy.deepcopy(SECTIONS), copy.deepcopy(elements or ELEMENTS), cfg or config())
+def build_corpus(cfg: dict | None = None, elements=None, documents=None) -> Corpus:
+    return Corpus(Path("synthetic"), copy.deepcopy(documents or DOCUMENTS), copy.deepcopy(SECTIONS), copy.deepcopy(elements or ELEMENTS), cfg or config())
 
 
 def write_interim(path: Path, elements=None) -> Path:

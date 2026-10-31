@@ -45,6 +45,16 @@ def test_twin_tables_and_their_discriminating_caption_words():
     assert "d02-e0024" not in corpus.twins and "d02-e0027" not in corpus.twins
 
 
+def test_twins_across_documents_and_copies():
+    from synthetic import DOCUMENTS, MORE_DOCUMENTS, MORE_ELEMENTS
+    corpus = build_corpus(CFG, ELEMENTS + MORE_ELEMENTS, DOCUMENTS + MORE_DOCUMENTS)
+    assert corpus.twins["d02-e0003"] == ["d05-e0020"] and corpus.copies["d02-e0003"] == ["d03-e0020"]   # same cells in the EAG report
+    assert corpus.twins["d03-e0020"] == ["d05-e0020"] and corpus.copies["d03-e0020"] == ["d02-e0003"]
+    assert corpus.discriminator(corpus.units["d02-e0003"]) == ["company submission"]                       # captions identical: the document tells
+    assert corpus.discriminator(corpus.units["d05-e0020"]) == ["clarification"]
+    assert corpus.discriminator(corpus.units["d03-e0020"]) == ["EAG"]
+
+
 def test_long_table_splits_into_row_units_with_header():
     form = next(e for e in ELEMENTS if e["element_id"] == "d04-e0001")
     assert len(form["plain"]) > CFG["limits"]["max_table_chars"]

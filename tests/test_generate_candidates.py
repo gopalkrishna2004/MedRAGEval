@@ -1,7 +1,7 @@
 from random import Random
 
 import pytest
-from synthetic import ELEMENTS, EXTRA_ELEMENTS, GROUPED, build_corpus, config
+from synthetic import DOCUMENTS, ELEMENTS, EXTRA_ELEMENTS, GROUPED, MORE_DOCUMENTS, MORE_ELEMENTS, build_corpus, config
 
 from medrageval.generate.candidates import SELECTORS, arm_columns, clean_prose, garbled, numeric_hits, spread, stated_elsewhere, table_comparison, whole_table
 from medrageval.text import table_rows
@@ -10,6 +10,7 @@ CFG = config()
 CFG["limits"]["max_per_section"] = 5     # the synthetic bundle has few sections; do not hide candidates behind the coverage cap
 CORPUS = build_corpus(CFG)
 EXTRA = build_corpus(CFG, ELEMENTS + EXTRA_ELEMENTS)
+MORE = build_corpus(CFG, ELEMENTS + MORE_ELEMENTS, DOCUMENTS + MORE_DOCUMENTS)
 
 
 def run(name, seed=1, corpus=CORPUS):
@@ -92,6 +93,38 @@ def test_twin_tables_need_a_discriminator_or_are_skipped():
     assert comp["d02-e0021"]["must_mention"] == ["fulvestrant arm"] and "d02-e0022" not in comp
 
 
+def test_twin_tables_across_documents_name_the_document_and_copies_are_recorded():
+    hints = {c.units[0].unit_id: c.hint for c in run("numerical", corpus=MORE) if c.subtype == "table"}
+    assert hints["d02-e0003"]["must_mention"] == ["company submission"] and hints["d02-e0003"]["also_in"] == ["d03-e0020"]
+    assert hints["d05-e0020"]["must_mention"] == ["clarification"] and "also_in" not in hints["d05-e0020"]
+    assert hints["d03-e0020"]["must_mention"] == ["EAG"] and hints["d03-e0020"]["also_in"] == ["d02-e0003"]
+
+
+def test_bridge_is_a_sentence_that_describes_the_entity():
+    entity = [c for c in run("multihop", corpus=MORE) if c.subtype == "entity"]
+    assert entity and all(c.hint["bridge"] and c.hint["link"].lower()[:5] in c.hint["bridge"].lower() for c in entity)
+    first = next(c for c in entity if c.units[0].unit_id == "d02-e0001")
+    assert first.hint["bridge"].startswith("CAPItello-291 was a phase 3, randomised")
+    assert "d02-e0030" not in {c.units[0].unit_id for c in entity}   # names two trials and describes neither
+
+
+def test_lay_summary_and_background_come_last():
+    order = [c.units[0].unit_id for c in run("factual", corpus=MORE)]
+    demoted = {"d06-e0001", "d06-e0002", "d02-e0031"}
+    assert demoted <= set(order) and all(order.index(d) >= len(order) - 3 for d in demoted)
+    nc = [c.units[0].unit_id for c in run("unanswerable_not_covered", corpus=MORE)]
+    assert nc.index("d06-e0001") >= len(nc) - 3
+
+
+def test_contested_claims_come_first_and_carry_the_other_side():
+    cands = run("attribution", corpus=MORE)
+    eag = [c for c in cands if c.hint["speaker"] == "the EAG"]
+    assert eag[0].units[0].unit_id == "d03-e0021" and eag[0].hint["contested_by"] == "d05-e0021"
+    company = [c for c in cands if c.hint["speaker"] == "the company"]
+    assert company[0].units[0].unit_id == "d05-e0021" and company[0].hint["contested_by"] == "d03-e0021"
+    assert all("contested_by" in c.hint for c in eag[:len([c for c in eag if "contested_by" in c.hint])])   # contested ones first, then the rest
+
+
 def test_multihop_pairs_cross_reference_and_trial_name():
     cands = run("multihop")
     assert cands[0].subtype == "entity" and cands[0].hint["link"] == "CAPItello-291"   # bridges come first
@@ -115,7 +148,7 @@ def test_attribution_speakers_from_stance_form_and_response():
     cands = run("attribution")
     by_unit = {c.units[0].unit_id: c for c in cands}
     assert by_unit["d03-e0001"].hint["speaker"] == "the EAG" and by_unit["d03-e0001"].subtype == "stance"
-    assert by_unit["d03-e0002"].hint["speaker"] == "the company" and "discontinuation" in by_unit["d03-e0002"].hint["claim"]
+    assert "d03-e0002" not in by_unit        # "the company stated ..., which the EAG accepts": both parties hold it
     forms = [c for c in cands if c.subtype == "form"]
     assert forms and all(c.hint["speaker"] == "the clinical experts" and c.units[0].element_id == "d04-e0001" for c in forms)
     assert by_unit["d05-e0002"].subtype == "response" and by_unit["d05-e0002"].hint["speaker"] == "the company"

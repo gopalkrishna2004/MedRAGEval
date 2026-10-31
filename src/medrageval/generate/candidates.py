@@ -13,11 +13,11 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from random import Random
 
-from medrageval.generate.corpus import _RANGE_DASHES, REDACTED, Corpus, Unit, mentions, significant_numbers, tokenize
+from medrageval.generate.corpus import _RANGE_DASHES, REDACTED, Corpus, Unit, entity_key, mentions, significant_numbers, tokenize
 from medrageval.text import normalize, table_rows
 
 DESCRIPTIVE = re.compile(r"\b(randomi[sz]ed|phase|double[- ]blind|placebo[- ]controlled|enrolled|recruited|multicentre|"
-                         r"multicenter|open[- ]label|primary endpoint|primary outcome|was a|is a|were randomi)", re.I)
+                         r"multicenter|open[- ]label|primary endpoint|primary outcome|was an?\b|is an?\b|were randomi)", re.I)
 TICKBOX = re.compile(r"[☐☒☑✓✔]|\[ ?x? ?\]|\byes/no\b", re.I)
 REDACTED_LABEL = [
     re.compile(r"([A-Za-z][^|\n:]{3,80}?)\s*[:|]\s*\[REDACTED\]"),
@@ -26,6 +26,7 @@ REDACTED_LABEL = [
 ]
 # A word mixing ASCII letters with two or more non-ASCII ones ("yéárs") is an OCR glyph error. One accent ("naïve") is a word.
 GARBLED = re.compile(r"\b(?=[^\W\d_]*[A-Za-z])(?=(?:[^\W\d_]*[^\x00-\x7F\W\d_]){2})[^\W\d_]+\b")
+SENTENCE = re.compile(r"(?<=[.;!?])\s+(?=[A-Z(\[\"'])")
 
 
 def garbled(text: str) -> bool:
@@ -78,6 +79,23 @@ def section_key(u: Unit) -> tuple:
     return (u.doc_id, u.section_id)
 
 
+def demoted(corpus: Corpus, u: Unit, cfg: dict) -> bool:
+    """Evidence to use only when nothing better is left: lay summaries and background sections (`demote` in the config)."""
+    dm = cfg.get("demote", {})
+    if corpus.docs[u.doc_id].role in dm.get("roles", []):
+        return True
+    title = " | ".join(u.section_path)
+    return any(re.search(pat, title, re.I) for pat in dm.get("section_patterns", []))
+
+
+def ordered(corpus: Corpus, items: list, key: Callable, rng: Random, cap: int | None, cfg: dict, unit: Callable = lambda x: x) -> Iterator:
+    """`spread` over the items that are not demoted, then over the demoted ones."""
+    main = [it for it in items if not demoted(corpus, unit(it), cfg)]
+    rest = [it for it in items if demoted(corpus, unit(it), cfg)]
+    yield from spread(main, key, rng, cap)
+    yield from spread(rest, key, rng, cap)
+
+
 def native(u: Unit, cfg: dict) -> bool:
     return cfg["limits"]["allow_ocr"] or u.source != "ocr"
 
@@ -98,13 +116,34 @@ def whole_table(u: Unit, cfg: dict, allow_redacted: bool = False) -> bool:
 
 
 def twin_hint(corpus: Corpus, u: Unit) -> dict | None:
-    """Hint fields for a table: {} without twins, {"must_mention": [...]} when its caption tells it apart, None when nothing does."""
+    """Hint fields for a table: {"must_mention": [...]} when something tells it from its twins, None when nothing does.
+
+    `also_in` lists copies of the table in other documents: the same cells, so
+    a retriever that finds the copy has found the evidence.
+    """
     phrases = corpus.discriminator(u)
-    if phrases is None:
-        return {}
-    if any(not p for p in phrases):
+    if phrases is not None and any(not p for p in phrases):
         return None
-    return {"must_mention": phrases}
+    hint = {"must_mention": phrases} if phrases else {}
+    if u.unit_id in corpus.copies:
+        hint["also_in"] = corpus.copies[u.unit_id]
+    return hint
+
+
+def bridge_sentence(plain: str, key: str, corpus: Corpus) -> str | None:
+    """The sentence that characterises an entity: names it, says what it is or how it was run, and lists at most one other entity.
+
+    A sentence that merely lists trials ("data from SOLAR-1 or BOLERO-2")
+    leaves the question nothing to describe the bridge by except its place
+    in the list.
+    """
+    for sent in SENTENCE.split(plain):
+        folded = entity_key(sent)
+        if key in folded and DESCRIPTIVE.search(sent):
+            others = sum(1 for k in corpus.entities if k != key and k in folded)
+            if others <= 1:
+                return sent.strip()
+    return None
 
 
 def numeric_hits(plain: str, cfg: dict) -> list[tuple[str, str]]:
@@ -132,6 +171,42 @@ def speaker_for(alias_text: str, cfg: dict) -> str | None:
     return None
 
 
+def agreement_patterns(cfg: dict) -> list[re.Pattern]:
+    """A second party that shares the claim: "agrees with the company that", "which the EAG accepts"."""
+    aliases = sorted({a for al in cfg["attribution"]["speakers"].values() for a in al} | set(cfg["attribution"]["speakers"]), key=len, reverse=True)
+    names = "|".join(re.escape(a) for a in aliases)
+    return [re.compile(rf"\b(?:agree[sd]?|concur(?:s|red)?|in line)\s+with\s+(?:the\s+)?({names})\b", re.I),
+            re.compile(rf"\b({names})\s+(?:also\s+)?(?:accept(?:s|ed)?|agree[sd]?|concur(?:s|red)?)\b", re.I)]
+
+
+def other_parties(text: str, speaker: str, stance: list[re.Pattern], agreement: list[re.Pattern], cfg: dict) -> set[str]:
+    """Parties other than the speaker that hold the claim too: the subject of a stance verb, or of "agrees with".
+
+    "The company's base-case ICER" names the company as the owner of a
+    figure, not as a holder of the claim, so a bare mention does not count.
+    """
+    found = {speaker_for(m.group(1), cfg) for pat in stance + agreement for m in pat.finditer(text)}
+    return found - {speaker, None}
+
+
+def contested_by(corpus: Corpus, u: Unit, claim: str, speaker: str, stance: list[re.Pattern], cfg: dict) -> str | None:
+    """A unit in which another party takes a position on the claim's subject: its rare words, under another speaker's stance verb."""
+    ac = cfg["attribution"]
+    limit = ac["rare_df_max"] * len(corpus.units)
+    rare = {t for t in tokenize(claim) if len(t) >= 3 and corpus.df.get(t, 0) <= limit}
+    if len(rare) < ac["min_rare_tokens"]:
+        return None
+    own = set(corpus.by_element.get(u.element_id, ())) | {u.unit_id}
+    for hit, _ in corpus.bm25.search(sorted(rare), k=ac["contested_top_k"], exclude=own):
+        h = corpus.units[hit]
+        if len(rare & set(h.tokens)) / len(rare) < ac["contested_containment"]:
+            continue
+        for pat in stance:
+            if any(speaker_for(m.group(1), cfg) not in (None, speaker) for m in pat.finditer(h.plain)):
+                return hit
+    return None
+
+
 def speaker_cue(plain: str, cfg: dict) -> bool:
     aliases = [a for al in cfg["attribution"]["speakers"].values() for a in al]
     return any(re.search(rf"\b{re.escape(a)}\b", plain, re.I) for a in aliases)
@@ -141,7 +216,7 @@ def speaker_cue(plain: str, cfg: dict) -> bool:
 
 def select_factual(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidate]:
     units = [u for u in corpus.units.values() if clean_prose(u, cfg)]
-    for u in spread(units, section_key, rng, cfg["limits"]["max_per_section"]):
+    for u in ordered(corpus, units, section_key, rng, cfg["limits"]["max_per_section"], cfg):
         yield Candidate("factual", None, [u])
 
 
@@ -158,7 +233,7 @@ def select_numerical(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candida
             twin = twin_hint(corpus, u)
             if len(numbers) >= 4 and twin is not None:
                 items.append((u, "table", [re.sub(r"[£$€%,\s]", "", n) for n in numbers], twin))
-    for u, sub, numbers, twin in spread(items, lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"]):
+    for u, sub, numbers, twin in ordered(corpus, items, lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"], cfg, lambda x: x[0]):
         yield Candidate("numerical", sub, [u], {"numbers": numbers[:40], **twin})
 
 
@@ -250,7 +325,7 @@ def select_comparative(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candi
             if pairs:
                 items.append((u, "prose", {"mode": "prose", "numbers": sorted({n for v in pairs.values() for n in v})}))
     for sub in ("table", "prose"):  # tables match the spec best, so they come first
-        for u, _, hint in spread([i for i in items if i[1] == sub], lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"]):
+        for u, _, hint in ordered(corpus, [i for i in items if i[1] == sub], lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"], cfg, lambda x: x[0]):
             yield Candidate("comparative", sub, [u], hint)
 
 
@@ -263,18 +338,18 @@ def select_multihop(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidat
         for uid in uids:
             by_doc[corpus.units[uid].doc_id].append(corpus.units[uid])
         for doc_id, us in by_doc.items():
-            desc = [u for u in us if clean_prose(u, cfg) and DESCRIPTIVE.search(u.plain)]
+            desc = [(u, b) for u in us if clean_prose(u, cfg) and (b := bridge_sentence(u.plain, key, corpus))]
             num = [u for u in us if (clean_prose(u, cfg) and numeric_hits(u.plain, cfg)) or (whole_table(u, cfg, allow_redacted=True) and u.caption and mentions(u.plain, key))]
             rng.shuffle(desc); rng.shuffle(num)
-            for d in desc[:6]:
+            for d, bridge in desc[:6]:
                 for n in num:
                     twin = twin_hint(corpus, n) if n.type == "table" else {}
                     if n.unit_id != d.unit_id and n.section_id != d.section_id and (d.unit_id, n.unit_id) not in seen and twin is not None:
                         seen.add((d.unit_id, n.unit_id))
-                        pairs.append((d, n, corpus.entity_names[key], twin))
+                        pairs.append((d, n, corpus.entity_names[key], twin, bridge))
                         break
-    for d, n, name, twin in spread(pairs, lambda x: (x[0].doc_id, x[2]), rng, 4):
-        yield Candidate("multihop", "entity", [d, n], {"link": name, "link_kind": "entity", **twin})
+    for d, n, name, twin, bridge in spread(pairs, lambda x: (x[0].doc_id, x[2]), rng, 4):
+        yield Candidate("multihop", "entity", [d, n], {"link": name, "link_kind": "entity", "bridge": bridge, **twin})
 
     xrefs = []
     for u in corpus.units.values():
@@ -392,6 +467,7 @@ def select_crossdoc(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidat
 def select_attribution(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidate]:
     ac = cfg["attribution"]
     stance = [re.compile(p, re.I) for p in ac["stance_patterns"]]
+    agreement = agreement_patterns(cfg)
     has_guidance = any(d.role == "guidance" for d in corpus.docs.values())
     items = []
     for u in corpus.units.values():
@@ -404,10 +480,13 @@ def select_attribution(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candi
                     if speaker == "the committee" and not has_guidance:
                         speaker = None   # "the committee agreed" here is about an earlier appraisal, not this bundle
                     if speaker:
-                        start = max(u.plain.rfind(". ", 0, m.start()) + 2, 0)
+                        prev = u.plain.rfind(". ", 0, m.start())
+                        start = prev + 2 if prev >= 0 else 0
                         end = u.plain.find(". ", m.end())
                         claim = u.plain[start: end + 1 if end > 0 else None].strip()
-                        items.append((u, "stance", speaker, claim))
+                        # "The EAG agrees with the company that ...": both parties hold the claim, so "who" has two answers
+                        if not other_parties(claim, speaker, stance, agreement, cfg):
+                            items.append((u, "stance", speaker, claim))
                     break
             else:
                 if (role == "clarification" and any(re.search(p, t, re.I) for p in ac["response_section_patterns"] for t in u.section_path[-1:])
@@ -417,12 +496,18 @@ def select_attribution(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candi
             answer = u.plain.split("\n")[-1].split(" | ")[-1].strip()
             if len(answer) >= ac["min_answer_chars"] and not TICKBOX.search(answer) and REDACTED not in answer:
                 items.append((u, "form", ac["role_speakers"][role], answer[:400]))
-    by_speaker = defaultdict(list)
-    for it in items:
-        by_speaker[it[2]].append(it)
-    queues = [list(spread(v, lambda x: section_key(x[0]), rng, 3)) for _, v in sorted(by_speaker.items())]
-    for u, sub, speaker, claim in interleave(queues):
-        yield Candidate("attribution", sub, [u], {"speaker": speaker, "claim": claim})
+    by_speaker = defaultdict(lambda: ([], []))
+    for u, sub, speaker, claim in items:
+        other = contested_by(corpus, u, claim, speaker, stance, cfg)
+        by_speaker[speaker][0 if other else 1].append((u, sub, speaker, claim, other))
+    # a claim another party disputes comes first: the answerer has to tell the positions apart, not guess from the subject
+    queues = [list(spread(first, lambda x: section_key(x[0]), rng, 3)) + list(spread(rest, lambda x: section_key(x[0]), rng, 3))
+              for _, (first, rest) in sorted(by_speaker.items())]
+    for u, sub, speaker, claim, other in interleave(queues):
+        hint = {"speaker": speaker, "claim": claim}
+        if other:
+            hint["contested_by"] = other
+        yield Candidate("attribution", sub, [u], hint)
 
 
 def stated_elsewhere(corpus: Corpus, u: Unit, cfg: dict) -> str | None:
@@ -471,7 +556,7 @@ def select_unanswerable_redacted(corpus: Corpus, cfg: dict, rng: Random) -> Iter
 
 def select_unanswerable_not_covered(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidate]:
     units = [u for u in corpus.units.values() if clean_prose(u, cfg)]
-    for u in spread(units, lambda u: (u.doc_id, u.section_path[:1][0] if u.section_path else None), rng, 2):
+    for u in ordered(corpus, units, lambda u: (u.doc_id, u.section_path[:1][0] if u.section_path else None), rng, 2, cfg):
         yield Candidate("unanswerable", "not_covered", [u], {"topic": corpus.topic})
 
 

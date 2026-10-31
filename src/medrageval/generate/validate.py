@@ -17,6 +17,8 @@ from medrageval.text import contains_quote, normalize
 
 NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 RANGE = re.compile(r"\d[\d,]*(?:\.\d+)?\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?")
+# "the second trial named", "the last-listed study": a bridge identified by its place in a list, not by a property
+POSITIONAL = re.compile(r"\b(first|second|third|fourth|fifth|last|latter|former)[- ](?:\w+[- ])?(named|listed|mentioned|cited)\b|\b(named|listed|mentioned|cited) (first|second|third|last)\b", re.I)
 
 
 def question_overlap(question: str, quotes: str) -> tuple[float, int]:
@@ -188,6 +190,7 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
         link = str(cand.hint.get("link") or "")
         if cand.subtype == "entity" and link:
             v.check("bridge_not_named", not contains_quote(link, q), f"bridge_named_in_question:{link}")
+            v.check("bridge_described", not POSITIONAL.search(q), "bridge_identified_by_position")
         if cand.subtype == "xref" and link:
             v.check("table_not_named", not contains_quote(link, q), f"table_named_in_question:{link}")
 

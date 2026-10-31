@@ -76,6 +76,25 @@ def test_model_may_skip_evidence_and_the_reason_is_recorded(tmp_path):
     assert all(0 <= i["validation"]["metrics"]["question_overlap"] <= 1 for i in items)
 
 
+def test_partly_answered_questions_are_rejected(tmp_path):
+    def hedging(messages, tag):
+        out = scripted(messages, tag)
+        if tag.startswith("check:"):
+            out["results"][0]["answered"] = "partly"
+            out["results"][0]["answer_if_any"] = "the trial is described as UK-based"
+        return out
+    interim = write_interim(tmp_path / "interim")
+    llm = FakeLLM(hedging)
+    cfg = config()
+    cfg["unanswerable"]["questions_per_anchor"] = 1
+    report = generate_dataset(interim, tmp_path / "out", cfg, llm, llm, targets={"unanswerable": 2}, types=["unanswerable"])
+    assert report["per_type"]["unanswerable"]["accepted"] == 1 and report["per_type"]["unanswerable"]["subtypes"] == {"redacted": 1}
+    rejects = [json.loads(l) for l in (tmp_path / "out" / "rejects.jsonl").open()]
+    assert any(r["stage"] == "unanswerable_check" and r["reasons"] == ["answered:partly"] and r["search"]["verdict"] == "partly" for r in rejects)
+    items = [json.loads(l) for l in (tmp_path / "out" / "dataset.jsonl").open()]
+    assert items and all(i["subtype"] == "redacted" for i in items)
+
+
 def test_shortfall_raises_after_writing(tmp_path):
     interim = write_interim(tmp_path / "interim")
     out = tmp_path / "out"

@@ -131,6 +131,8 @@ def test_multihop_question_must_draw_on_both_excerpts():
     bridged = item("In CAPItello-291, what was the median overall survival with capivasertib plus fulvestrant?", "26.0 months", ["26.0"],
                    [("d02-e0001", "a phase 3, randomised, double-blind, placebo-controlled trial"), ("d02-e0011", "median overall survival was 26.0 months")])
     assert "bridge_named_in_question:CAPItello-291" in validate(bridged, e, CORPUS, CFG, []).reasons
+    positional = {**bridged, "question": "For the second trial named in the company's survival modelling, what was the median overall survival with capivasertib plus fulvestrant?"}
+    assert "bridge_identified_by_position" in validate(positional, e, CORPUS, CFG, []).reasons
 
 
 def test_crossdoc_needs_two_documents_and_no_copies():

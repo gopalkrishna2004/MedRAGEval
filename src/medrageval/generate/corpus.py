@@ -287,7 +287,7 @@ def _caption_words(caption: str | None) -> list[str]:
 
 def _distinct_phrase(mine: list[str], theirs: list[str]) -> str:
     """The shortest run of `mine` around its first difference from `theirs` that is not a run of `theirs`."""
-    fold = lambda ws: [w.strip("(),;:.").lower() for w in ws]   # noqa: E731
+    fold = lambda ws: [re.sub(r"[^\w]", "", w.lower()) for w in ws]   # noqa: E731  ("targeted-release" is "targetedrelease")
     a, b = fold(mine), fold(theirs)
     ops = [op for op in SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] in ("replace", "delete")]
     if not ops:
@@ -349,7 +349,7 @@ class Corpus:
         self.df = self.bm25.df
         self.captions = self._caption_index(elements)
         self.entities, self.unit_entities, self.entity_names = self._entity_index()
-        self.twins = self._twin_index()
+        self.twins, self.copies = self._twin_index()
 
     # ----- indexes -----
     def _caption_index(self, elements: list[dict]) -> dict[tuple[str, str, str], str]:
@@ -398,14 +398,18 @@ class Corpus:
                 per_unit[x].add(key)
         return keep, per_unit, surface
 
-    def _twin_index(self) -> dict[str, list[str]]:
-        """unit_id -> other tables in the same document with the same row labels.
+    def _twin_index(self) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+        """unit_id -> other tables with the same row labels under the same columns, and unit_id -> copies of it.
 
         Appraisals repeat a table per arm, population or data cut (TA1063's
         clarification response has AIC tables for the capivasertib arm and
-        the fulvestrant arm with identical rows). A question about one of
-        them has to say which, so selectors ask `discriminator` for the
-        caption words that tell it apart.
+        the fulvestrant arm with identical rows), and across documents: the
+        clarification response reprints the submission's goodness-of-fit
+        table with new values, the EAG report reprints tables unchanged. A
+        question about a twin has to say which, so selectors ask
+        `discriminator` for the words that tell it apart. A twin in another
+        document with the same cells is a copy, not a twin: either is valid
+        evidence for the same question, so `copies` records it instead.
         """
         groups: dict[tuple, list[str]] = defaultdict(list)
         for uid, u in self.units.items():
@@ -414,26 +418,47 @@ class Corpus:
             rows = table_rows(u.text)
             labels = frozenset(r[0] for r in rows[1:] if r and r[0].strip())
             if len(labels) >= 3:   # same rows under the same columns; a different header is told apart by naming the measure
-                groups[(u.doc_id, " | ".join(rows[0]), labels)].append(uid)
-        return {uid: [o for o in members if o != uid] for members in groups.values() if len(members) > 1 for uid in members}
+                groups[(" | ".join(rows[0]), labels)].append(uid)
+        twins: dict[str, list[str]] = {}
+        copies: dict[str, list[str]] = {}
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            cells = {m: [[normalize(c) for c in r] for r in table_rows(self.units[m].text)] for m in members}
+            for uid in members:
+                same = [o for o in members if o != uid and self.units[o].doc_id != self.units[uid].doc_id and cells[o] == cells[uid]]
+                other = [o for o in members if o != uid and o not in same]
+                if same:
+                    copies[uid] = same
+                if other:
+                    twins[uid] = other
+        return twins, copies
 
     def discriminator(self, unit: Unit) -> list[str] | None:
-        """Caption phrases that set this table apart from each twin; None without twins; "" for a twin it cannot be told from.
+        """Phrases that set this table apart from each twin; None without twins; "" for a twin it cannot be told from.
 
         Each phrase is the shortest run of caption words around a difference
         that does not occur in the twin's caption ("fulvestrant arm" against
         "capivasertib arm"). The table number is left out: questions must not
-        rely on it.
+        rely on it. When the captions say nothing and the twin is in another
+        document, the document does ("company submission" against
+        "clarification", from roles.mention).
         """
         twins = self.twins.get(unit.unit_id)
         if not twins:
             return None
         mine = _caption_words(unit.caption)
+        mention = self.cfg["roles"].get("mention", {})
         out = []
         for t in twins:
-            theirs = _caption_words(self.units[t].caption)
-            out.append(_distinct_phrase(mine, theirs))
-        return sorted(set(out))
+            phrase = _distinct_phrase(mine, _caption_words(self.units[t].caption))
+            if not phrase and self.units[t].doc_id != unit.doc_id:
+                own, theirs = mention.get(self.docs[unit.doc_id].role, ""), mention.get(self.docs[self.units[t].doc_id].role, "")
+                phrase = own if own and own != theirs else ""
+            out.append(phrase)
+        phrases = set(out)
+        # "Scenario" against one twin and "Scenario 1" against another: the longer phrase covers both
+        return sorted(p for p in phrases if not any(o != p and p.lower() in o.lower() for o in phrases))
 
     # ----- queries -----
     def unit_for_element(self, element_id: str) -> Unit | None:
