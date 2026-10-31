@@ -52,8 +52,11 @@ def test_comparative_rows_mode_for_treatment_rows():
             ["Fulvestrant", "[REDACTED]", "1.20"]]
     hint = table_comparison(rows, CFG, Random(0))
     assert hint["mode"] == "rows" and hint["measure"] == "Total costs (£)"
-    assert hint["labels"] == ["Capivasertib + fulvestrant", "Alpelisib + fulvestrant", "Everolimus + exemestane"]   # the redacted row is skipped
+    assert hint["labels"] == ["Capivasertib + fulvestrant", "Alpelisib + fulvestrant"]   # the closest pair; the redacted row is skipped
     assert hint["rows"][0] == "Capivasertib + fulvestrant | £61,210 | 2.85"
+    aes = [["AE", "Alpelisib", "Everolimus"], ["Diarrhoea", "7.7% (13/169)", "3.00%"], ["Rash", "13.0% (22/169)", "1.00%"],
+           ["Rash maculo-papular", "0.0% (NR)", "0.0% (NR)"], ["Stomatitis", "3.0% (5/169)", "8.0%"]]
+    assert table_comparison(aes, CFG, Random(0))["labels"] == ["Diarrhoea", "Rash"]   # 7.7 vs 13.0 are closest; never the 0.0 row
 
 
 def test_comparative_rows_mode_compares_within_a_group():

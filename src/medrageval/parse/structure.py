@@ -21,6 +21,7 @@ import json
 import re
 from pathlib import Path
 
+from medrageval.parse.tables import repair_tables
 from medrageval.text import to_plain
 
 HEADING_CLASSES = {"title", "section-header"}
@@ -153,7 +154,11 @@ def structure_document(doc: dict, pages: list[dict]) -> tuple[list[dict], list[d
                 "redactions": box["redactions"],
             })
 
-    return sections, _attach_captions(_join_continued_tables(elements))
+    elements = _join_continued_tables(elements)
+    for el in elements:
+        if el["type"] == "table":
+            el["text"] = repair_tables(el["text"])
+    return sections, _attach_captions(elements)
 
 
 def _join_continued_tables(elements: list[dict]) -> list[dict]:

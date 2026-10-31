@@ -416,7 +416,8 @@ class Corpus:
             if u.type != "table" or u.row_index is not None or not u.caption:
                 continue
             rows = table_rows(u.text)
-            labels = frozenset(r[0] for r in rows[1:] if r and r[0].strip())
+            # a row's label, leaving out notes and sub-headings (a label with nothing after it)
+            labels = frozenset(r[0] for r in rows[1:] if r and r[0].strip() and any(c.strip() for c in r[1:]))
             if len(labels) >= 3:   # same rows under the same columns; a different header is told apart by naming the measure
                 groups[(" | ".join(rows[0]), labels)].append(uid)
         twins: dict[str, list[str]] = {}

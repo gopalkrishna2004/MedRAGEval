@@ -44,12 +44,16 @@ EXPECTED = {
                   "d08": "eag_report", "d09": "factual_accuracy", "d10": "clinical_expert", "d12": "patient_expert"},
         "topic": "Sparsentan for treating primary IgA nephropathy",
         "entities": ["PROTECT", "NefIgArd"],
+        # 14 redacted: the table repair rejoined a row whose label had been the fragment "scheme (if", and the marker now
+        # follows prose ("available for sparsentan [REDACTED].") rather than a cell separator, so it has no label to ask about
         "min_candidates": {"factual": 400, "numerical": 150, "comparative": 100, "multihop": 60, "crossdoc": 60,
-                           "attribution": 100, "unanswerable_redacted": 15, "unanswerable_not_covered": 30},
+                           "attribution": 100, "unanswerable_redacted": 14, "unanswerable_not_covered": 30},
         "crossdoc_pair": ("d08", "d02"),
         # base-case results at list and PAS price (company and clarification), transition matrices per arm and period (EAG)
-        "twins": {"d02-e0685": ["List", "company submission"], "d02-e0687": ["PAS", "company submission"], "d04-e0371": ["List", "clarification"],
-                  "d04-e0376": ["clarification"], "d08-e0391": ["Weeks 0-12", "group", "sparsentan"], "d08-e0399": ["Weeks 12-108", "irbesartan"]},
+        # base-case results at list and PAS price (company and clarification) and the age-adjusted utility scenario share the rows
+        "twins": {"d02-e0685": ["Base-case", "List", "company submission"], "d02-e0687": ["Base-case", "PAS", "company submission"],
+                  "d04-e0371": ["Base-case", "List", "clarification"], "d04-e0376": ["clarification"],
+                  "d08-e0391": ["Weeks 0-12", "group", "sparsentan"], "d08-e0399": ["Weeks 12-108", "irbesartan"]},
         "copies": {},
         "not_a_bridge": [],
         "two_party_stance": None,

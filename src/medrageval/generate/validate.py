@@ -144,12 +144,14 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
         if not any(normalize(k) in lb or lb in normalize(k) for lb in labels if lb):   # a comparative question has to name both compared things
             v.check("answer_key_not_in_question", not contains_quote(k, q), f"answer_key_in_question:{k[:40]}")
     v.check("keys_clean", not any(garbled(k) for k in keys), "answer_key_garbled")
-    for k in keys:
-        v.check("key_length", len(normalize(k).split()) <= cfg["validate"]["max_key_tokens"], f"answer_key_too_long:{k[:40]}")
+    for k in keys:   # words, not tokens: "NHS reference costs 2021-22" is four
+        v.check("key_length", len(k.split()) <= cfg["validate"]["max_key_tokens"], f"answer_key_too_long:{k[:40]}")
     for phrase in cand.hint.get("must_mention", []):   # a table with twins: the question has to say which one
         v.check("question_mentions_discriminator", contains_quote(phrase, q), f"question_lacks_discriminator:{phrase[:40]}")
+    # a quoted caption does not count as copying: the question has to reuse its words to say which table is meant
+    substantive = [qt for qt, u in zip(found, quoted_units) if not (u.caption and contains_quote(qt, u.caption))] or found
     if found:
-        overlap, shared = question_overlap(q, joined)
+        overlap, shared = question_overlap(q, "\n".join(substantive))
         v.metrics["question_overlap"] = round(overlap, 2)
         if t != "attribution":   # an attribution question has to state the claim; the others must not echo the quote
             vc = cfg["validate"]

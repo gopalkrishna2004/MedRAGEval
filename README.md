@@ -64,6 +64,12 @@ uv run python -m medrageval.parse.segment $D/pages_clean.jsonl $D/pages.meta.jso
 uv run python -m medrageval.parse.structure $D/pages_clean.jsonl $D/documents.json $D
 ```
 
+Step 4 also repairs the tables, which the converter writes one row per printed
+line: a two-line column header becomes one, a row label wrapped onto its own
+line or across its value rows is joined (and spans those rows as a rowspan),
+a note split across cells becomes one cell, and repeated header rows and
+empty columns are dropped. See `src/medrageval/parse/tables.py`.
+
 ### Generate the evaluation dataset
 
 Question generation picks the evidence programmatically and asks an LLM, through
@@ -90,7 +96,7 @@ Seven item types, each with its own evidence selector and validity rules:
 |---|---|---|
 | Factual | one complete paragraph | the quote is in the element and contains the answer keys |
 | Numerical | a paragraph with a number and unit, or a captioned table | the answer's number is in the quote and among the evidence's numbers |
-| Comparative | a table with two arm columns or labelled rows (rows under a merged group cell are compared within their group), or a paragraph with two values of one unit | both values quoted, direction consistent with the values, answer names the winner |
+| Comparative | a table with two arm columns (first), or labelled rows of one column (the two rows with the closest differing values, within a merged group), or a paragraph with two values of one unit | both values quoted, direction consistent with the values, answer names the winner |
 | Multi-hop | two parts of one document linked by "see Table N", or a sentence that describes a trial paired with a passage that gives its value | quotes from both, bridge not named or identified by its place in a list |
 | Cross-document | a reviewing passage (EAG, clarification) paired with the company passage it refers to, shares numbers with, or best matches lexically | quotes from two documents, not copies of each other |
 | Attribution | a stance sentence ("The EAG considers..."), an expert's form answer, or a company response; claims another party disputes come first, claims two parties share are skipped | answer is the speaker, speaker not named in the question, claim not restated unattributed elsewhere (BM25) |

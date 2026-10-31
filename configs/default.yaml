@@ -298,9 +298,14 @@ generate:
     # and is the right question. Smoke run: 0.36-0.48 for questions in their
     # own words, 0.75-0.89 for attribution (exempt: it states the claim).
     # The share is recorded on every item as validation.metrics.question_overlap.
+    # Quotes that are the table's caption are left out of the comparison: the
+    # second smoke run rejected a sound Table 16 item at 0.84 because the
+    # question repeated the caption it had quoted, as rule 2 asks.
     max_question_overlap: 0.7
     echo_min_shared: 10
-    # An answer key is a value, a name or a short phrase. The smoke run's
-    # one long key, "latest NHS reference costs (202122)", copied a parse
-    # defect and would have failed a correct answer.
+    # An answer key is a value, a name or a short phrase, counted in words:
+    # "NHS reference costs 2021-22" is four (two sound items were lost when
+    # the year counted as two tokens). The smoke run's one long key, "latest
+    # NHS reference costs (202122)", copied a parse defect and would have
+    # failed a correct answer.
     max_key_tokens: 4

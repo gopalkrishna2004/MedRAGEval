@@ -284,16 +284,47 @@ def table_comparison(rows: list[list[str]], cfg: dict, rng: Random, extra: list[
             for r in good:
                 groups[r[0]].append(r)
             pick = [g for g in groups.values() if len({" ".join(r[:width]) for r in g}) >= 2]
-            labels = [" ".join(r[:width]) for r in (pick[rng.randrange(len(pick))] if pick else good)]   # no repeating group: both columns just name the row
-            if len(set(labels)) < 2:
-                continue
+            chosen = pick[rng.randrange(len(pick))] if pick else good   # no repeating group: both columns just name the row
         else:
-            labels = [r[0] for r in good]
-            if len(set(labels)) < 2:
-                continue
-        return {"mode": "rows", "labels": labels[:8], "measure": header[j],
+            chosen = good
+        pair = closest_pair([(" ".join(r[:width]), r[j]) for r in chosen])
+        if not pair:
+            continue
+        return {"mode": "rows", "labels": list(pair), "measure": header[j],
                 "header": " | ".join(header), "rows": [" | ".join(r) for r in good][:cc["max_rows"]]}
     return None
+
+
+def closest_pair(labelled: list[tuple[str, str]]) -> tuple[str, str] | None:
+    """The two labels whose values differ by the least, both non-zero when any such pair exists.
+
+    Left to itself the model compared diarrhoea (7.7%) with maculo-papular
+    rash (0.0%): true, and nothing to work out. Close values make the
+    answerer read both rows; a zero is kept only when every pair has one.
+    """
+    values = []
+    for label, cell in labelled:
+        n = _number(cell)
+        if n is not None and label.strip():
+            values.append((label, n))
+    pairs = []
+    for i in range(len(values)):
+        for k in range(i + 1, len(values)):
+            (la, a), (lb, b) = values[i], values[k]
+            if la != lb and a != b:
+                pairs.append((a == 0 or b == 0, abs(a - b) / max(abs(a), abs(b)), la, lb))
+    if not pairs:
+        return None
+    zero, _, la, lb = min(pairs)
+    return la, lb
+
+
+def _number(cell: str) -> float | None:
+    m = re.match(r"[£$€]?\s?[<>≤≥]?(-?\d[\d,]*(?:\.\d+)?)", cell.strip())
+    try:
+        return float(m.group(1).replace(",", "")) if m else None
+    except ValueError:
+        return None
 
 
 def label_width(rows: list[list[str]]) -> int:
@@ -324,8 +355,10 @@ def select_comparative(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candi
             pairs = {k: v for k, v in by_unit.items() if len(set(v)) >= 2}
             if pairs:
                 items.append((u, "prose", {"mode": "prose", "numbers": sorted({n for v in pairs.values() for n in v})}))
-    for sub in ("table", "prose"):  # tables match the spec best, so they come first
-        for u, _, hint in ordered(corpus, [i for i in items if i[1] == sub], lambda x: section_key(x[0]), rng, cfg["limits"]["max_per_section"], cfg, lambda x: x[0]):
+    # the same measure across arms or scenarios (columns) matches the spec best; rows of one column next; prose last
+    for sub, mode in (("table", "columns"), ("table", "rows"), ("prose", "prose")):
+        for u, _, hint in ordered(corpus, [i for i in items if i[1] == sub and i[2]["mode"] == mode], lambda x: section_key(x[0]), rng,
+                                  cfg["limits"]["max_per_section"], cfg, lambda x: x[0]):
             yield Candidate("comparative", sub, [u], hint)
 
 
