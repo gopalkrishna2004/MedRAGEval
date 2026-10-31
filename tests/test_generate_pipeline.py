@@ -60,6 +60,22 @@ def test_end_to_end_writes_dataset_rejects_and_report(tmp_path):
     assert json.loads((out / "generate_report.json").read_text())["items"] == 4
 
 
+def test_model_may_skip_evidence_and_the_reason_is_recorded(tmp_path):
+    def picky(messages, tag):
+        if len(llm.calls) == 1:   # declines the first excerpt it is given
+            return {"skip": "generic statement, nothing specific to ask"}
+        return scripted(messages, tag)
+    interim = write_interim(tmp_path / "interim")
+    llm = FakeLLM(picky)
+    report = generate_dataset(interim, tmp_path / "out", config(), llm, llm, targets={"factual": 2}, types=["factual"])
+    rejects = [json.loads(l) for l in (tmp_path / "out" / "rejects.jsonl").open()]
+    skipped = [r for r in rejects if r["stage"] == "skipped"]
+    assert len(skipped) == 1 and skipped[0]["reasons"] == ["skip:generic statement, nothing specific to ask"] and skipped[0]["item_id"] is None
+    assert report["per_type"]["factual"]["accepted"] == 2 and report["per_type"]["factual"]["rejected_by_reason"]["skip"] == 1
+    items = [json.loads(l) for l in (tmp_path / "out" / "dataset.jsonl").open()]
+    assert all(0 <= i["validation"]["metrics"]["question_overlap"] <= 1 for i in items)
+
+
 def test_shortfall_raises_after_writing(tmp_path):
     interim = write_interim(tmp_path / "interim")
     out = tmp_path / "out"

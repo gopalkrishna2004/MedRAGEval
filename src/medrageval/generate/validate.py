@@ -16,6 +16,19 @@ from medrageval.generate.corpus import REDACTED, Corpus, tokenize
 from medrageval.text import contains_quote, normalize
 
 NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
+RANGE = re.compile(r"\d[\d,]*(?:\.\d+)?\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?")
+
+
+def question_overlap(question: str, quotes: str) -> tuple[float, int]:
+    """(share, count) of the question's content words that occur in the quotes: 1.0 is the quote turned into a question.
+
+    Numbers are left out: a question about a figure has to name it. The
+    count matters because a short question is mostly names (drug, trial,
+    measure) and shares nearly all of them without copying anything.
+    """
+    q = {t for t in token_set(question) if not NUMBER.fullmatch(t)}
+    shared = len(q & token_set(quotes))
+    return shared / max(len(q), 1), shared
 
 
 @dataclass
@@ -23,6 +36,7 @@ class Verdict:
     ok: bool = True
     reasons: list[str] = field(default_factory=list)
     checks: dict[str, bool] = field(default_factory=dict)
+    metrics: dict[str, float] = field(default_factory=dict)   # measured, not judged: written to the item for reporting
 
     def check(self, name: str, ok: bool, reason: str | None = None) -> bool:
         self.checks[name] = bool(ok)
@@ -59,6 +73,10 @@ def _number(s: str) -> float | None:
         return float(m.group(0).replace(",", "")) if m else None
     except ValueError:
         return None
+
+
+def _range(s: str) -> str:
+    return re.sub(r"[\s,]", "", s).replace("–", "-").replace("‒", "-").replace("—", "-")
 
 
 def _mentions(label: str, text: str) -> bool:
@@ -124,15 +142,26 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
         if not any(normalize(k) in lb or lb in normalize(k) for lb in labels if lb):   # a comparative question has to name both compared things
             v.check("answer_key_not_in_question", not contains_quote(k, q), f"answer_key_in_question:{k[:40]}")
     v.check("keys_clean", not any(garbled(k) for k in keys), "answer_key_garbled")
+    for k in keys:
+        v.check("key_length", len(normalize(k).split()) <= cfg["validate"]["max_key_tokens"], f"answer_key_too_long:{k[:40]}")
     for phrase in cand.hint.get("must_mention", []):   # a table with twins: the question has to say which one
         v.check("question_mentions_discriminator", contains_quote(phrase, q), f"question_lacks_discriminator:{phrase[:40]}")
+    if found:
+        overlap, shared = question_overlap(q, joined)
+        v.metrics["question_overlap"] = round(overlap, 2)
+        if t != "attribution":   # an attribution question has to state the claim; the others must not echo the quote
+            vc = cfg["validate"]
+            v.check("question_not_echo", overlap <= vc["max_question_overlap"] or shared < vc["echo_min_shared"], f"question_echoes_quote:{overlap:.2f}")
 
     if t == "numerical":
         nums = [n for k in keys for n in NUMBER.findall(k)]
         v.check("key_has_number", bool(nums), "answer_key_without_number")
-        hint = {float(x.replace(",", "")) for x in cand.hint.get("numbers", []) if _number(x) is not None}
-        if hint and nums:
-            v.check("number_in_hint", any(_number(n) in hint for n in nums), "number_not_in_evidence_numbers")
+        hint_ranges = {_range(x) for x in cand.hint.get("numbers", []) if RANGE.fullmatch(x)}
+        hint = {float(x.replace(",", "")) for x in cand.hint.get("numbers", []) if not RANGE.fullmatch(x) and _number(x) is not None}
+        if (hint or hint_ranges) and nums:
+            ranges = {_range(r) for k in keys for r in RANGE.findall(k)}
+            # a range in the evidence ("40-50%") is one value: a key must carry the whole range, not one end
+            v.check("number_in_hint", bool(ranges & hint_ranges) or any(_number(n) in hint for n in nums), "number_not_in_evidence_numbers")
 
     elif t == "comparative":
         va, vb = item.get("value_a"), item.get("value_b")

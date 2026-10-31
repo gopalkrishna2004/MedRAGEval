@@ -62,6 +62,8 @@ class Run:
             raw = self.gen.complete_json(build_generation(cand, self.corpus, self.cfg), tag)
         except LLMJsonError as e:
             return [{"cand": cand, "item": {}, "stage": "generation", "reasons": [f"bad_json:{e}"[:200]]}]
+        if raw.get("skip"):   # the model may decline evidence it cannot write a sound item on; the reason goes to rejects.jsonl
+            return [{"cand": cand, "item": raw, "stage": "skipped", "reasons": [f"skip:{str(raw['skip'])[:120]}"]}]
         if cand.subtype == "not_covered":
             return self._check_not_covered(cand, [q for q in (raw.get("questions") or [])[:self.cfg["unanswerable"]["questions_per_anchor"]] if isinstance(q, dict)])
         verdict = validate(raw, cand, self.corpus, self.cfg, [])
@@ -201,7 +203,8 @@ class Run:
             "provenance": {"candidate_id": cand.candidate_id, "model": self.gen.model, "judge_model": self.judge.model,
                            "prompt_version": PROMPT_VERSION, "seed": self.seed, "interim_dir": str(self.corpus.interim_dir),
                            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")},
-            "validation": {"programmatic": res.get("verdict").checks if res.get("verdict") else {}, "judge": res.get("judge")},
+            "validation": {"programmatic": res.get("verdict").checks if res.get("verdict") else {}, "judge": res.get("judge"),
+                           "metrics": res.get("verdict").metrics if res.get("verdict") else {}},
         }
         if cand.type == "attribution":
             sp = cand.hint.get("speaker", "")

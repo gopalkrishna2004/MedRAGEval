@@ -29,6 +29,23 @@ def test_good_factual_item_passes():
     assert v.ok and v.reasons == []
 
 
+def test_question_must_not_echo_the_quote():
+    echo = {**GOOD_FACTUAL, "question": "Was CAPItello-291 a phase 3, randomised, double-blind, placebo-controlled trial of capivasertib plus fulvestrant in adults?"}
+    v = validate(echo, cand("factual", "d02-e0001"), CORPUS, CFG, [])
+    assert any(r.startswith("question_echoes_quote:") for r in v.reasons)
+    assert validate(GOOD_FACTUAL, cand("factual", "d02-e0001"), CORPUS, CFG, []).checks["question_not_echo"]
+    # attribution has to state the claim, so it is exempt
+    c = cand("attribution", "d03-e0001", subtype="stance", speaker="the EAG", claim="The EAG considers that the company's base-case ICER underestimates uncertainty")
+    it = item("Who considers that the company's base-case ICER of £24,567 per QALY gained underestimates uncertainty because the proportional hazards assumption was not met?",
+              "the EAG", ["EAG"], [("d03-e0001", "The EAG considers that the company's base-case ICER of £24,567 per QALY gained")])
+    assert "question_not_echo" not in validate(it, c, CORPUS, CFG, []).checks
+
+
+def test_answer_keys_are_short():
+    long = {**GOOD_FACTUAL, "answer_keys": ["phase 3", "randomised, double-blind, placebo-controlled trial of capivasertib"]}
+    assert any(r.startswith("answer_key_too_long:") for r in validate(long, cand("factual", "d02-e0001"), CORPUS, CFG, []).reasons)
+
+
 def test_garbled_answer_key_rejected():
     v = validate({**GOOD_FACTUAL, "answer_keys": ["phase 3", "yéárs"]}, cand("factual", "d02-e0001"), CORPUS, CFG, [])
     assert "answer_key_garbled" in v.reasons

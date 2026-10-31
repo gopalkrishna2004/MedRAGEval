@@ -30,6 +30,8 @@ def test_numerical_prose_and_table_candidates():
     assert {"24567", "0.61"} <= set(cands["d02-e0008"].hint["numbers"])
     assert cands["d02-e0003"].subtype == "table" and "7.3" in cands["d02-e0003"].hint["numbers"]
     assert numeric_hits("a cost of £1,200 over 6 months and 13% of patients", CFG) == [("1200", "£"), ("6", "months"), ("13", "%")]
+    # a range is one value, so "40-50%" is never two comparable numbers and never asked for by one end
+    assert numeric_hits("Around 40-50% of people, costing £1,000–2,000 over 3-6 months in 2021-22", CFG) == [("40-50", "%"), ("1000-2000", "£"), ("3-6", "months")]
 
 
 def test_comparative_table_arm_columns_and_prose():

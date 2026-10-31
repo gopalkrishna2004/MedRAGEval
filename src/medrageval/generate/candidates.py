@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from random import Random
 
-from medrageval.generate.corpus import REDACTED, Corpus, Unit, mentions, significant_numbers, tokenize
+from medrageval.generate.corpus import _RANGE_DASHES, REDACTED, Corpus, Unit, mentions, significant_numbers, tokenize
 from medrageval.text import normalize, table_rows
 
 DESCRIPTIVE = re.compile(r"\b(randomi[sz]ed|phase|double[- ]blind|placebo[- ]controlled|enrolled|recruited|multicentre|"
@@ -108,17 +108,18 @@ def twin_hint(corpus: Corpus, u: Unit) -> dict | None:
 
 
 def numeric_hits(plain: str, cfg: dict) -> list[tuple[str, str]]:
-    """(number, unit) pairs: a number followed by a unit pattern, or preceded by a currency sign."""
+    """(number, unit) pairs: a number, or a range ("40-50"), followed by a unit pattern or preceded by a currency sign."""
     out = []
-    for m in re.finditer(r"\d[\d,]*(?:\.\d+)?", plain):
+    for m in re.finditer(r"\d[\d,]*(?:\.\d+)?(?:\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?)?", plain):
+        number = re.sub(r"[\s,]", "", m.group(0)).translate(_RANGE_DASHES)
         before = plain[max(0, m.start() - 2):m.start()].strip()
         tail = plain[m.end():m.end() + 14]
         if before in ("£", "$", "€"):
-            out.append((m.group(0).replace(",", ""), before))
+            out.append((number, before))
             continue
         for pat in cfg["numeric_patterns"]:
             if re.match(r"\s?" + pat, tail, re.I):
-                out.append((m.group(0).replace(",", ""), re.match(r"\s?" + pat, tail, re.I).group(0).strip()))
+                out.append((number, re.match(r"\s?" + pat, tail, re.I).group(0).strip()))
                 break
     return out
 

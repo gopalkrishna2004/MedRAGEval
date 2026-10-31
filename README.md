@@ -96,8 +96,13 @@ Seven item types, each with its own evidence selector and validity rules:
 | Attribution | a stance sentence ("The EAG considers..."), an expert's form answer, or a company response | answer is the speaker, speaker not named in the question, claim not restated unattributed elsewhere (BM25) |
 | Unanswerable | a value shown as `[REDACTED]` that no other passage prints, or a plausible question the bundle does not cover | the quote carries the marker; or BM25 hits plus an LLM check find no answer |
 
-Every selector skips OCR'd text (its glyph errors would end up in questions
-and answer keys) and figures that OCR turned into tables. A table that has a
+The generation prompt tells the model that the answerer will search the whole
+bundle, so a question has to say what sets its fact apart (population, arm,
+data cut, whose figure), and asks for the question in its own words with short
+answer keys; the model may also decline evidence it cannot write a sound item
+on, and the reason is kept in `rejects.jsonl`. Every selector skips OCR'd text
+(its glyph errors would end up in questions and answer keys) and figures that
+OCR turned into tables. A table that has a
 twin in its document (same rows and columns, as in per-arm AIC tables) is used
 only when its caption tells it apart, and the question must then contain those
 words ("fulvestrant arm").

@@ -12,23 +12,27 @@ import json
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.corpus import Corpus, Unit
 
-PROMPT_VERSION = "6"
+PROMPT_VERSION = "7"
 
 SCHEMA = ('{"question": str, "answer": str, "answer_keys": [str, ...], '
           '"quotes": [{"unit_id": str, "quote": str}, ...]}')
 
 RULES = """Rules for every item:
 1. The question must be answerable from the excerpt(s) alone, and must stand on its own for a reader who has not seen them: name the drug, trial, population, comparator, outcome or document type involved. Never write "this table", "the excerpt", "above", "the following". Keep it under 35 words.
-2. Do not put the answer in the question, and do not use knowledge from outside the excerpts.
-3. "answer": one sentence at most, specific. "answer_keys": 1 to 4 short strings (a number with its unit, a name, a short phrase) that a correct answer must contain and that appear verbatim in your quotes. Never include in answer_keys anything the question already says.
-4. "quotes": entries of {"unit_id": the id shown in brackets, "quote": a contiguous span copied verbatim from that excerpt, 5 to 80 words}. The quote must contain the fact the answer rests on. From a table, quote one row per entry (several entries are fine); never join rows or cells from different lines.
-5. Prefer facts specific to this appraisal (results, assumptions, costs, criticisms, positions) over boilerplate and generic background.
+2. The system answering will search all the documents listed above, not just these excerpts. Similar figures exist elsewhere in the bundle, so say what sets this one apart: the population, arm, data cut, scenario, timepoint, or whose figure it is (the company's, the EAG's).
+3. Put the question in your own words. Reuse the excerpt's wording only for names, numbers and technical terms, never its phrases: a question that can be answered by matching its words to the excerpt is too easy.
+4. Do not put the answer in the question, and do not use knowledge from outside the excerpts.
+5. "answer": one sentence at most, specific. "answer_keys": 1 to 4 strings that a correct answer must contain and that appear verbatim in your quotes; each is a number with its unit, a name, or a phrase of at most four words, never a clause. Never include in answer_keys anything the question already says.
+6. "quotes": entries of {"unit_id": the id shown in brackets, "quote": a contiguous span copied verbatim from that excerpt, 5 to 80 words}. The quote must contain the fact the answer rests on. From a table, quote one row per entry (several entries are fine); never join rows or cells from different lines.
+7. Prefer facts specific to this appraisal (results, assumptions, costs, criticisms, positions) over boilerplate and generic background.
+8. If the excerpt cannot carry a sound item of this type (garbled text, a trivial or generic fact, rows or values that cannot be told apart, a comparison that means nothing), return {"skip": <one short reason>} instead of forcing one.
 Return only a JSON object."""
 
 TYPE_INSTRUCTIONS = {
     "factual": "Write a FACTUAL question: it asks for one fact that a single sentence of the excerpt states (a definition, a design feature, a decision, a reason).",
     "numerical": "Write a NUMERICAL question: the answer is a specific number with its unit (a percentage, a count, a cost, a duration, a ratio) taken from the excerpt. "
-                 "The number must be one of these, written as in the excerpt: {numbers}. Put the number with its unit in answer_keys. Say which measure, arm and population it belongs to in the question.",
+                 "The number must be one of these, written as in the excerpt: {numbers}. A range (40-50%) is one value: ask for the range, never for one end of it. "
+                 "Put the number with its unit in answer_keys. Say which measure, arm and population it belongs to in the question.",
     "comparative": "Write a COMPARATIVE question: it compares two values of the SAME measure for two {what}. Use these two: {labels}. "
                    "Name both compared things in the question (the two arms, groups, timepoints or scenarios), and the measure; if the table holds several timepoints, subgroups or measures, say which one you mean, so exactly one pair of values fits. "
                    "The answer must say which is higher (or lower) and give both values. Add the fields \"measure\", \"label_a\", \"value_a\", \"label_b\", \"value_b\" (the two values as written) and \"higher\" (\"a\", \"b\" or \"equal\"). "

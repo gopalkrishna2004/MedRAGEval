@@ -38,6 +38,7 @@ REFERENCE_RE = re.compile(
     r"\s+(Table|Figure)\s+([A-Z]?\d+(?:\.\d+)?)\b", re.I)
 YEAR_RE = re.compile(r"^(?:19|20)\d\d$")
 NUMBER_RE = re.compile(r"[£$€]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?%|\d+\.\d+|\d[\d,]{2,}")
+RANGE_RE = re.compile(r"[£$€]?\s?(\d[\d,]*(?:\.\d+)?\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?)(?=\s?%|\s?(?:months?|years?|weeks?|days?|mg|patients|participants)\b)|[£$€]\s?(\d[\d,]*(?:\.\d+)?\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?)")
 REDACTED = "[REDACTED]"
 _NUMBERING = re.compile(r"^(?:appendix\s+)?[A-Z]?\d*(?:\.\d+)*\.?\s+(?=\S)", re.I)
 
@@ -232,9 +233,22 @@ def corpus_topic(titles: list[str]) -> str:
     return best
 
 
-def significant_numbers(plain: str) -> set[str]:
-    """Numbers that identify a figure: money, percentages, decimals, integers of 3+ digits (not years)."""
+def split_ranges(plain: str) -> tuple[set[str], str]:
+    """Ranges with a unit ("40-50%", "£1,000-2,000", "3-6 months") as single values, and the text with them blanked out."""
     out = set()
+
+    def take(m: re.Match) -> str:
+        out.add(re.sub(r"[\s,]", "", m.group(1) or m.group(2)).translate(_RANGE_DASHES))
+        return " "
+    return out, RANGE_RE.sub(take, plain)
+
+
+_RANGE_DASHES = str.maketrans({c: "-" for c in "–‒—"})
+
+
+def significant_numbers(plain: str) -> set[str]:
+    """Numbers that identify a figure: money, percentages, decimals, integers of 3+ digits (not years), ranges as one value."""
+    out, plain = split_ranges(plain)
     for m in NUMBER_RE.findall(plain):
         n = re.sub(r"[£$€%,\s]", "", m)
         if n and not YEAR_RE.match(n):

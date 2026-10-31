@@ -110,6 +110,7 @@ def test_entities_learned_from_trial_context():
 
 def test_significant_numbers():
     assert significant_numbers("£24,567 per QALY in 2023 with 0.61 QALYs and 50% of 155 patients, n=12") == {"24567", "0.61", "50", "155"}
+    assert significant_numbers("Around 40-50% of people (aged 34-90) pay £1,000–2,000") == {"40-50", "1000-2000"}   # a range is one value
 
 
 def test_bm25_ranks_rare_number_first_and_respects_filters():

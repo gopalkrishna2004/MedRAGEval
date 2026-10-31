@@ -260,3 +260,17 @@ generate:
   validate:
     # A question must stand on its own: no pointing at the excerpt.
     deictic_patterns: ['\b(this|that|these|those) (table|figure|excerpt|passage|document|section|paragraph|study|trial|row|text)\b', '\b(above|below|the following)\b', '\baccording to the (excerpt|passage|text)\b']
+    # A question is a copy of its quote when more than max_question_overlap
+    # of its content words (numbers left out) are in the quote AND at least
+    # echo_min_shared words are. Share alone cannot tell copying from naming:
+    # "What was the company's base-case ICER for capivasertib plus
+    # fulvestrant versus everolimus plus exemestane?" shares 8 of 8 words
+    # and is the right question. Smoke run: 0.36-0.48 for questions in their
+    # own words, 0.75-0.89 for attribution (exempt: it states the claim).
+    # The share is recorded on every item as validation.metrics.question_overlap.
+    max_question_overlap: 0.7
+    echo_min_shared: 10
+    # An answer key is a value, a name or a short phrase. The smoke run's
+    # one long key, "latest NHS reference costs (202122)", copied a parse
+    # defect and would have failed a correct answer.
+    max_key_tokens: 4
