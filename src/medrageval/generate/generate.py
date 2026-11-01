@@ -26,8 +26,9 @@ from medrageval.config import load_config
 from medrageval.generate.candidates import SELECTORS, Candidate, candidate_counts
 from medrageval.generate.corpus import Corpus, Unit, load_corpus
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llms
-from medrageval.generate.prompts import PROMPT_VERSION, build_generation, build_judge, build_unanswerable_check
+from medrageval.generate.prompts import PROMPT_VERSION, build_alone_check, build_generation, build_judge, build_unanswerable_check
 from medrageval.generate.validate import Verdict, is_duplicate, token_set, validate
+from medrageval.text import contains_quote
 
 TYPES = ["factual", "numerical", "comparative", "multihop", "crossdoc", "attribution", "unanswerable"]
 NEEDS_SINGLE_EXCERPT_CHECK = {"multihop"}   # cross-document items only need quotes from two documents
@@ -82,7 +83,27 @@ class Run:
             single = judge.get("answerable_from_single_excerpt") or {}
             if any(bool(v) for v in single.values()):
                 reasons.append("judge:answerable_from_single_excerpt")
-        return [{"cand": cand, "item": raw, "stage": "judge" if reasons else "accepted", "reasons": reasons, "verdict": verdict, "judge": judge}]
+        alone = None
+        if not reasons and cand.type in self.cfg["alone_check_types"]:
+            alone = self._answer_alone(raw, cand)
+            reasons += [f"answerable_from:{uid}" for uid, r in alone.items() if r["matches"]]
+        return [{"cand": cand, "item": raw, "stage": "judge" if reasons else "accepted", "reasons": reasons, "verdict": verdict, "judge": judge, "alone": alone}]
+
+    def _answer_alone(self, raw: dict, cand: Candidate) -> dict[str, dict]:
+        """Each excerpt on its own, with the question: an answer holding every answer key means one excerpt was enough.
+
+        The judge sees both excerpts at once and has to imagine one away; asked
+        separately, the model answers from what is there. Matching its answer to
+        the keys, rather than trusting a yes/no, keeps a lucky guess between two
+        values from counting unless it lands on every key.
+        """
+        keys = [str(k) for k in raw.get("answer_keys") or []]
+        out = {}
+        for u in cand.units:
+            r = self.judge.complete_json(build_alone_check(str(raw.get("question") or ""), u, self.corpus, self.cfg), f"alone:{cand.candidate_id}:{u.unit_id}")
+            answer = str(r.get("answer") or "")
+            out[u.unit_id] = {"answer": answer or None, "matches": bool(answer and keys) and all(contains_quote(k, answer) for k in keys)}
+        return out
 
     def _check_not_covered(self, cand: Candidate, qds: list[dict]) -> list[dict]:
         """Programmatic checks on each proposed question, then one coverage call for the anchor's surviving questions."""
@@ -208,14 +229,14 @@ class Run:
                            "prompt_version": PROMPT_VERSION, "seed": self.seed, "interim_dir": str(self.corpus.interim_dir),
                            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")},
             "validation": {"programmatic": res.get("verdict").checks if res.get("verdict") else {}, "judge": res.get("judge"),
-                           "metrics": res.get("verdict").metrics if res.get("verdict") else {}},
+                           "alone": res.get("alone"), "metrics": res.get("verdict").metrics if res.get("verdict") else {}},
         }
         if cand.type == "attribution":
             sp = cand.hint.get("speaker", "")
             rec["answer_aliases"] = list(dict.fromkeys([sp.removeprefix("the ")] + list(self.cfg["attribution"]["speakers"].get(sp, []))))
-        if cand.type == "comparative":
+        if cand.type == "comparative" or cand.subtype == "comparison":
             rec["comparison"] = {k: item.get(k) for k in ("measure", "label_a", "value_a", "label_b", "value_b", "higher")}
-        if cand.type == "multihop":
+        if cand.type == "multihop" and cand.subtype != "comparison":
             rec["hops"] = {"a": item.get("hop_a"), "b": item.get("hop_b")}
         if "search" in item:
             rec["search"] = item["search"]

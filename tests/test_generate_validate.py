@@ -1,5 +1,5 @@
 import pytest
-from synthetic import ELEMENTS, EXTRA_ELEMENTS, build_corpus, config
+from synthetic import DOCUMENTS, ELEMENTS, EXTRA_ELEMENTS, MORE_DOCUMENTS, MORE_ELEMENTS, build_corpus, config
 
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.validate import is_duplicate, validate
@@ -171,3 +171,20 @@ def test_unanswerable_redacted_requires_marker_and_no_answer():
     assert validate(good, c, CORPUS, CFG, []).ok
     assert "quote_lacks_redacted_marker" in validate({**good, "quotes": [{"unit_id": "d02-e0004", "quote": "per pack of 64 tablets (excluding VAT)"}]}, c, CORPUS, CFG, []).reasons
     assert "unanswerable_has_answer" in validate({**good, "answer": "£1,200"}, c, CORPUS, CFG, []).reasons
+
+
+def test_multihop_comparison_takes_one_value_from_each_table():
+    more = build_corpus(CFG, ELEMENTS + MORE_ELEMENTS, DOCUMENTS + MORE_DOCUMENTS)
+    c = Candidate("multihop", "comparison", [more.units["d02-e0003"], more.units["d05-e0020"]],
+                  {"versions": ["company submission", "clarification"], "values": ["7.3", "7.2"], "must_mention": ["company submission", "clarification"]})
+    good = item("Was median PFS with capivasertib plus fulvestrant longer in the company submission or in the clarification response's later data cut?",
+                "The company submission's 7.3 months was higher than the clarification response's 7.2 months.", ["7.3", "7.2"],
+                [("d02-e0003", "Median PFS (months) | 7.3 | 3.1"), ("d05-e0020", "Median PFS (months) | 7.2 | 3.6")],
+                measure="Median PFS", label_a="company submission", value_a="7.3", label_b="clarification", value_b="7.2", higher="a")
+    v = validate(good, c, more, CFG, [])
+    assert v.ok, v.reasons
+    one_table = {**good, "answer": "The company submission's 7.3 months was higher than 3.1 months.", "answer_keys": ["7.3", "3.1"], "value_b": "3.1",
+                 "quotes": [{"unit_id": "d02-e0003", "quote": "Median PFS (months) | 7.3 | 3.1"}, {"unit_id": "d05-e0020", "quote": "Events, n (%) | 121 (78.1) | 108 (80.6)"}]}
+    assert "comparison_values_not_one_per_table" in validate(one_table, c, more, CFG, []).reasons
+    unnamed = {**good, "question": "Was median PFS with capivasertib plus fulvestrant longer at the first data cut or at the later one?"}
+    assert any(r.startswith("question_lacks_discriminator:") for r in validate(unnamed, c, more, CFG, []).reasons)

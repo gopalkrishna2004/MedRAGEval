@@ -488,18 +488,18 @@ class Corpus:
         twins = self.twins.get(unit.unit_id)
         if not twins:
             return None
-        mine = _caption_words(unit.caption)
-        mention = self.cfg["roles"].get("mention", {})
-        out = []
-        for t in twins:
-            phrase = _distinct_phrase(mine, _caption_words(self.units[t].caption))
-            if not phrase and self.units[t].doc_id != unit.doc_id:
-                own, theirs = mention.get(self.docs[unit.doc_id].role, ""), mention.get(self.docs[self.units[t].doc_id].role, "")
-                phrase = own if own and own != theirs else ""
-            out.append(phrase)
-        phrases = set(out)
+        phrases = {self.distinguish(unit, self.units[t]) for t in twins}
         # "Scenario" against one twin and "Scenario 1" against another: the longer phrase covers both
         return sorted(p for p in phrases if not any(o != p and p.lower() in o.lower() for o in phrases))
+
+    def distinguish(self, unit: Unit, other: Unit) -> str:
+        """The phrase that sets this table apart from one twin: caption words, or failing those its document; "" when nothing does."""
+        phrase = _distinct_phrase(_caption_words(unit.caption), _caption_words(other.caption))
+        if not phrase and other.doc_id != unit.doc_id:
+            mention = self.cfg["roles"].get("mention", {})
+            own, theirs = mention.get(self.docs[unit.doc_id].role, ""), mention.get(self.docs[other.doc_id].role, "")
+            phrase = own if own and own != theirs else ""
+        return phrase
 
     # ----- queries -----
     def unit_for_element(self, element_id: str) -> Unit | None:

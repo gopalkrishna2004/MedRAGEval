@@ -14,6 +14,8 @@ def scripted(messages, tag):
     user = messages[-1]["content"]
     if tag.startswith("judge:"):
         return {"pass": True, "answer_supported": True, "self_contained": True, "type_fits": True, "answerable_from_single_excerpt": {}, "issues": []}
+    if tag.startswith("alone:"):
+        return {"answer": None, "reason": "the passage alone does not say"}
     if tag.startswith("check:"):
         n = len(re.findall(r"^\d+\. ", user, re.M))
         return {"results": [{"n": i + 1, "answered": "no", "passage_ids": [], "answer_if_any": None} for i in range(n)]}
@@ -115,3 +117,33 @@ def test_type_subset_and_missing_input(tmp_path):
     llm = FakeLLM(scripted)
     with pytest.raises(FileNotFoundError):
         generate_dataset(tmp_path / "nowhere", tmp_path / "out", config(), llm, llm)
+
+
+def bridged(alone_answer):
+    """A multi-hop item quoting both excerpts of the "see Table 7" pair; the table, given alone, answers with `alone_answer`."""
+    def respond(messages, tag):
+        if tag.startswith("alone:"):
+            return {"answer": alone_answer if tag.endswith("d02-e0003") else None, "reason": "-"}
+        if tag.startswith("judge:"):
+            return scripted(messages, tag)
+        return {"question": "In the biomarker-selected group, what was the median time to progression or death on capivasertib with fulvestrant, as judged by local investigators?",
+                "answer": "It was 7.3 months.", "answer_keys": ["7.3"], "hop_a": "points to the results table", "hop_b": "gives the median",
+                "quotes": [{"unit_id": "d02-e0002", "quote": "Progression-free survival results by investigator assessment in the PI3K/AKT pathway-altered population"},
+                           {"unit_id": "d02-e0003", "quote": "Median PFS (months) | 7.3 | 3.1"}]}
+    return respond
+
+
+@pytest.mark.parametrize("alone", ["Median PFS was 7.3 months.", None])
+def test_multihop_answerable_from_one_excerpt_is_rejected(tmp_path, alone):
+    interim, out = write_interim(tmp_path / "interim"), tmp_path / "out"
+    llm = FakeLLM(bridged(alone))
+    if alone:   # every other candidate fails on quotes from units it does not have, so the type ends short
+        with pytest.raises(RuntimeError, match="short of target"):
+            generate_dataset(interim, out, config(), llm, llm, targets={"multihop": 1}, types=["multihop"])
+        rejects = [json.loads(l) for l in (out / "rejects.jsonl").open()]
+        assert any(r["reasons"] == ["answerable_from:d02-e0003"] and r["validation"]["alone"]["d02-e0003"]["matches"] for r in rejects)
+    else:
+        generate_dataset(interim, out, config(), llm, llm, targets={"multihop": 1}, types=["multihop"])
+        items = [json.loads(l) for l in (out / "dataset.jsonl").open()]
+        assert len(items) == 1 and not any(r["matches"] for r in items[0]["validation"]["alone"].values())
+    assert sum(tag.startswith("alone:") for _, tag in llm.calls) >= 2   # one call per excerpt

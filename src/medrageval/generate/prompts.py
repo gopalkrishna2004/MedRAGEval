@@ -12,7 +12,7 @@ import json
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.corpus import Corpus, Unit
 
-PROMPT_VERSION = "12"
+PROMPT_VERSION = "13"
 
 SCHEMA = ('{"question": str, "answer": str, "answer_keys": [str, ...], '
           '"quotes": [{"unit_id": str, "quote": str}, ...]}')
@@ -45,6 +45,13 @@ TYPE_INSTRUCTIONS = {
                 "The answer is a value or fact B states about the bridge, never the bridge itself, and it must be the only thing in B that fits the question (if B names several studies or values, say which one you mean). "
                 "Test yourself: a reader holding only B must be unable to tell which row or value is asked for; a reader holding only A must not know the answer. "
                 "Add \"hop_a\" and \"hop_b\": one short sentence each on what each excerpt contributes. Quote from both excerpts.",
+    "multihop_comparison": "Write a MULTI-HOP COMPARISON question. Excerpts A and B are two versions of the same table, told apart by \"{version_a}\" (A) and \"{version_b}\" (B). "
+                           "Ask how {measure} compares between them: which is higher or lower. The question must contain the words \"{version_a}\" and \"{version_b}\", name the measure, "
+                           "and say whose row it is (the drug, arm, model or population), so that exactly one value in each excerpt fits; a reader needs both excerpts to answer. "
+                           "A gives {value_a} and B gives {value_b}: the answer says which is higher and gives both values, and answer_keys holds both values as written. "
+                           "Add the fields \"measure\", \"label_a\", \"value_a\", \"label_b\", \"value_b\" (label_a and label_b name the two versions) and \"higher\" (\"a\", \"b\" or \"equal\"). "
+                           "Quote the row holding the value from each excerpt as its own entry, and a header row too if the column name is only there. "
+                           "If the two versions cannot be compared on this measure in a way a reader would care about (AIC values fitted to different outcomes, search hits in different databases), return {{\"skip\": reason}}.",
     "crossdoc": "Write a CROSS-DOCUMENT question: the two excerpts come from different documents and concern the same figure, assumption or claim ({link}). "
                 "Ask what the two documents say about it, or what document A concluded about document B's figure. The answer must draw on both, and you must quote from both excerpts.",
     "attribution": "Write an ATTRIBUTION question: the excerpt contains a position, argument or claim made by {speaker}. Ask WHO made it (\"Who argued that ...?\", \"Which party considered that ...?\"), "
@@ -101,20 +108,22 @@ def _excerpts(cand: Candidate, corpus: Corpus, cfg: dict, max_chars: int = 3500)
 
 def build_generation(cand: Candidate, corpus: Corpus, cfg: dict) -> list[dict]:
     h = cand.hint
-    key = cand.type if cand.type != "unanswerable" else f"unanswerable_{cand.subtype}"
+    key = f"{cand.type}_{cand.subtype}" if cand.type == "unanswerable" or cand.subtype == "comparison" else cand.type
     fmt = dict(numbers=", ".join(h.get("numbers", [])[:25]), labels=" / ".join(h.get("labels", [])),
                what="arms, groups, timepoints or scenarios" if h.get("mode") != "rows" else "rows (treatments, states or categories) on the measure " + repr(h.get("measure", "")),
                link=h.get("link", ""), bridge=f': "{h["bridge"]}"' if h.get("bridge") else "", speaker=h.get("speaker", ""), speaker_key=h.get("speaker", "").removeprefix("the ").strip(),
                shown=("Excerpt B itself already shows, next to the bridge: " + "; ".join(f'"{s}"' for s in h["shown"])
                       + ". Do not describe the bridge by any of these or by words meaning the same: a reader holding only B would find the row from them. "
                       "Use what A says about it that B does not. ") if h.get("shown") else "",
-               topic=h.get("topic", corpus.topic))
+               topic=h.get("topic", corpus.topic), measure=repr(h.get("measure", "")),
+               version_a=(h.get("versions") or ["", ""])[0], version_b=(h.get("versions") or ["", ""])[1],
+               value_a=(h.get("values") or ["", ""])[0], value_b=(h.get("values") or ["", ""])[1])
     if cand.type == "comparative" and h.get("mode") == "prose":
         fmt["labels"] = "the two things the excerpt compares, using numbers " + ", ".join(h.get("numbers", [])[:10])
     task = TYPE_INSTRUCTIONS[key].format(**fmt)
     if cand.type == "attribution" and h.get("claim"):
         task += f"\nThe claim to use: \"{h['claim'][:400]}\""
-    if h.get("must_mention"):
+    if h.get("must_mention") and cand.subtype != "comparison":   # a comparison names its two versions in its own instructions
         phrases = ", ".join(f"\"{p}\"" for p in h["must_mention"])
         task += (f"\nThe bundle has other tables with exactly the same rows. The question must contain the words {phrases} "
                  f"(from this table's caption, or the document it is in), so a reader knows which table is meant.")
@@ -133,6 +142,8 @@ JUDGE_CRITERIA = {
     "comparative": "Both values appear in the quotes, the direction (higher/lower) is correct, and the two labels are the right ones. The question is not answerable from one value alone.",
     "multihop": "The question identifies its subject by a property, description or role (hop A) and asks for a value or fact about that subject (hop B). Pass when the identifying property is stated in one excerpt and the value in the other, and the value excerpt does not itself state that property. "
                 "The value excerpt naming the subject (the trial's or model's name) does NOT make it sufficient on its own: without the other excerpt a reader cannot tell that this named subject is the one the question describes. Fail if one excerpt contains both the identifying property and the value, if the question names the subject outright, or if it identifies the subject only by its position in a list (\"the second trial named\").",
+    "multihop_comparison": "Both values appear in the quotes, one from each excerpt; the direction (higher/lower) is correct; the question names the measure and both versions "
+                           "(scenario, arm, price or document) so that exactly one value in each excerpt fits. Fail if one excerpt holds both values, or if the comparison means nothing (values fitted to different outcomes).",
     "crossdoc": "The quotes come from two different documents and the answer reports what each says about the same figure, assumption or claim. It is fine that one document restates the other's figure; fail only if the answer is not supported by the quotes or the question does not say which documents and subject it is about.",
     "attribution": "The quoted claim is made by the party given as the answer, the question identifies that claim unambiguously, and the question does not name or hint at the party.",
     "unanswerable": "The question asks for a value that is redacted in the quote, as a reader who expected it to be present would ask.",
@@ -154,8 +165,23 @@ def build_judge(item: dict, cand: Candidate, corpus: Corpus, cfg: dict) -> list[
             "\"answerable_from_single_excerpt\" gives, for each excerpt id, whether that excerpt alone suffices: it does only if that excerpt contains both the information the question uses to identify its subject and the answer. An excerpt that merely names the subject and gives the value, while the question identifies the subject by a property stated elsewhere, does not suffice. "
             f"(prompt version {PROMPT_VERSION})"},
         {"role": "user", "content":
-            f"Item type: {cand.type}\nCriteria: {JUDGE_CRITERIA[cand.type]}\n\n"
+            f"Item type: {cand.type}\nCriteria: {JUDGE_CRITERIA.get(f'{cand.type}_{cand.subtype}', JUDGE_CRITERIA[cand.type])}\n\n"
             f"Item:\n{json.dumps(payload, ensure_ascii=False, indent=1)}\n\nSource excerpts:\n{shown}"},
+    ]
+
+
+def build_alone_check(question: str, unit: Unit, corpus: Corpus, cfg: dict) -> list[dict]:
+    """The question with ONE excerpt: can a reader holding only this passage answer it?"""
+    return [
+        {"role": "system", "content":
+            f"You answer a question about one health technology appraisal (\"{corpus.topic}\") from ONE passage and nothing else. "
+            'Return only a JSON object: {"answer": str | null, "reason": str}. '
+            "Give the answer when the passage settles it: it states the answer for the subject the question describes; or only one item in the passage can be meant, "
+            "given everything else the question says; or the answer is the same whichever item in the passage is meant. "
+            "Return null when the passage lacks the answer, or holds different values for items the question could mean and nothing in it says which. "
+            "Do not use knowledge from outside the passage. "
+            f"(prompt version {PROMPT_VERSION})"},
+        {"role": "user", "content": f"Question: {question}\n\nPassage:\n{corpus.render(unit, cfg['judge']['max_chars_per_unit'])}"},
     ]
 
 

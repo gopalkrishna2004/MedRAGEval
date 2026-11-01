@@ -413,8 +413,103 @@ def select_comparative(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candi
             yield Candidate("comparative", sub, [u], hint)
 
 
+def printed_together(corpus: Corpus, a: str, b: str, exclude: set[str]) -> str | None:
+    """A unit with one line that prints both values: it answers a comparison of the two on its own."""
+    pa, pb = (re.compile(rf"(?<![\d.]){re.escape(x)}(?!\d|\.\d)") for x in (a, b))   # "7.3" is not in "17.3" or "7.31"
+    for uid, u in corpus.units.items():
+        if uid not in exclude and any(pa.search(line) and pb.search(line) for line in u.plain.splitlines()):
+            return uid
+    return None
+
+
+def twin_comparisons(corpus: Corpus, cfg: dict, rng: Random) -> list[Candidate]:
+    """Two twin tables and one cell they print differently: the same measure under another scenario, arm, price or document.
+
+    Each table holds one of the two values, so neither answers the comparison
+    alone, and a cell is passed over when some other unit prints both values
+    on one line. Trials make poor subjects here: in TA1063 every value
+    sentence that names a single trial names CAPItello-291, and the other
+    trials' figures sit in tables that list them all, so one unit answers.
+    """
+    mc = cfg["multihop"]
+    drug = technology(corpus)
+    out, seen, used = [], set(), set()
+    for a, twins in sorted(corpus.twins.items()):
+        for b in twins:
+            pair = tuple(sorted((a, b)))
+            if pair in seen or used & set(pair):   # each table in one comparison: six transition matrices would make fifteen
+                continue
+            seen.add(pair)
+            ua, ub = corpus.units[pair[0]], corpus.units[pair[1]]
+            ha = twin_hint(corpus, ua) if whole_table(ua, cfg, allow_redacted=True) else None
+            hb = twin_hint(corpus, ub) if whole_table(ub, cfg, allow_redacted=True) else None
+            va, vb = corpus.distinguish(ua, ub), corpus.distinguish(ub, ua)
+            if ha is None or hb is None or not va or not vb:
+                continue
+            ra, rb = table_rows(ua.text), table_rows(ub.text)
+            header, by_key = ra[0], keyed_rows(rb)
+            cells = []
+            for key, row in keyed_rows(ra).items():
+                other = by_key.get(key)
+                # the same row in both: its text cells agree too (document2's two UP/C tables list their sub-rows in another order)
+                if not other or not all(normalize(x) == normalize(y) for x, y in zip(row, other) if not value_cell(x) and not value_cell(y)):
+                    continue
+                if any(re.search(p, f"{row[0]} {ua.caption}", re.I) for p in mc["incomparable_measures"]):
+                    continue
+                for j in range(1, min(len(row), len(other))):
+                    # a column without a name is no measure (sub-columns of document2's three-level transition matrices)
+                    if j < len(header) and re.search(r"[A-Za-z]", header[j]) and value_cell(row[j]) and value_cell(other[j]) and not same_value(row[j], other[j]):
+                        cells.append((row, other, j))
+            rng.shuffle(cells)
+            cells.sort(key=lambda c: not (drug and re.search(rf"\b{re.escape(drug)}\b", c[0][0], re.I)))   # the appraised drug's row first
+            own = {ua.unit_id, ub.unit_id} | set(corpus.copies.get(ua.unit_id, [])) | set(corpus.copies.get(ub.unit_id, []))
+            for row, other, j in cells:
+                if printed_together(corpus, row[j], other[j], own):
+                    continue
+                # the row's own words ("Comparison", "Ratio of GMRs (95% CI)") and the column's name the measure
+                label = " / ".join(dict.fromkeys(c.strip() for c in row if c.strip() and not value_cell(c) and REDACTED not in c))
+                # what tells each table from all its twins, not only from this one: "Base-case" alone fits the list and PAS tables
+                phrases = list(dict.fromkeys(ha.get("must_mention", []) + hb.get("must_mention", []) + [va, vb]))
+                out.append(Candidate("multihop", "comparison", [ua, ub], {
+                    "link": f"{va} / {vb}", "link_kind": "comparison", "versions": [va, vb], "values": [row[j], other[j]],
+                    "measure": f"{label} ({header[j]})", "must_mention": phrases}))
+                used.update(pair)
+                break
+    return list(spread(out, lambda c: (c.units[0].doc_id, c.units[1].doc_id), rng))
+
+
+def keyed_rows(rows: list[list[str]]) -> dict[tuple[str, int], list[str]]:
+    """Body rows by (label, occurrence): a label can repeat ("Comparison" under month 9 and again under 2 years)."""
+    seen, out = defaultdict(int), {}
+    for r in rows[1:]:
+        if r and re.search(r"\w", r[0]):
+            label = r[0].strip()
+            out[(label, seen[label])] = r
+            seen[label] += 1
+    return out
+
+
+def value_cell(cell: str) -> bool:
+    """A number with its unit or interval ("£24,718", "-18% (-32%, -2%); p=0.03"), not a sentence that happens to contain one."""
+    return bool(re.search(r"\d", cell)) and len(cell) <= 40 and len(re.findall(r"[A-Za-z]", cell)) <= 4 and REDACTED not in cell
+
+
+def same_value(a: str, b: str) -> bool:
+    """The same figure printed to different precision: "-18%" and "-18.1%" are one result, not two to compare."""
+    fa, fb = (re.search(r"-?\d[\d,]*(?:\.\d+)?", x) for x in (a, b))
+    if not fa or not fb:
+        return False
+    sa, sb = fa.group(0).replace(",", ""), fb.group(0).replace(",", "")
+    places = min(len(s.split(".")[1]) if "." in s else 0 for s in (sa, sb))
+    return round(float(sa), places) == round(float(sb), places)
+
+
 def select_multihop(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidate]:
-    """Entity bridges first (a unit that characterises a trial, a unit that gives its value), then "see Table N" pairs."""
+    """Comparisons across twin tables and entity bridges, alternating; then "see Table N" pairs.
+
+    An entity bridge is a unit that characterises a trial and a unit that gives its value.
+    """
+    comparisons = twin_comparisons(corpus, cfg, rng)
     seen = set()
     pairs = []
     for key, uids in corpus.entities.items():
@@ -437,8 +532,10 @@ def select_multihop(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidat
                         seen.add((d.unit_id, n.unit_id))
                         pairs.append((d, n, corpus.entity_names[key], twin, bridge, shown))
                         break
-    for d, n, name, twin, bridge, shown in spread(pairs, lambda x: (x[0].doc_id, x[2]), rng, 4):
-        yield Candidate("multihop", "entity", [d, n], {"link": name, "link_kind": "entity", "bridge": bridge, "shown": shown, **twin})
+    bridges = [Candidate("multihop", "entity", [d, n], {"link": name, "link_kind": "entity", "bridge": bridge, "shown": shown, **twin})
+               for d, n, name, twin, bridge, shown in spread(pairs, lambda x: (x[0].doc_id, x[2]), rng, 4)]
+    # a comparison needs both tables by construction, so it leads; bridges keep the type from being all comparisons
+    yield from interleave([comparisons, bridges])
 
     xrefs = []
     for u in corpus.units.values():

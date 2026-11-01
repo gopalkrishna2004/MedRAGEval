@@ -3,8 +3,8 @@ from random import Random
 import pytest
 from synthetic import DOCUMENTS, ELEMENTS, EXTRA_ELEMENTS, FORM, GROUPED, MORE_DOCUMENTS, MORE_ELEMENTS, _el, _table, build_corpus, config
 
-from medrageval.generate.candidates import (SELECTORS, Candidate, alternatives, arm_columns, clean_prose, garbled, new_words, numeric_hits, shown_with, spread,
-                                            stated_elsewhere, table_comparison, whole_table)
+from medrageval.generate.candidates import (SELECTORS, Candidate, alternatives, arm_columns, clean_prose, garbled, keyed_rows, new_words, numeric_hits,
+                                            printed_together, same_value, shown_with, spread, stated_elsewhere, table_comparison, value_cell, whole_table)
 from medrageval.generate.corpus import entity_key, make_units
 from medrageval.generate.prompts import build_generation
 from medrageval.text import table_rows, to_plain
@@ -132,8 +132,9 @@ def test_contested_claims_come_first_and_carry_the_other_side():
 
 
 def test_multihop_pairs_cross_reference_and_trial_name():
-    entity = run("multihop", corpus=MORE)
-    assert entity[0].subtype == "entity" and entity[0].hint["link"] == "CAPItello-291"   # bridges come first
+    cands = run("multihop", corpus=MORE)
+    assert [c.subtype for c in cands[:2]] == ["comparison", "entity"]   # comparisons and bridges alternate, comparisons first
+    assert next(c for c in cands if c.subtype == "entity").hint["link"] == "CAPItello-291"
     assert not [c for c in run("multihop") if c.subtype == "entity"]   # no value unit there names a second trial to choose from
     cands = run("multihop")
     xref = [c for c in cands if c.subtype == "xref"]
@@ -235,3 +236,30 @@ def test_generation_prompt_shows_the_preceding_passage_as_context():
     user = build_generation(cand, CORPUS, CFG)[1]["content"]
     assert "Context before excerpt (not quotable):\nProgression-free survival results by investigator assessment" in user
     assert "[d02-e0002]" not in user                                    # no id: the context cannot be quoted
+
+
+def test_twin_tables_give_a_comparison_across_two_excerpts():
+    comps = [c for c in run("multihop", corpus=MORE) if c.subtype == "comparison"]
+    assert [[u.unit_id for u in c.units] for c in comps] == [["d02-e0003", "d05-e0020"]]   # the EAG's copy d03-e0020 is not a second version
+    h = comps[0].hint
+    assert h["versions"] == ["company submission", "clarification"] and {"company submission", "clarification"} <= set(h["must_mention"])
+    a, b = h["values"]
+    assert a != b and a in comps[0].units[0].plain and b in comps[0].units[1].plain
+    assert not [c for c in run("multihop", corpus=EXTRA) if c.subtype == "comparison"]   # AIC tables of two arms are fits to different data
+
+
+def test_comparison_cells_and_rows():
+    assert value_cell("£24,718") and value_cell("-18% (-32%, -2%); p=0.03")
+    assert not value_cell("Capivasertib 400 mg orally twice daily on Days 1-4 of each week") and not value_cell("[REDACTED]")
+    assert same_value("-18%", "-18.1%") and not same_value("3.25", "3.26") and not same_value("£1,914", "£1,930")
+    rows = [["", "A", "B"], ["Comparison", "Ratio", "0.63"], ["Comparison", "Difference", "-37%"]]
+    assert list(keyed_rows(rows)) == [("Comparison", 0), ("Comparison", 1)]   # a repeated label keeps its position
+
+
+def test_a_unit_printing_both_values_answers_the_comparison_alone():
+    own = {"d02-e0003", "d05-e0020", "d03-e0020"}
+    assert printed_together(MORE, "7.3", "7.2", own) is None
+    both = _el("d03", 31, "Median PFS was 7.3 months at the first data cut and 7.2 months at the second.", section="d03-s003", path=["3 Clinical effectiveness"], page=68)
+    corpus = build_corpus(CFG, ELEMENTS + MORE_ELEMENTS + [both], DOCUMENTS + MORE_DOCUMENTS)
+    assert printed_together(corpus, "7.3", "7.2", own) == "d03-e0031"
+    assert not [c for c in run("multihop", corpus=corpus) if c.subtype == "comparison" and c.hint["values"] == ["7.3", "7.2"]]

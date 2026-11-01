@@ -115,6 +115,11 @@ generate:
     # what B shows, and a pair is dropped when the bridge sentence has fewer
     # than min_new_tokens content words that B does not show.
     min_new_tokens: 3
+    # Multi-hop comparisons take a cell that two twin tables print differently
+    # (Scenario 1 against Scenario 2, list against PAS price, submission against
+    # clarification). Fit statistics are not compared: twin AIC/BIC tables are
+    # models fitted to different outcomes or arms, 7 of TA1063's 17 comparisons.
+    incomparable_measures: ['\bAIC\b', '\bBIC\b', '\bDIC\b', 'deviance', 'log.?likelihood', 'goodness of fit']
 
   # Elements that must never become evidence or search hits. Counts are for
   # TA1063 / document2: reference lists 227 / 303 elements, elements under 25
@@ -324,6 +329,16 @@ generate:
   # timepoint, a value table that answers alone); the others were already
   # settled by the programmatic checks.
   judge_types: [comparative, multihop, crossdoc]
+  # After the judge passes them, these items go back to the judge model once
+  # per excerpt, with that excerpt alone, and are rejected when its answer
+  # holds every answer key. The judge sees both excerpts at once and has to
+  # imagine one away: in the 31 Oct smoke run and in v11 it called the value
+  # excerpt insufficient for items that excerpt answered (FAKTION as Table 15's
+  # only UK row; a >=5% threshold that held for every trial). TRIAD's data
+  # shows the same gap: of the multi-hop items its all-chunks review accepted,
+  # 15% (HotPot, 86 of 568) and 11% (MuSiQue, 59 of 537) were answerable from
+  # one chunk by its per-chunk check. Two short calls per item that gets this far.
+  alone_check_types: [multihop]
 
   validate:
     # A question must stand on its own: no pointing at the excerpt.

@@ -137,7 +137,8 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
     keys = [str(k).strip() for k in (item.get("answer_keys") or []) if str(k).strip()]
     v.check("answer_keys_present", 1 <= len(keys) <= 6, "answer_keys_missing")
     t = cand.type
-    labels = {normalize(str(item.get(k) or "")) for k in ("label_a", "label_b")} if t == "comparative" else set()
+    compares = t == "comparative" or cand.subtype == "comparison"
+    labels = {normalize(str(item.get(k) or "")) for k in ("label_a", "label_b")} if compares else set()
     for k in keys:
         if t != "attribution":   # the speaker of a form answer is implied by the document, not written in it
             v.check("answer_key_in_quotes", contains_quote(k, joined), f"answer_key_not_in_quotes:{k[:40]}")
@@ -168,27 +169,22 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
             v.check("number_in_hint", bool(ranges & hint_ranges) or any(_number(n) in hint for n in nums), "number_not_in_evidence_numbers")
 
     elif t == "comparative":
-        va, vb = item.get("value_a"), item.get("value_b")
-        fa, fb = _number(str(va)), _number(str(vb))
-        v.check("values_numeric", fa is not None and fb is not None, "comparative_values_not_numeric")
-        v.check("values_in_quotes", bool(va) and bool(vb) and contains_quote(str(va), joined) and contains_quote(str(vb), joined), "comparative_values_not_in_quotes")
-        higher = str(item.get("higher") or "").lower()
-        if fa is not None and fb is not None:
-            expect = "a" if fa > fb else "b" if fb > fa else "equal"
-            v.check("direction_consistent", higher == expect, f"direction_inconsistent:{higher}!={expect}")
-        la, lb = str(item.get("label_a") or ""), str(item.get("label_b") or "")
-        v.check("labels_present", bool(la) and bool(lb), "comparative_labels_missing")
+        la, lb = _check_comparison(v, item, joined, answer, cfg)
         if cand.hint.get("mode") in ("columns", "rows"):
             src = cand.units[0].plain + "\n" + (cand.units[0].caption or "")
             v.check("labels_in_table", _mentions(la, src) and _mentions(lb, src), "comparative_labels_not_in_table")
-        v.check("answer_has_direction", any(re.search(rf"\b{w}\b", answer, re.I) for w in cfg["comparative"]["direction_words"]) or higher == "equal", "answer_lacks_direction")
-        winner = la if higher == "a" else lb if higher == "b" else ""
-        if winner:
-            v.check("answer_names_winner", _mentions(winner, answer), "answer_lacks_winning_label")
         v.check("question_mentions_both", _mentions(la, q + " " + cand.hint.get("measure", "")) or _mentions(lb, q), "question_lacks_compared_labels")
 
     elif t == "multihop":
         v.check("two_units_quoted", len({u.unit_id for u in quoted_units}) >= 2, "quotes_from_one_unit")
+        if cand.subtype == "comparison":   # the two versions are named through must_mention above
+            _check_comparison(v, item, joined, answer, cfg)
+            ua, ub = cand.units
+            in_a = "\n".join(qt for qt, u in zip(found, quoted_units) if u.unit_id == ua.unit_id)
+            in_b = "\n".join(qt for qt, u in zip(found, quoted_units) if u.unit_id == ub.unit_id)
+            va, vb = str(item.get("value_a") or ""), str(item.get("value_b") or "")
+            v.check("values_from_both", bool(va and vb) and ((contains_quote(va, in_a) and contains_quote(vb, in_b)) or (contains_quote(va, in_b) and contains_quote(vb, in_a))),
+                    "comparison_values_not_one_per_table")
         link = str(cand.hint.get("link") or "")
         if cand.subtype == "entity" and link:
             v.check("bridge_not_named", not contains_quote(link, q), f"bridge_named_in_question:{link}")
@@ -210,6 +206,25 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
             v.check("quote_has_speaker", any(re.search(rf"\b{re.escape(a)}\b", joined, re.I) for a in _aliases(speaker, cfg)), "quote_lacks_speaker")
         _check_exclusivity(v, joined, cand, corpus, cfg)
     return v
+
+
+def _check_comparison(v: Verdict, item: dict, joined: str, answer: str, cfg: dict) -> tuple[str, str]:
+    """Two quoted numeric values, a direction that matches them, an answer that names the winner. Returns the two labels."""
+    va, vb = item.get("value_a"), item.get("value_b")
+    fa, fb = _number(str(va)), _number(str(vb))
+    v.check("values_numeric", fa is not None and fb is not None, "comparative_values_not_numeric")
+    v.check("values_in_quotes", bool(va) and bool(vb) and contains_quote(str(va), joined) and contains_quote(str(vb), joined), "comparative_values_not_in_quotes")
+    higher = str(item.get("higher") or "").lower()
+    if fa is not None and fb is not None:
+        expect = "a" if fa > fb else "b" if fb > fa else "equal"
+        v.check("direction_consistent", higher == expect, f"direction_inconsistent:{higher}!={expect}")
+    la, lb = str(item.get("label_a") or ""), str(item.get("label_b") or "")
+    v.check("labels_present", bool(la) and bool(lb), "comparative_labels_missing")
+    v.check("answer_has_direction", any(re.search(rf"\b{w}\b", answer, re.I) for w in cfg["comparative"]["direction_words"]) or higher == "equal", "answer_lacks_direction")
+    winner = la if higher == "a" else lb if higher == "b" else ""
+    if winner:
+        v.check("answer_names_winner", _mentions(winner, answer), "answer_lacks_winning_label")
+    return la, lb
 
 
 def _check_exclusivity(v: Verdict, claim: str, cand: Candidate, corpus: Corpus, cfg: dict) -> None:
