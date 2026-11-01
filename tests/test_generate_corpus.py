@@ -1,7 +1,7 @@
 import pytest
-from synthetic import ELEMENTS, EXTRA_ELEMENTS, build_corpus, config
+from synthetic import ELEMENTS, EXTRA_ELEMENTS, TABLE7, _el, build_corpus, config
 
-from medrageval.generate.corpus import BM25, corpus_topic, detect_roles, extract_entities, is_noise, make_units, mentions, significant_numbers, tokenize
+from medrageval.generate.corpus import BM25, corpus_topic, detect_roles, extract_entities, is_noise, make_units, mentions, significant_numbers, template_elements, tokenize
 from medrageval.text import contains_quote
 
 CFG = config()
@@ -139,3 +139,18 @@ def test_render_has_context_header_and_flat_section_titles():
     head, body = text.split("\n", 1)
     assert head.startswith("[d02-e0002] Document: Company evidence submission (d02) | Section: B.2 Clinical effectiveness > B.2.6")
     assert "Pages: 20-20" in head and body.startswith("Progression-free survival")
+
+
+def test_form_text_repeated_across_documents_of_one_role_is_noise():
+    note = "You do not have to answer every question – they are prompts to guide you. The text boxes will expand as you type."
+    els = [_el("d05", 1, note), _el("d06", 1, note), _el("d07", 1, "Our members told us that side effects matter most."), _el("d02", 1, note)]
+    roles = {"d05": "patient_org", "d06": "patient_org", "d07": "patient_org", "d02": "company_submission"}
+    assert template_elements(els, roles, CFG) == {"d05-e0001", "d06-e0001"}   # one company copy is not a form template
+
+
+def test_reprint_with_shortened_labels_is_a_copy():
+    reprint = _el("d03", 30, TABLE7.replace("Hazard ratio (95% CI)", "HR (95% CI)").replace("Events, n (%)", "Events n (%)"), "table",
+                  section="d03-s003", path=["3 Clinical effectiveness"], caption="**Table 3.8: PFS by investigator assessment**", page=67)
+    corpus = build_corpus(CFG, ELEMENTS + [reprint])
+    assert corpus.copies["d02-e0003"] == ["d03-e0030"] and corpus.copies["d03-e0030"] == ["d02-e0003"]
+    assert "d02-e0003" not in corpus.twins

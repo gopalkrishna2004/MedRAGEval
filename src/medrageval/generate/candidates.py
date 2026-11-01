@@ -119,8 +119,12 @@ def twin_hint(corpus: Corpus, u: Unit) -> dict | None:
     """Hint fields for a table: {"must_mention": [...]} when something tells it from its twins, None when nothing does.
 
     `also_in` lists copies of the table in other documents: the same cells, so
-    a retriever that finds the copy has found the evidence.
+    a retriever that finds the copy has found the evidence. Only the first
+    copy is used (None for the others): two items on one table's data test
+    the same thing twice.
     """
+    if any(corpus.position[c] < corpus.position[u.unit_id] for c in corpus.copies.get(u.unit_id, [])):
+        return None
     phrases = corpus.discriminator(u)
     if phrases is not None and any(not p for p in phrases):
         return None
@@ -144,6 +148,53 @@ def bridge_sentence(plain: str, key: str, corpus: Corpus) -> str | None:
             if others <= 1:
                 return sent.strip()
     return None
+
+
+def shown_with(u: Unit, key: str) -> list[str]:
+    """What unit B itself says about the entity: its row's other labelled cells, its column header, or its sentence.
+
+    A question that describes the bridge by any of these is answered by B
+    alone: Table 15's FAKTION row says "UK" and "ET, no CDK", so "the UK trial
+    without prior CDK4/6 inhibitors" finds the row without the other excerpt.
+    """
+    if u.type != "table":
+        return [s.strip()[:300] for s in SENTENCE.split(u.plain) if key in entity_key(s)]
+    rows = table_rows(u.text)
+    header = rows[0] if rows else []
+    for i, row in enumerate(rows):
+        for j, cell in enumerate(row):
+            if key not in entity_key(cell):
+                continue
+            if i == 0:     # the entity heads a column
+                return [cell]
+            if j == 0:     # the entity labels a row
+                return [(f"{h}: {c}" if h else c)[:150] for h, c in zip(header[1:], row[1:]) if re.search(r"[A-Za-z]", c) and REDACTED not in c]
+            return [x for x in (header[j] if j < len(header) else "", row[0]) if x]   # named in the body ("Source" row)
+    return []
+
+
+def alternatives(corpus: Corpus, u: Unit, key: str) -> set[str]:
+    """Other trials unit B gives values for in the bridge's place: what a reader holding only B would have to choose between.
+
+    With none, the hop is no hop: TA1063's Table 4.6 cites CAPItello-291 on
+    every row, so "the trial whose prior CDK4/6i use was 72.9%" points at
+    the only row there is. A name inside the bridge's own cell or brackets
+    ("CAPItello-291 (NCT04305496)") is the same trial, not an alternative.
+    """
+    if u.type != "table":
+        return {k for k in corpus.entities if k != key and k in entity_key(re.sub(r"\([^)]*\)", "", u.plain))}
+    rows = table_rows(u.text)
+    for i, row in enumerate(rows):
+        for j, cell in enumerate(row):
+            if key in entity_key(cell):
+                line = row if i == 0 else [r[j] for r in rows if j < len(r)]   # the other column heads, or the other cells of its column
+                return {k for c in line if c != cell for k in corpus.entities if k != key and k in entity_key(c)}
+    return set()
+
+
+def new_words(bridge: str, name: str, shown: list[str]) -> set[str]:
+    """Content words of the bridge sentence that neither the entity's name nor what B shows contains."""
+    return set(tokenize(bridge)) - set(tokenize(name)) - set(tokenize(" ".join(shown)))
 
 
 def numeric_hits(plain: str, cfg: dict) -> list[tuple[str, str]]:
@@ -338,7 +389,7 @@ def label_width(rows: list[list[str]]) -> int:
 
 
 def select_comparative(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidate]:
-    drug = corpus.topic.split()[0] if corpus.topic and len(corpus.topic.split()[0]) > 3 else None
+    drug = technology(corpus)
     extra = [rf"\b{re.escape(drug)}\b"] if drug else []
     items = []
     for u in corpus.units.values():
@@ -377,12 +428,17 @@ def select_multihop(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidat
             for d, bridge in desc[:6]:
                 for n in num:
                     twin = twin_hint(corpus, n) if n.type == "table" else {}
-                    if n.unit_id != d.unit_id and n.section_id != d.section_id and (d.unit_id, n.unit_id) not in seen and twin is not None:
+                    if n.unit_id == d.unit_id or n.section_id == d.section_id or (d.unit_id, n.unit_id) in seen or twin is None:
+                        continue
+                    shown = shown_with(n, key)
+                    # B must hold other trials to choose between, and the bridge sentence must say something about
+                    # this one that B does not: otherwise B answers alone
+                    if alternatives(corpus, n, key) and len(new_words(bridge, corpus.entity_names[key], shown)) >= cfg["multihop"]["min_new_tokens"]:
                         seen.add((d.unit_id, n.unit_id))
-                        pairs.append((d, n, corpus.entity_names[key], twin, bridge))
+                        pairs.append((d, n, corpus.entity_names[key], twin, bridge, shown))
                         break
-    for d, n, name, twin, bridge in spread(pairs, lambda x: (x[0].doc_id, x[2]), rng, 4):
-        yield Candidate("multihop", "entity", [d, n], {"link": name, "link_kind": "entity", "bridge": bridge, **twin})
+    for d, n, name, twin, bridge, shown in spread(pairs, lambda x: (x[0].doc_id, x[2]), rng, 4):
+        yield Candidate("multihop", "entity", [d, n], {"link": name, "link_kind": "entity", "bridge": bridge, "shown": shown, **twin})
 
     xrefs = []
     for u in corpus.units.values():
@@ -512,6 +568,8 @@ def select_attribution(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candi
                     speaker = speaker_for(m.group(1), cfg)
                     if speaker == "the committee" and not has_guidance:
                         speaker = None   # "the committee agreed" here is about an earlier appraisal, not this bundle
+                    if speaker in ac["own_voice_only"] and ac["role_speakers"].get(role) != speaker:
+                        speaker = None   # "UK clinical experts expect ..." in the company's documents is the company's position too
                     if speaker:
                         prev = u.plain.rfind(". ", 0, m.start())
                         start = prev + 2 if prev >= 0 else 0
@@ -526,16 +584,18 @@ def select_attribution(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candi
                         and not re.match(r"^[A-C]\s?\d{1,2}\b", u.plain) and not u.plain.rstrip().endswith("?")):
                     items.append((u, "response", ac["role_speakers"].get(role, "the company"), u.plain[:400]))
         elif u.row_index is not None and role in ac["role_speakers"] and role not in cfg["roles"]["primary"] + cfg["roles"]["secondary"]:
-            answer = u.plain.split("\n")[-1].split(" | ")[-1].strip()
-            if len(answer) >= ac["min_answer_chars"] and not TICKBOX.search(answer) and REDACTED not in answer:
+            cells = u.plain.split("\n")[-1].split(" | ")
+            answer = cells[-1].strip()
+            about_respondent = any(re.search(p, cells[0], re.I) for p in ac["form_skip_questions"])
+            if len(answer) >= ac["min_answer_chars"] and not TICKBOX.search(answer) and REDACTED not in answer and not about_respondent:
                 items.append((u, "form", ac["role_speakers"][role], answer[:400]))
-    by_speaker = defaultdict(lambda: ([], []))
+    by_speaker = defaultdict(lambda: [[], [], [], []])
     for u, sub, speaker, claim in items:
         other = contested_by(corpus, u, claim, speaker, stance, cfg)
-        by_speaker[speaker][0 if other else 1].append((u, sub, speaker, claim, other))
-    # a claim another party disputes comes first: the answerer has to tell the positions apart, not guess from the subject
-    queues = [list(spread(first, lambda x: section_key(x[0]), rng, 3)) + list(spread(rest, lambda x: section_key(x[0]), rng, 3))
-              for _, (first, rest) in sorted(by_speaker.items())]
+        by_speaker[speaker][2 * demoted(corpus, u, cfg) + (0 if other else 1)].append((u, sub, speaker, claim, other))
+    # a claim another party disputes comes first: the answerer has to tell the positions apart, not guess from the subject;
+    # lay summaries and background sections come last
+    queues = [[x for tier in tiers for x in spread(tier, lambda x: section_key(x[0]), rng, 3)] for _, tiers in sorted(by_speaker.items())]
     for u, sub, speaker, claim, other in interleave(queues):
         hint = {"speaker": speaker, "claim": claim}
         if other:
@@ -587,9 +647,27 @@ def select_unanswerable_redacted(corpus: Corpus, cfg: dict, rng: Random) -> Iter
         yield Candidate("unanswerable", "redacted", [u], {"labels": labels})
 
 
+def technology(corpus: Corpus) -> str | None:
+    """The appraised drug: the topic's first word ("Capivasertib with fulvestrant for ...")."""
+    first = corpus.topic.split()[0] if corpus.topic else ""
+    return first if len(first) > 3 else None
+
+
+def about_the_appraisal(corpus: Corpus, u: Unit, cfg: dict) -> bool:
+    """Names the drug or a trial, or states a number with a unit.
+
+    A missing fact can be invented for any text, form instructions included:
+    7 of TA1063's first 18 "not covered" anchors were deadlines, form help and
+    acknowledgements ("The deadline for your response is 5pm on ..."), which
+    this drops along with half of all paragraphs (887 to 435).
+    """
+    drug = technology(corpus)
+    return bool((drug and re.search(rf"\b{re.escape(drug)}\b", u.plain, re.I)) or corpus.unit_entities.get(u.unit_id) or numeric_hits(u.plain, cfg))
+
+
 def select_unanswerable_not_covered(corpus: Corpus, cfg: dict, rng: Random) -> Iterator[Candidate]:
-    units = [u for u in corpus.units.values() if clean_prose(u, cfg)]
-    for u in ordered(corpus, units, lambda u: (u.doc_id, u.section_path[:1][0] if u.section_path else None), rng, 2, cfg):
+    units = [u for u in corpus.units.values() if clean_prose(u, cfg) and about_the_appraisal(corpus, u, cfg)]
+    for u in ordered(corpus, units, section_key, rng, cfg["limits"]["max_per_section"], cfg):
         yield Candidate("unanswerable", "not_covered", [u], {"topic": corpus.topic})
 
 

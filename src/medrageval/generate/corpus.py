@@ -136,6 +136,24 @@ def is_noise(el: dict, cfg: dict) -> str | None:
     return None
 
 
+def template_elements(elements: list[dict], roles: dict[str, str], cfg: dict) -> set[str]:
+    """Element ids of form text: a paragraph that `template_min_docs` or more documents of one role repeat word for word.
+
+    Submission forms print the same instructions in every copy ("You do not
+    have to answer every question ..."); the answers differ.
+    """
+    n = cfg["noise"].get("template_min_docs")
+    if not n:
+        return set()
+    docs = defaultdict(set)
+    keyed = {}
+    for e in elements:
+        if e["type"] in ("paragraph", "list_item"):
+            keyed[e["element_id"]] = (roles[e["doc_id"]], normalize(e["plain"]))
+            docs[keyed[e["element_id"]]].add(e["doc_id"])
+    return {eid for eid, k in keyed.items() if len(docs[k]) >= n}
+
+
 def make_units(el: dict, cfg: dict) -> list[Unit]:
     """One unit per element, or row groups for a long table."""
     lim = cfg["limits"]
@@ -326,8 +344,9 @@ class Corpus:
 
         self.noise = Counter()
         self.units: dict[str, Unit] = {}
+        templates = template_elements(elements, {doc_id: role for doc_id, (role, _) in roles.items()}, cfg)
         for e in elements:
-            reason = is_noise(e, cfg)
+            reason = is_noise(e, cfg) or ("template" if e["element_id"] in templates else None)
             if reason:
                 self.noise[reason.split(":")[0]] += 1
                 continue
@@ -335,6 +354,7 @@ class Corpus:
                 u.tokens = tokenize(u.plain)
                 self.units[u.unit_id] = u
         self.order = list(self.units)
+        self.position = {uid: i for i, uid in enumerate(self.order)}
         self.by_doc: dict[str, list[str]] = defaultdict(list)
         self.by_section: dict[str, list[str]] = defaultdict(list)
         self.by_element: dict[str, list[str]] = defaultdict(list)
@@ -412,20 +432,32 @@ class Corpus:
         evidence for the same question, so `copies` records it instead.
         """
         groups: dict[tuple, list[str]] = defaultdict(list)
+        by_values: dict[tuple, list[str]] = defaultdict(list)
+        body: dict[str, list[list[str]]] = {}
         for uid, u in self.units.items():
             if u.type != "table" or u.row_index is not None or not u.caption:
                 continue
             rows = table_rows(u.text)
-            # a row's label, leaving out notes and sub-headings (a label with nothing after it)
-            labels = frozenset(r[0] for r in rows[1:] if r and r[0].strip() and any(c.strip() for c in r[1:]))
-            if len(labels) >= 3:   # same rows under the same columns; a different header is told apart by naming the measure
-                groups[(" | ".join(rows[0]), labels)].append(uid)
+            # rows with a label and values, leaving out notes and sub-headings (a label with nothing after it):
+            # the EAG's reprint of FAKTION's SAE table adds a "Based on Jones 2020" note row
+            body[uid] = [[normalize(c) for c in r] for r in rows[1:] if r and r[0].strip() and any(c.strip() for c in r[1:])]
+            labels = frozenset(r[0] for r in body[uid])
+            # same rows under the same columns; a different header is told apart by naming the measure. The
+            # label column's own title is left out: the same table heads it "Serious adverse event" and "SAE"
+            columns = " | ".join(rows[0][1:])
+            if len(labels) >= 3:
+                groups[(columns, labels)].append(uid)
+            # a reprint may also shorten its labels (EAG Table 3.8 has "HR" for Table 7's "Hazard ratio"): the same
+            # numbers under the same columns are the same table. Rows of redactions alone match anything, so need a digit.
+            values = tuple(tuple(r[1:]) for r in body[uid])
+            if sum(any(re.search(r"\d", c) for c in r) for r in values) >= 3:
+                by_values[(columns, values)].append(uid)
         twins: dict[str, list[str]] = {}
         copies: dict[str, list[str]] = {}
         for members in groups.values():
             if len(members) < 2:
                 continue
-            cells = {m: [[normalize(c) for c in r] for r in table_rows(self.units[m].text)] for m in members}
+            cells = {m: body[m] for m in members}
             for uid in members:
                 same = [o for o in members if o != uid and self.units[o].doc_id != self.units[uid].doc_id and cells[o] == cells[uid]]
                 other = [o for o in members if o != uid and o not in same]
@@ -433,6 +465,14 @@ class Corpus:
                     copies[uid] = same
                 if other:
                     twins[uid] = other
+        for members in by_values.values():
+            for uid in members:
+                same = [o for o in members if self.units[o].doc_id != self.units[uid].doc_id]
+                if same:
+                    copies[uid] = sorted(set(copies.get(uid, [])) | set(same))
+                    twins[uid] = [t for t in twins.get(uid, []) if t not in same]
+                    if not twins[uid]:
+                        del twins[uid]
         return twins, copies
 
     def discriminator(self, unit: Unit) -> list[str] | None:
@@ -491,6 +531,14 @@ class Corpus:
         i = sibs.index(unit.unit_id)
         picked = [uid for uid in sibs[max(0, i - n // 2): i + n // 2 + 1] if uid != unit.unit_id][:n]
         return [self.units[u] for u in picked]
+
+    def preceding(self, unit: Unit, n: int) -> list[Unit]:
+        """Up to n units right before this one in its section, from other elements (not earlier rows of its own table)."""
+        sibs = self.by_section.get(unit.section_id, [])
+        if unit.unit_id not in sibs:
+            return []
+        before = [self.units[u] for u in sibs[: sibs.index(unit.unit_id)] if self.units[u].element_id != unit.element_id]
+        return before[-n:] if n else []
 
     def doc(self, unit: Unit) -> Document:
         return self.docs[unit.doc_id]

@@ -138,6 +138,11 @@ MORE_ELEMENTS = [
         section="d05-s001", path=["Clarification questions", "Company response:"], page=132),
     _el("d02", 30, "Relative effects were taken from CAPItello-291 and SOLAR-1 rather than their absolute values, because the trial populations differ "
         "in prior treatment. Each was a phase 3 trial.", section="d02-s005", path=["B.3 Cost effectiveness", "B.3.10 Base-case results"], page=52),
+    _el("d02", 32, _table([("CAPItello-291", "Capivasertib + fulvestrant 500", "Fulvestrant 500", "289", "Multi.", "ET +/- CDK"),
+                           ("FAKTION", "Capivasertib + fulvestrant 500", "Fulvestrant 500", "59", "UK", "ET, no CDK"),
+                           ("SOLAR-1", "Alpelisib + fulvestrant 500", "Fulvestrant 500", "341", "Multi.", "ET +/- CDK")],
+                          ("Study", "Intervention", "Comparator", "Sample size", "Region", "Prior treatment")), "table", section="d02-s009",
+        path=["B.2 Clinical effectiveness", "B.2.9 Indirect and mixed treatment comparisons"], caption="**Table 15. Summary of studies included in the base case NMA**", page=54),
     _el("d02", 31, "Breast cancer is the most common cancer in the UK, with an estimated 600,000 prevalent diagnosed cases, and most cases are "
         "hormone receptor-positive and HER2-negative at diagnosis.", section="d02-s008", path=["B.1 Decision problem", "B.1.3 Disease background"], page=12),
     _el("d06", 1, "Breast cancer is the most common cancer in the UK. Over 99% of cases occur in women; around 56,400 women and 390 men are "

@@ -11,9 +11,11 @@ with a stack: a new heading closes every open section that cannot contain it.
   font is larger, or the same size but bold where the other is not.
 
 Headings the layout model got wrong are fixed first: table/figure titles
-become captions, and a heading split over two boxes is joined. Captions are
-then attached to their table or figure, and a table continuing at the top of
-the next page is merged into one element.
+become captions, and a heading split over two boxes is joined. A "Table 19 ..."
+line read as body text right before its table becomes a caption too. Captions
+are then attached to their table or figure, a table continuing at the top of
+the next page is merged into one element, and so is a paragraph the page
+break cut in two.
 """
 
 import argparse
@@ -30,6 +32,12 @@ ELEMENT_TYPES = {"text": "paragraph", "list-item": "list_item", "footnote": "foo
 
 _MARKUP = re.compile(r"[#*_]+")
 _CAPTION = re.compile(r"(?i)^(table|figure|fig\.?|box|chart)\s*[A-Z]?\d")
+# "Table 3 shows ..." is a sentence about the table, not its title.
+_REFERS = re.compile(r"(?i)^(table|figure|fig\.?|box|chart)\s*[A-Z]?[\d.]+[a-z]?,?\s+(shows?|presents?|summari[sz]es?|provides?|reports?|gives?|lists?|displays?|illustrates?|includes?|is|are|was|were|and|to|in)\b")
+MAX_CAPTION_CHARS = 250
+# What may follow a sentence's last word: citations, quotes, brackets, Markdown ("regimen._[1]").
+_TRAILING = re.compile(r"(\s*\[[\d,;–\- ]+\]|[\s\"'”’)*_])+$")
+_ABBREVIATION = re.compile(r"\b[A-Z][\w/-]*\s?[=:]\s")
 _NAMED = re.compile(r"(?i)^(section|part|appendix|annex|chapter|issue|question)\s+([A-Z]|\d+)\b")
 _NUMBER = re.compile(r"^((?:[A-Z]\.)?\d+(?:\.\d+)*[a-z]?|[A-Z]\d+(?:\.\d+)*)[.):]?(?:\s|$)")
 _ROW = re.compile(r"<tr>(.*?)</tr>", re.S)
@@ -154,11 +162,64 @@ def structure_document(doc: dict, pages: list[dict]) -> tuple[list[dict], list[d
                 "redactions": box["redactions"],
             })
 
+    elements = _join_continued_paragraphs(_promote_caption_paragraphs(elements))
     elements = _join_continued_tables(elements)
     for el in elements:
         if el["type"] == "table":
             el["text"] = repair_tables(el["text"])
     return sections, _attach_captions(elements)
+
+
+def _promote_caption_paragraphs(elements: list[dict]) -> list[dict]:
+    """A table or figure title the layout model read as body text: right before its table on the same page.
+
+    TA1063 has 21 ("Table 19 Serious AEs observed in FAKTION (ITT population)").
+    Left as a paragraph, the table loses the words that say which trial and
+    population it covers.
+    """
+    for el, nxt in zip(elements, elements[1:]):
+        title = heading_text(el["text"])
+        if (el["type"] == "paragraph" and nxt["type"] in ("table", "figure") and nxt["page_start"] == el["page_end"]
+                and _CAPTION.match(title) and not _REFERS.match(title) and len(title) <= MAX_CAPTION_CHARS):
+            el["type"], el["text"] = "caption", title
+    return elements
+
+
+def _continues(head: str, tail: str) -> bool:
+    """Does `tail`, at the top of the next page, carry on the sentence `head` stopped in?"""
+    h = _TRAILING.sub("", head)
+    if not h or h[-1] in ".!?:;":
+        return False
+    if re.match(r"[a-z(]", tail.lstrip("*_ ")):
+        return True
+    # "... recommended in NICE TA836, TA687 and" + "TA725 for use ...": the head stops on a lowercase word.
+    # Abbreviation lists ("OS: overall survival"), references and form lines end on a term instead.
+    last = h.rstrip(",").rsplit(None, 1)[-1]
+    return last.isalpha() and last.islower() and len(_ABBREVIATION.findall(h)) < 3
+
+
+def _join_continued_paragraphs(elements: list[dict]) -> list[dict]:
+    """A paragraph the page break cut in two: the last element on a page stops mid-sentence and the next page carries on.
+
+    In TA1063, 93 paragraphs were the second half of one ("TA725 for use in
+    combination with fulvestrant ...", "( [REDACTED] months vs ..."). A half
+    that starts mid-sentence does not say what it is about.
+    """
+    out = []
+    for el in elements:
+        prev = out[-1] if out else None
+        if (
+            prev and el["type"] == "paragraph" and prev["type"] in ("paragraph", "list_item")
+            and el["page_start"] == prev["page_end"] + 1 and el["section_id"] == prev["section_id"]
+            and el["source"] == prev["source"] and _continues(prev["text"], el["text"])
+        ):
+            head = prev["text"].rstrip()
+            prev["text"] = head + ("" if head.endswith("-") and not head.endswith(" -") else " ") + el["text"].lstrip()
+            prev["page_end"] = el["page_end"]
+            prev["redactions"] += el["redactions"]
+        else:
+            out.append(el)
+    return out
 
 
 def _join_continued_tables(elements: list[dict]) -> list[dict]:

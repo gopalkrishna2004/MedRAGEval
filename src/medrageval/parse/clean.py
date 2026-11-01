@@ -11,6 +11,8 @@
   or bracket ("trials***", "(Scenario 1)***") are left alone.
 - Superscripts: reference numbers become "[6,57]" so they never merge into a
   preceding number ("2023<sup>6</sup>" would otherwise read "20236").
+- Year ranges whose dash the text layer lost ("NHS reference costs (202122)")
+  get it back: "2021–22".
 """
 
 import argparse
@@ -44,6 +46,9 @@ _X_SPAN = re.compile(rf"(?<![^\W_]){_XS}(?:{_BREAK}{_XS})*(?![^\W_])")
 # no English word ends in four x's.
 _X_TAIL = re.compile(r"(?<=[^\W\d_])[xX]{4,}(?![^\W_])")
 _REDACTED_RUN = re.compile(rf"{re.escape(REDACTED)}(?:{_BREAK}{re.escape(REDACTED)})+")
+
+# Six digits that read as a year and the next one ("202122"): a range whose dash is missing from the text layer.
+_FUSED_YEARS = re.compile(r"(?<![\d.,])((?:19|20)\d\d)(\d\d)(?![\d.,])")
 
 _PAGE_OF = re.compile(r"(?:page\s+)?(\d+)\s+of\s+(\d+)", re.I)
 _PAGE_NUM = re.compile(r"(?:page\s+)?(\d{1,4})", re.I)
@@ -80,6 +85,12 @@ def _redact_spans(text: str, pattern: re.Pattern, char: str) -> str:
     return pattern.sub(repl, text)
 
 
+def _year_range(m: re.Match) -> str:
+    # TA1063's EAG report prints "(2021–22)" but its text layer has "(202122)", which a generated
+    # answer key copied. Only the next year counts, so other six-digit numbers are left alone.
+    return f"{m.group(1)}–{m.group(2)}" if int(m.group(2)) == (int(m.group(1)) + 1) % 100 else m.group(0)
+
+
 def _tidy(text: str) -> str:
     lines = [line.rstrip() for line in text.strip().splitlines()]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
@@ -95,6 +106,7 @@ def clean_text(text: str, redacted_tokens: list[str] = ()) -> str:
     text = _redact_spans(text, _X_SPAN, "x")
     text = _X_TAIL.sub(" " + REDACTED, text)
     text = _REDACTED_RUN.sub(REDACTED, text)
+    text = _FUSED_YEARS.sub(_year_range, text)
     return _tidy(text)
 
 

@@ -30,14 +30,19 @@ EXPECTED = {
         # Tables 35 and 36 of the clarification response repeat the AIC/BIC rows for the two components of the regimen
         # Tables 35 and 36 of the clarification response repeat the AIC/BIC rows for the two components of the regimen; the
         # response also reprints the submission's goodness-of-fit table (Table 21 -> 39) and base-case table (44 -> 27, 28) with new values
-        "twins": {"d04-e0361": ["TTD", "capivasertib arm"], "d04-e0374": ["TTD", "fulvestrant arm"], "d04-e0295": ["Scenario 1"],
-                  "d02-e0343": ["company submission"], "d04-e0423": ["CAPItello-291"], "d02-e0449": ["company submission"], "d12-e0163": ["EAG"]},
-        "copies": {"d12-e0298": ["d04-e0182"], "d04-e0182": ["d12-e0298"]},   # EAG Table 3.12 reprints clarification Table 18 unchanged
-        "not_a_bridge": ["d12-e0393"],                            # lists the five NMA trials and describes none
-        "two_party_stance": "d12-e0428",                          # "The EAG agrees with the company that ..."
-        "redacted_but_stated": {"d02-e0249": "d02-e0441#r00"},   # Table 14 redacts body surface area; Table 42 prints 1.82 / 1.70
-        "figure_as_table": "d02-e0160",                           # Figure 10 (forest plot) came out of OCR as a table with "<65 yéárs"
-        "grouped_table": ("d12-e0327", "CAPItello-291 (PI3K/AKT altered population) | Placebo + fulvestrant 500 | 134"),
+        "twins": {"d04-e0330": ["TTD", "capivasertib arm"], "d04-e0341": ["TTD", "fulvestrant arm"], "d04-e0268": ["Scenario 1"],
+                  "d02-e0321": ["company submission"], "d04-e0387": ["CAPItello-291"], "d02-e0419": ["company submission"], "d12-e0161": ["EAG"]},
+        # EAG Table 3.12 reprints clarification Table 18 unchanged; Table 3.13 reprints Table 19 (FAKTION SAEs, "SAE" for "Serious
+        # adverse event", plus a source note) and Table 4.8 reprints CS Table 29 (subsequent treatments) under another stub heading;
+        # Tables 3.8 and 3.20 reprint CS Table 7 and clarification Table 12 with shortened labels ("HR" for "Hazard ratio")
+        "copies": {"d12-e0291": ["d04-e0166"], "d04-e0166": ["d12-e0291"], "d04-e0172": ["d12-e0297"], "d12-e0297": ["d04-e0172"],
+                   "d02-e0364": ["d12-e0502"], "d12-e0502": ["d02-e0364"], "d02-e0109": ["d12-e0216"], "d12-e0216": ["d02-e0109"],
+                   "d04-e0137": ["d12-e0347"], "d12-e0347": ["d04-e0137"]},
+        "not_a_bridge": ["d12-e0381"],                            # lists the five NMA trials and describes none
+        "two_party_stance": "d12-e0415",                          # "The EAG agrees with the company that ..."
+        "redacted_but_stated": {"d02-e0231": "d02-e0412#r00"},   # Table 14 redacts body surface area; Table 42 prints 1.82 / 1.70
+        "figure_as_table": "d02-e0149",                           # Figure 10 (forest plot) came out of OCR as a table with "<65 yéárs"
+        "grouped_table": ("d12-e0317", "CAPItello-291 (PI3K/AKT altered population) | Placebo + fulvestrant 500 | 134"),
     },
     "document2": {
         "roles": {"d01": "cover", "d02": "company_submission", "d03": "patient_summary", "d04": "clarification", "d06": "professional_org",
@@ -51,14 +56,14 @@ EXPECTED = {
         "crossdoc_pair": ("d08", "d02"),
         # base-case results at list and PAS price (company and clarification), transition matrices per arm and period (EAG)
         # base-case results at list and PAS price (company and clarification) and the age-adjusted utility scenario share the rows
-        "twins": {"d02-e0685": ["Base-case", "List", "company submission"], "d02-e0687": ["Base-case", "PAS", "company submission"],
-                  "d04-e0371": ["Base-case", "List", "clarification"], "d04-e0376": ["clarification"],
-                  "d08-e0391": ["Weeks 0-12", "group", "sparsentan"], "d08-e0399": ["Weeks 12-108", "irbesartan"]},
+        "twins": {"d02-e0643": ["Base-case", "List", "company submission"], "d02-e0645": ["Base-case", "PAS", "company submission"],
+                  "d04-e0337": ["Base-case", "List", "clarification"], "d04-e0342": ["clarification"],
+                  "d08-e0374": ["Weeks 0-12", "group", "sparsentan"], "d08-e0382": ["Weeks 12-108", "irbesartan"]},
         "copies": {},
         "not_a_bridge": [],
         "two_party_stance": None,
-        "redacted_but_stated": {"d05-e0009": "d10-e0015"},       # a redacted job title on one form, printed on another
-        "italic_caption": ("d04", "table", "14", "d04-e0371"),   # "_Table 14: ..._" is still a caption
+        "redacted_but_stated": {"d05-e0009": "d10-e0014"},       # a redacted job title on one form, printed on another
+        "italic_caption": ("d04", "table", "14", "d04-e0337"),   # "_Table 14: ..._" is still a caption
     },
 }
 
@@ -117,7 +122,8 @@ def test_attribution_has_more_than_one_speaker(bundle):
 def test_bridges_describe_their_entity(bundle):
     name, c = bundle
     entity = [x for x in SELECTORS["multihop"](c, CFG, Random(CFG["seed"])) if x.subtype == "entity"]
-    assert len(entity) >= 25
+    # 23 in TA1063 once hops into a unit with no other trial to choose from are dropped (Table 4.6 cites CAPItello-291 on every row)
+    assert len(entity) >= 20
     for x in entity:
         assert x.hint["link"].lower()[:5] in x.hint["bridge"].lower() and x.hint["bridge"] in x.units[0].plain
     assert not set(EXPECTED[name]["not_a_bridge"]) & {x.units[0].unit_id for x in entity}

@@ -97,10 +97,10 @@ Seven item types, each with its own evidence selector and validity rules:
 | Factual | one complete paragraph | the quote is in the element and contains the answer keys |
 | Numerical | a paragraph with a number and unit, or a captioned table | the answer's number is in the quote and among the evidence's numbers |
 | Comparative | a table with two arm columns (first), or labelled rows of one column (the two rows with the closest differing values, within a merged group), or a paragraph with two values of one unit | both values quoted, direction consistent with the values, answer names the winner |
-| Multi-hop | two parts of one document linked by "see Table N", or a sentence that describes a trial paired with a passage that gives its value | quotes from both, bridge not named or identified by its place in a list |
+| Multi-hop | two parts of one document linked by "see Table N", or a sentence that describes a trial paired with a passage that gives its value among other trials' (the sentence must say something about it that passage does not) | quotes from both, bridge not named or identified by its place in a list |
 | Cross-document | a reviewing passage (EAG, clarification) paired with the company passage it refers to, shares numbers with, or best matches lexically | quotes from two documents, not copies of each other |
-| Attribution | a stance sentence ("The EAG considers..."), an expert's form answer, or a company response; claims another party disputes come first, claims two parties share are skipped | answer is the speaker, speaker not named in the question, claim not restated unattributed elsewhere (BM25) |
-| Unanswerable | a value shown as `[REDACTED]` that no other passage prints, or a plausible question the bundle does not cover | the quote carries the marker; or BM25 hits plus an LLM check find no answer, not even partly |
+| Attribution | a stance sentence ("The EAG considers..."), an expert's form answer, or a company response; claims another party disputes come first, claims two parties share are skipped, experts and organisations only in their own documents | answer is the speaker, speaker not named in the question, claim not restated unattributed elsewhere (BM25) |
+| Unanswerable | a value shown as `[REDACTED]` that no other passage prints, or a plausible question the bundle does not cover | the quote carries the marker; or BM25 hits plus an LLM check find no answer (a related fact is fine: the question is a near miss) |
 
 The generation prompt tells the model that the answerer will search the whole
 bundle, so a question has to say what sets its fact apart (population, arm,

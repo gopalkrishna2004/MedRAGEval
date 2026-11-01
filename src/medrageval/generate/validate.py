@@ -143,7 +143,7 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
             v.check("answer_key_in_quotes", contains_quote(k, joined), f"answer_key_not_in_quotes:{k[:40]}")
         if not any(normalize(k) in lb or lb in normalize(k) for lb in labels if lb):   # a comparative question has to name both compared things
             v.check("answer_key_not_in_question", not contains_quote(k, q), f"answer_key_in_question:{k[:40]}")
-    v.check("keys_clean", not any(garbled(k) for k in keys), "answer_key_garbled")
+    v.check("keys_clean", not any(garbled(k) or REDACTED in k for k in keys), "answer_key_garbled")   # "[REDACTED]" is no answer
     for k in keys:   # words, not tokens: "NHS reference costs 2021-22" is four
         v.check("key_length", len(k.split()) <= cfg["validate"]["max_key_tokens"], f"answer_key_too_long:{k[:40]}")
     for phrase in cand.hint.get("must_mention", []):   # a table with twins: the question has to say which one

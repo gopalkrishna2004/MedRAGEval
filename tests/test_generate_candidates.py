@@ -1,10 +1,13 @@
 from random import Random
 
 import pytest
-from synthetic import DOCUMENTS, ELEMENTS, EXTRA_ELEMENTS, GROUPED, MORE_DOCUMENTS, MORE_ELEMENTS, build_corpus, config
+from synthetic import DOCUMENTS, ELEMENTS, EXTRA_ELEMENTS, FORM, GROUPED, MORE_DOCUMENTS, MORE_ELEMENTS, _el, _table, build_corpus, config
 
-from medrageval.generate.candidates import SELECTORS, arm_columns, clean_prose, garbled, numeric_hits, spread, stated_elsewhere, table_comparison, whole_table
-from medrageval.text import table_rows
+from medrageval.generate.candidates import (SELECTORS, Candidate, alternatives, arm_columns, clean_prose, garbled, new_words, numeric_hits, shown_with, spread,
+                                            stated_elsewhere, table_comparison, whole_table)
+from medrageval.generate.corpus import entity_key, make_units
+from medrageval.generate.prompts import build_generation
+from medrageval.text import table_rows, to_plain
 
 CFG = config()
 CFG["limits"]["max_per_section"] = 5     # the synthetic bundle has few sections; do not hide candidates behind the coverage cap
@@ -100,7 +103,7 @@ def test_twin_tables_across_documents_name_the_document_and_copies_are_recorded(
     hints = {c.units[0].unit_id: c.hint for c in run("numerical", corpus=MORE) if c.subtype == "table"}
     assert hints["d02-e0003"]["must_mention"] == ["company submission"] and hints["d02-e0003"]["also_in"] == ["d03-e0020"]
     assert hints["d05-e0020"]["must_mention"] == ["clarification"] and "also_in" not in hints["d05-e0020"]
-    assert hints["d03-e0020"]["must_mention"] == ["EAG"] and hints["d03-e0020"]["also_in"] == ["d02-e0003"]
+    assert "d03-e0020" not in hints          # the EAG's reprint: the submission's copy carries the item and names it in also_in
 
 
 def test_bridge_is_a_sentence_that_describes_the_entity():
@@ -129,8 +132,10 @@ def test_contested_claims_come_first_and_carry_the_other_side():
 
 
 def test_multihop_pairs_cross_reference_and_trial_name():
+    entity = run("multihop", corpus=MORE)
+    assert entity[0].subtype == "entity" and entity[0].hint["link"] == "CAPItello-291"   # bridges come first
+    assert not [c for c in run("multihop") if c.subtype == "entity"]   # no value unit there names a second trial to choose from
     cands = run("multihop")
-    assert cands[0].subtype == "entity" and cands[0].hint["link"] == "CAPItello-291"   # bridges come first
     xref = [c for c in cands if c.subtype == "xref"]
     assert [u.unit_id for u in xref[0].units] == ["d02-e0002", "d02-e0003"] and xref[0].hint["link"] == "Table 7"
     assert all(c.units[0].doc_id == c.units[1].doc_id for c in cands)
@@ -179,3 +184,54 @@ def test_spread_round_robins_over_buckets_with_a_cap():
     items = [("a", 1), ("a", 2), ("a", 3), ("b", 1), ("c", 1)]
     out = list(spread(items, lambda x: x[0], Random(0), cap=2))
     assert len(out) == 4 and {x[0] for x in out[:3]} == {"a", "b", "c"}
+
+
+def test_expert_view_relayed_in_another_partys_document_is_not_attributed():
+    relayed = _el("d02", 41, "UK clinical experts therefore expect that capivasertib in combination with fulvestrant will be used in patients who "
+                  "have previously received a CDK4/6 inhibitor in combination with AI therapy.", section="d02-s001", path=["B.1 Decision problem"], page=17)
+    cands = run("attribution", corpus=build_corpus(CFG, ELEMENTS + [relayed]))
+    assert "d02-e0041" not in {c.units[0].unit_id for c in cands}      # the company holds this position too
+    assert any(c.hint["speaker"] == "the clinical experts" for c in cands)   # their own statement still counts
+
+
+def test_form_rows_about_the_respondent_are_not_attributed():
+    about = FORM.replace("Question", "Brief description of the organisation, question")
+    elements = [dict(e, text=about, plain=to_plain(about)) if e["element_id"] == "d04-e0001" else e for e in ELEMENTS]
+    assert not [c for c in run("attribution", corpus=build_corpus(CFG, elements)) if c.subtype == "form"]
+
+
+def test_what_the_value_table_shows_about_the_bridge():
+    t15 = _table([("CAPItello-291", "Multi.", "ET +/- CDK", "289"), ("FAKTION19", "UK", "ET, no CDK", "59")], ("Study", "Region", "Prior treatment", "Sample size"))
+    row = make_units(_el("d02", 42, t15, "table", section="d02-s009", path=["NMA"]), CFG)[0]
+    assert shown_with(row, entity_key("FAKTION")) == ["Region: UK", "Prior treatment: ET, no CDK"]
+    t24 = _table([("Hyperglycaemia", "36.7%", "6.0%"), ("Source", "SOLAR-1 André 2019", "BOLERO-2 Yardley 2013")],
+                 ("Adverse event", "Alpelisib plus fulvestrant (PIK3CA mutated)", "Everolimus plus exemestane"))
+    column = make_units(_el("d02", 43, t24, "table", section="d02-s009", path=["AEs"]), CFG)[0]
+    assert shown_with(column, entity_key("SOLAR-1")) == ["Alpelisib plus fulvestrant (PIK3CA mutated)", "Source"]
+    bridge = "FAKTION is a small UK-based phase II trial which recruited only 140 patients, none previously treated with a CDK4/6i."
+    assert {"phase", "140", "recruited"} <= new_words(bridge, "FAKTION", ["Region: UK", "Prior treatment: ET, no CDK"])
+    assert len(new_words("FAKTION was run in the UK.", "FAKTION", ["Region: UK"])) < CFG["multihop"]["min_new_tokens"]
+
+
+def test_a_hop_needs_other_trials_to_choose_between():
+    one = _table([("Pre-progression", "[REDACTED]", "CAPItello-291"), ("Post-progression", "[REDACTED]", "CAPItello-291")], ("Health state", "Utility", "Reference"))
+    u = make_units(_el("d02", 44, one, "table", section="d02-s009", path=["HSUV"]), CFG)[0]
+    assert alternatives(MORE, u, entity_key("CAPItello-291")) == set()            # every row cites the same trial
+    header = _table([("Study design", "Phase 3")], ("Study", "CAPItello-291 (SOLAR-1 comparator)"))
+    u = make_units(_el("d02", 45, header, "table", section="d02-s009", path=["Design"]), CFG)[0]
+    assert alternatives(MORE, u, entity_key("CAPItello-291")) == set()            # a name inside the bridge's own cell is no choice
+    assert alternatives(MORE, MORE.units["d02-e0032"], entity_key("CAPItello-291")) == {entity_key("SOLAR-1")}
+
+
+def test_multihop_hint_carries_what_the_value_unit_shows():
+    entity = [c for c in run("multihop", corpus=MORE) if c.subtype == "entity"]
+    assert entity and all("shown" in c.hint for c in entity)
+    prompt = build_generation(entity[0], MORE, CFG)[1]["content"]
+    assert ("Excerpt B itself already shows" in prompt) == bool(entity[0].hint["shown"])
+
+
+def test_generation_prompt_shows_the_preceding_passage_as_context():
+    cand = Candidate("numerical", "table", [CORPUS.units["d02-e0003"]], {"numbers": ["7.3"]})
+    user = build_generation(cand, CORPUS, CFG)[1]["content"]
+    assert "Context before excerpt (not quotable):\nProgression-free survival results by investigator assessment" in user
+    assert "[d02-e0002]" not in user                                    # no id: the context cannot be quoted

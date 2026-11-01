@@ -80,3 +80,36 @@ def test_table_continuing_on_next_page_is_merged():
     assert (table["page_start"], table["page_end"]) == (1, 2)
     assert table["text"].count(head) == 1 and "<td>B</td>" in table["text"]
     assert elements[1]["section_path"] == ["B.1 Results"]
+
+
+def test_caption_read_as_body_text_is_attached_to_its_table():
+    _, elements = _tree([[
+        _h("A 20. Serious adverse events"), _p("Serious AEs were rare in both arms (Table 19)."),
+        _p("Table 19 Serious AEs observed in FAKTION (ITT population)"),
+        _p("<table><tr><th>Event</th><th>N</th></tr></table>", "table"),
+        _p("Table 3 shows the results by arm."), _p("<table><tr><th>Arm</th></tr></table>", "table"),
+    ]])
+    tables = [e for e in elements if e["type"] == "table"]
+    assert tables[0]["caption"] == "Table 19 Serious AEs observed in FAKTION (ITT population)"
+    assert "caption" not in tables[1]                       # a sentence about the table, not its title
+    assert [e["type"] for e in elements] == ["paragraph", "table", "paragraph", "table"]
+
+
+def test_paragraph_cut_by_a_page_break_is_joined():
+    _, elements = _tree([
+        [_h("B.1.3 Pathway"), _p("CDK4/6 inhibitors are also recommended in NICE TA836, TA687 and", y=700)],
+        [_p("TA725 for use in combination with fulvestrant.", y=80), _p("Following progression, options are limited.", y=140)],
+    ])
+    assert elements[0]["text"] == "CDK4/6 inhibitors are also recommended in NICE TA836, TA687 and TA725 for use in combination with fulvestrant."
+    assert (elements[0]["page_start"], elements[0]["page_end"]) == (1, 2)
+    assert elements[1]["text"] == "Following progression, options are limited."
+
+
+def test_finished_sentence_or_abbreviation_list_is_not_joined():
+    _, elements = _tree([
+        [_h("B.2 Results"), _p("Median PFS was 7.3 months._[57]", y=700)],
+        [_p("Overall survival was immature.", y=80)],
+        [_p("DCO: data cut-off; ECOG: performance status; OS: overall survival", y=700)],
+        [_p("The fit of the models is shown in Figure 22.", y=80)],
+    ])
+    assert [e["page_start"] for e in elements] == [1, 2, 3, 4]

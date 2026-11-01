@@ -157,3 +157,13 @@ def test_blacked_out_figure_becomes_redacted_box():
     cleaned = clean_pages(pages, {"header_footer": HEADER_FOOTER})
     figure = cleaned[0]["boxes"][-1]
     assert (figure["class"], figure["text"], figure["redactions"]) == ("picture", REDACTED, 1)
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("were sourced from the latest NHS reference costs (202122).", "were sourced from the latest NHS reference costs (2021–22)."),
+    ("Prices from 201920 and 202324 tariffs", "Prices from 2019–20 and 2023–24 tariffs"),
+    ("Currency code 202199 and 2021220 patients", "Currency code 202199 and 2021220 patients"),   # not the next year; seven digits
+    ("a total of 202,122 and 2021.22", "a total of 202,122 and 2021.22"),
+])
+def test_year_range_missing_its_dash(raw, expected):
+    assert clean_text(raw) == expected

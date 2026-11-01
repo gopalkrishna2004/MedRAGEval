@@ -98,6 +98,23 @@ generate:
     # and 14 of 1432 paragraphs are OCR). OCR units stay searchable.
     allow_ocr: false
   dedupe_jaccard: 0.7            # token-set overlap above which two questions are the same
+  # Before each excerpt the generator sees the passages that precede it in its
+  # section, read-only. On its own an excerpt can start mid-argument: in the
+  # 31 Oct smoke run, factual-001 called the company's NMA "the EAG's" because
+  # its paragraph ("The results also showed ...") did not say whose analysis
+  # it was, and comparative-002 left out the trial its table's title named.
+  context:
+    units: 2
+    max_chars: 700
+  multihop:
+    # Excerpt B shows some facts about the bridge itself: its table row, its
+    # column header, its own sentence. A question that describes the bridge
+    # by those is answered by B alone, as both multi-hop items of the 31 Oct
+    # smoke run were ("the alpelisib-plus-fulvestrant study" is Table 24's
+    # column header; FAKTION is Table 15's only UK row). The generator is told
+    # what B shows, and a pair is dropped when the bridge sentence has fewer
+    # than min_new_tokens content words that B does not show.
+    min_new_tokens: 3
 
   # Elements that must never become evidence or search hits. Counts are for
   # TA1063 / document2: reference lists 227 / 303 elements, elements under 25
@@ -120,6 +137,13 @@ generate:
       - '^please (complete|underline|return|note that this)'
       - '^you are asked to'
       - 'committed to meeting the requirements of copyright'
+    # Form text: a paragraph that this many documents of one role repeat word
+    # for word is the form's instructions, not an answer. TA1063: 85 more
+    # elements, 44 distinct texts, all instructions or form titles of the
+    # patient organisation, patient expert and clinical expert forms ("You do
+    # not have to answer every question ..."). The text patterns above missed
+    # them, and two were among the first 22 factual candidates of a full run.
+    template_min_docs: 2
 
   # Document roles, scored on a document's headings, running text and first
   # 30 elements (TA1063's EAG report has no "EAG" heading; it is identified by
@@ -239,6 +263,17 @@ generate:
       - "\\b(?:the\\s+)?(EAG|ERG|company|manufacturer|clinical experts?|patient experts?|patient organisations?|professional organisations?|committee)(?:'s)?\\s+(?:also\\s+|therefore\\s+|however\\s+)?(considers?|notes?d?|argue[sd]?|believes?|agree[sd]?|disagree[sd]?|suggest(?:s|ed)?|conclude[sd]?|state[sd]?|acknowledge[sd]?|recommend(?:s|ed)?|prefer(?:s|red)?|highlight(?:s|ed)?|is concerned|was concerned|assume[sd]?|expect(?:s|ed)?|propose[sd]?|request(?:s|ed)?|advise[sd]?|indicate[sd]?|report(?:s|ed)?|emphasise[sd]?|view is|views?)\\b"
     response_section_patterns: ['^company response']
     min_answer_chars: 80         # form rows need a real answer, not a tick box
+    # Experts and organisations speak for themselves only in their own
+    # documents. Elsewhere their view is relayed by a party that holds it too:
+    # "UK clinical experts therefore expect that capivasertib ... will be used
+    # in patients who have previously received CDK4/6 inhibitor" is in the
+    # company's lay summary, and the company says the same in Document B and
+    # at clarification, so "who" had two answers. The only such stance in TA1063.
+    own_voice_only: [the clinical experts, the patient experts, the patient organisations, the professional organisations]
+    # Form rows about the respondent rather than the technology (4 of 14 form
+    # rows in TA1063: "4a. Brief description of the organisation", "5. How did
+    # you gather information ...").
+    form_skip_questions: ['your name', 'name of (your )?organi[sz]ation', 'job title', 'description of the organi[sz]ation', 'how did you gather information', 'links (with|to),? or funding from']
     max_share_per_speaker: 0.5
     # Exclusivity: a claim restated in a document with a different role is not
     # attributable. Rare tokens are those in at most rare_df_max of all units;
@@ -272,12 +307,15 @@ generate:
     stated_top_k: 5
     stated_rare_df_max: 0.03
     stated_max_tokens: 40
-    # "partly" = a passage gives a closely related fact but not the one asked.
-    # Not accepted: in the smoke run the one "partly" item asked which country
-    # contributed most participants to FAKTION, a trial the bundle calls
-    # UK-based three times, so the answer followed from the documents. The
-    # verdict is stored in the item's `search` field either way.
-    accept_partly: false
+    # "partly" = a passage gives a closely related fact but not the one asked:
+    # exactly the near miss a good unanswerable question is (the bundle gives
+    # DCO1, the question asks for DCO2). An answer that follows from the
+    # passages is "yes" in the check's own definition, which is what the FAKTION
+    # "which country" question of the first smoke run was. Rejecting "partly"
+    # left only questions unrelated to anything in the bundle: the 31 Oct run
+    # rejected "which spreadsheet version" and kept "which operating system
+    # ran the model". The verdict is stored in the item's `search` field.
+    accept_partly: true
 
   judge:
     max_chars_per_unit: 2500
@@ -289,7 +327,8 @@ generate:
 
   validate:
     # A question must stand on its own: no pointing at the excerpt.
-    deictic_patterns: ['\b(this|that|these|those) (table|figure|excerpt|passage|document|section|paragraph|study|trial|row|text)\b', '\b(above|below|the following)\b', '\baccording to the (excerpt|passage|text)\b']
+    # ... and no document ids, which only the generator sees ("In the d04 deterministic analysis", a v11 smoke-run question).
+    deictic_patterns: ['\b(this|that|these|those) (table|figure|excerpt|passage|document|section|paragraph|study|trial|row|text)\b', '\b(above|below|the following)\b', '\baccording to the (excerpt|passage|text)\b', '\bd\d{2}\b']
     # A question is a copy of its quote when more than max_question_overlap
     # of its content words (numbers left out) are in the quote AND at least
     # echo_min_shared words are. Share alone cannot tell copying from naming:

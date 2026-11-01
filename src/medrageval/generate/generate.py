@@ -121,6 +121,10 @@ class Run:
                               "passage_ids": r.get("passage_ids")}
             reasons = [] if r.get("answered") in ok_verdicts else [f"answered:{r.get('answered')}"]
             out.append({"cand": cand, "item": item, "stage": "unanswerable_check" if reasons else "accepted", "reasons": reasons, "verdict": v, "judge": r})
+        # one item per anchor: three near misses on one paragraph would crowd out the rest of the bundle
+        accepted = [res for res in out if res["stage"] == "accepted"]
+        for res in accepted[1:]:
+            res["stage"], res["reasons"] = "spare", ["anchor_has_item"]
         return out
 
     # ----- main thread -----
