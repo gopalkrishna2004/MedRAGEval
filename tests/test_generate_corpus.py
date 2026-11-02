@@ -1,7 +1,7 @@
 import pytest
 from synthetic import ELEMENTS, EXTRA_ELEMENTS, TABLE7, _el, build_corpus, config
 
-from medrageval.generate.corpus import BM25, corpus_topic, detect_roles, extract_entities, is_noise, make_units, mentions, significant_numbers, template_elements, tokenize
+from medrageval.generate.corpus import BM25, corpus_topic, detect_roles, is_noise, make_units, significant_numbers, template_elements, tokenize
 from medrageval.text import contains_quote
 
 CFG = config()
@@ -33,26 +33,6 @@ def test_units_carry_source():
     ocr = next(e for e in EXTRA_ELEMENTS if e["element_id"] == "d02-e0025")
     assert make_units(ocr, CFG)[0].source == "ocr"
     assert make_units(next(e for e in ELEMENTS if e["element_id"] == "d02-e0001"), CFG)[0].source == "native"
-
-
-def test_twin_tables_and_their_discriminating_caption_words():
-    corpus = build_corpus(CFG, ELEMENTS + EXTRA_ELEMENTS)
-    assert corpus.twins["d02-e0020"] == ["d02-e0021"] and corpus.twins["d02-e0021"] == ["d02-e0020"]
-    assert corpus.discriminator(corpus.units["d02-e0021"]) == ["fulvestrant arm"]   # "fulvestrant" alone is in both captions
-    assert corpus.discriminator(corpus.units["d02-e0020"]) == ["capivasertib arm"]
-    assert corpus.discriminator(corpus.units["d02-e0022"]) == [""]                  # identical captions: nothing tells them apart
-    assert corpus.discriminator(corpus.units["d02-e0003"]) is None                   # no twin
-    assert "d02-e0024" not in corpus.twins and "d02-e0027" not in corpus.twins
-
-
-def test_twins_across_documents_and_copies():
-    from synthetic import DOCUMENTS, MORE_DOCUMENTS, MORE_ELEMENTS
-    corpus = build_corpus(CFG, ELEMENTS + MORE_ELEMENTS, DOCUMENTS + MORE_DOCUMENTS)
-    assert corpus.twins["d02-e0003"] == ["d05-e0020"] and corpus.copies["d02-e0003"] == ["d03-e0020"]   # same cells in the EAG report
-    assert corpus.twins["d03-e0020"] == ["d05-e0020"] and corpus.copies["d03-e0020"] == ["d02-e0003"]
-    assert corpus.discriminator(corpus.units["d02-e0003"]) == ["company submission"]                       # captions identical: the document tells
-    assert corpus.discriminator(corpus.units["d05-e0020"]) == ["clarification"]
-    assert corpus.discriminator(corpus.units["d03-e0020"]) == ["EAG"]
 
 
 def test_long_table_splits_into_row_units_with_header():
@@ -103,21 +83,6 @@ def test_topic_is_the_common_prefix_of_the_most_shared_title():
     assert corpus_topic(titles) == "Capivasertib with fulvestrant for treating advanced breast cancer [ID6370]"
 
 
-def test_cross_reference_resolves_within_document_only():
-    c = build_corpus()
-    assert c.resolve_references(c.units["d02-e0002"]) == [("table", "7", "d02-e0003")]
-    assert c.resolve_references(c.units["d03-e0004"]) == []   # "CS Table 7" is in d02, not d03
-
-
-def test_entities_learned_from_trial_context():
-    c = build_corpus()
-    assert c.entity_names == {"CAPITELLO291": "CAPItello-291"}
-    assert c.units["d02-e0001"].unit_id in c.entities["CAPITELLO291"]
-    assert extract_entities("the phase 3 trial and the PROTECT study and the ITT study", CFG) == {"PROTECT": "PROTECT"}
-    assert extract_entities("SOLAR-1 and BOLERO-2 data; HER2-negative; EQ-5D; SF-36; COVID-19", CFG) == {"SOLAR1": "SOLAR-1", "BOLERO2": "BOLERO-2"}
-    assert mentions("results of CAPItello291 were", "CAPITELLO291")
-
-
 def test_significant_numbers():
     assert significant_numbers("£24,567 per QALY in 2023 with 0.61 QALYs and 50% of 155 patients, n=12") == {"24567", "0.61", "50", "155"}
     assert significant_numbers("Around 40-50% of people (aged 34-90) pay £1,000–2,000") == {"40-50", "1000-2000"}   # a range is one value
@@ -146,11 +111,3 @@ def test_form_text_repeated_across_documents_of_one_role_is_noise():
     els = [_el("d05", 1, note), _el("d06", 1, note), _el("d07", 1, "Our members told us that side effects matter most."), _el("d02", 1, note)]
     roles = {"d05": "patient_org", "d06": "patient_org", "d07": "patient_org", "d02": "company_submission"}
     assert template_elements(els, roles, CFG) == {"d05-e0001", "d06-e0001"}   # one company copy is not a form template
-
-
-def test_reprint_with_shortened_labels_is_a_copy():
-    reprint = _el("d03", 30, TABLE7.replace("Hazard ratio (95% CI)", "HR (95% CI)").replace("Events, n (%)", "Events n (%)"), "table",
-                  section="d03-s003", path=["3 Clinical effectiveness"], caption="**Table 3.8: PFS by investigator assessment**", page=67)
-    corpus = build_corpus(CFG, ELEMENTS + [reprint])
-    assert corpus.copies["d02-e0003"] == ["d03-e0030"] and corpus.copies["d03-e0030"] == ["d02-e0003"]
-    assert "d02-e0003" not in corpus.twins

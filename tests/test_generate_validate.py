@@ -1,16 +1,24 @@
-import pytest
-from synthetic import DOCUMENTS, ELEMENTS, EXTRA_ELEMENTS, MORE_DOCUMENTS, MORE_ELEMENTS, build_corpus, config
+from random import Random
 
-from medrageval.generate.candidates import Candidate
-from medrageval.generate.validate import is_duplicate, validate
+import pytest
+from synthetic import build_sheet, config
+
+from medrageval.generate.candidates import SELECTORS, Candidate
+from medrageval.generate.validate import is_duplicate, question_overlap, validate
 
 CFG = config()
-CORPUS = build_corpus(CFG)
-U = CORPUS.units
+CORPUS, SHEET = build_sheet(CFG)
+F = SHEET.facts
 
 
-def cand(type_, *unit_ids, subtype=None, **hint):
-    return Candidate(type_, subtype, [U[u] for u in unit_ids], hint)
+def cand(type_, *fact_ids, subtype=None, **hint):
+    facts = [F[f] for f in fact_ids]
+    units = list({u.unit_id: u for f in facts for u in SHEET.units(f)}.values())
+    return Candidate(type_, subtype, units, {"must_mention": SHEET.must_mention(facts[0]) or [], **hint}, facts)
+
+
+def selected(name, fact_id):
+    return next(c for c in SELECTORS[name](CORPUS, SHEET, CFG, Random(1)) if fact_id in [f.fact_id for f in c.facts])
 
 
 def item(question, answer, keys, quotes, **extra):
@@ -18,173 +26,184 @@ def item(question, answer, keys, quotes, **extra):
             "quotes": [{"unit_id": u, "quote": q} for u, q in quotes], **extra}
 
 
-GOOD_FACTUAL = item("What kind of trial was CAPItello-291 and which patients did it enrol?",
-                    "A phase 3, randomised, double-blind, placebo-controlled trial of capivasertib plus fulvestrant.",
-                    ["phase 3", "double-blind"],
-                    [("d02-e0001", "CAPItello-291 was a phase 3, randomised, double-blind, placebo-controlled trial of capivasertib plus fulvestrant")])
+DESIGN_QUOTE = ("d02-e0001", "CAPItello-291 was a phase 3, randomised, double-blind, placebo-controlled trial of capivasertib plus fulvestrant")
+GOOD_FACTUAL = item("How was the pivotal CAPItello-291 study of capivasertib with fulvestrant designed?",
+                    "It was a phase 3, randomised, double-blind, placebo-controlled trial.", ["phase 3", "double-blind"], [DESIGN_QUOTE])
 
 
 def test_good_factual_item_passes():
-    v = validate(GOOD_FACTUAL, cand("factual", "d02-e0001"), CORPUS, CFG, [])
+    v = validate(GOOD_FACTUAL, cand("factual", "d02-trial_design.design-001"), CORPUS, CFG, [])
     assert v.ok and v.reasons == []
 
 
-def test_question_must_not_echo_the_quote():
-    echo = {**GOOD_FACTUAL, "question": "Was CAPItello-291 a phase 3, randomised, double-blind, placebo-controlled trial of capivasertib plus fulvestrant in adults?"}
-    v = validate(echo, cand("factual", "d02-e0001"), CORPUS, CFG, [])
-    assert any(r.startswith("question_echoes_quote:") for r in v.reasons)
-    assert validate(GOOD_FACTUAL, cand("factual", "d02-e0001"), CORPUS, CFG, []).checks["question_not_echo"]
-    # attribution has to state the claim, so it is exempt
-    c = cand("attribution", "d03-e0001", subtype="stance", speaker="the EAG", claim="The EAG considers that the company's base-case ICER underestimates uncertainty")
-    it = item("Who considers that the company's base-case ICER of £24,567 per QALY gained underestimates uncertainty because the proportional hazards assumption was not met?",
-              "the EAG", ["EAG"], [("d03-e0001", "The EAG considers that the company's base-case ICER of £24,567 per QALY gained")])
-    assert "question_not_echo" not in validate(it, c, CORPUS, CFG, []).checks
+@pytest.mark.parametrize("question, reason", [
+    ("What design does Table 3 give for the CAPItello-291 study of capivasertib?", "table_language:Table 3"),
+    ("What design is in the CAPItello-291 row for capivasertib with fulvestrant?", "table_language:row"),
+    ("For Capivasertib + fulvestrant (N=155) in CAPItello-291, what was the trial design?", "table_language:(N=1"),
+    ("How was the trial in this table designed for capivasertib with fulvestrant?", "deictic_question"),
+])
+def test_questions_about_the_layout_are_rejected(question, reason):
+    v = validate({**GOOD_FACTUAL, "question": question}, cand("factual", "d02-trial_design.design-001"), CORPUS, CFG, [])
+    assert reason in v.reasons
 
 
-def test_answer_keys_are_short():
-    long = {**GOOD_FACTUAL, "answer_keys": ["phase 3", "randomised, double-blind, placebo-controlled trial of capivasertib"]}
-    assert any(r.startswith("answer_key_too_long:") for r in validate(long, cand("factual", "d02-e0001"), CORPUS, CFG, []).reasons)
+def test_question_must_name_what_sets_the_fact_apart():
+    c = selected("numerical", "d05-efficacy.endpoint_result-001")   # DCO2 median, a sibling of the DCO1 median
+    assert c.hint["must_mention"] == [["DCO2", "clarification"]]
+    arm, value = c.hint["label"], c.hint["value"]   # the selector picks one arm of the fact
+    good = item(f"At the second data cut (DCO2), what median progression-free survival did {arm} achieve in CAPItello-291?",
+                f"{value}.", [value], [("d05-e0033", "median PFS was 7.2 months with capivasertib plus fulvestrant versus 3.6 months with placebo plus fulvestrant")])
+    assert validate(good, c, CORPUS, CFG, []).ok
+    vague = {**good, "question": f"What median progression-free survival did {arm} achieve in the CAPItello-291 trial?"}
+    assert "question_lacks_discriminator:DCO2" in validate(vague, c, CORPUS, CFG, []).reasons
+    by_doc = {**good, "question": f"In the company's clarification response, what median progression-free survival did {arm} achieve in CAPItello-291?"}
+    assert validate(by_doc, c, CORPUS, CFG, []).ok   # naming the document is enough
 
 
-def test_garbled_answer_key_rejected():
-    v = validate({**GOOD_FACTUAL, "answer_keys": ["phase 3", "yéárs"]}, cand("factual", "d02-e0001"), CORPUS, CFG, [])
-    assert "answer_key_garbled" in v.reasons
+def test_keys_may_take_the_facts_natural_form():
+    """The table prints "121 (78.1)"; the fact says "78.1%", which is what a correct answer says."""
+    c = cand("numerical", "d02-efficacy.endpoint_result-002", numbers=["78.1"], value="78.1%")
+    it = item("What share of patients on capivasertib plus fulvestrant in CAPItello-291 had a progression event or died by DCO1?",
+              "78.1% did.", ["78.1%"], [("d02-e0003", "Events, n (%) | 121 (78.1) | 108 (80.6)")])
+    v = validate(it, c, CORPUS, CFG, [])
+    assert v.ok, v.reasons
+    assert "answer_key_unsupported:79.0%" in validate({**it, "answer_keys": ["79.0%"]}, c, CORPUS, CFG, []).reasons
 
 
-def test_twin_table_question_must_say_which_table():
-    corpus = build_corpus(CFG, ELEMENTS + EXTRA_ELEMENTS)
-    c = Candidate("numerical", "table", [corpus.units["d02-e0021"]], {"numbers": ["608.6"], "must_mention": ["fulvestrant arm"]})
-    it = item("What AIC did the exponential model have for time to discontinuation of capivasertib in CAPItello-291?", "608.6", ["608.6"], [("d02-e0021", "Exponential | 608.6 | 611.3")])
-    assert "question_lacks_discriminator:fulvestrant arm" in validate(it, c, corpus, CFG, []).reasons
-    it["question"] = "What AIC did the exponential model have for time to discontinuation in the fulvestrant arm of CAPItello-291?"
-    assert validate(it, c, corpus, CFG, []).ok
+@pytest.mark.parametrize("keys, reason", [
+    (["12"], "answer_key_generic:12"),
+    (["Weak"], "answer_key_generic:Weak"),
+    (["a phrase that is much too long to score"], "answer_key_too_long:a phrase that is much too long to score"),
+    (["[REDACTED]"], "answer_key_garbled"),
+    ([], "answer_keys_missing"),
+])
+def test_keys_must_be_able_to_score_an_answer(keys, reason):
+    v = validate({**GOOD_FACTUAL, "answer_keys": keys}, cand("factual", "d02-trial_design.design-001"), CORPUS, CFG, [])
+    assert reason in v.reasons
 
 
-@pytest.mark.parametrize(
-    "change, reason",
-    [
-        ({"quotes": [{"unit_id": "d02-e0001", "quote": "a phase 2 randomised trial of capivasertib"}]}, "quote_not_found:d02-e0001"),
-        ({"quotes": [{"unit_id": "d02-e0002", "quote": "a phase 3, randomised, double-blind"}]}, "quote_unit_unknown:d02-e0002"),
-        ({"answer_keys": ["open-label"]}, "answer_key_not_in_quotes:open-label"),
-        ({"question": "Was CAPItello-291 a double-blind trial of capivasertib plus fulvestrant in advanced cancer?"}, "answer_key_in_question:double-blind"),
-        ({"question": "What kind of trial is described in this excerpt about capivasertib plus fulvestrant?"}, "deictic_question"),
-        ({"question": "Which trial?"}, "question_length:2"),
-        ({"answer": ""}, "no_answer"),
-        ({"quotes": []}, "no_quotes"),
-    ],
-)
+@pytest.mark.parametrize("change, reason", [
+    (lambda i: i["quotes"][0].update(quote="CAPItello-291 was an open-label trial"), "quote_not_found:d02-e0001"),
+    (lambda i: i["quotes"][0].update(unit_id="d02-e0002"), "quote_unit_unknown:d02-e0002"),
+    (lambda i: i.update(answer_keys=["double-blind"], question="Was CAPItello-291, the capivasertib with fulvestrant study, double-blind?"), "answer_key_in_question:double-blind"),
+    (lambda i: i.update(question="Design?"), "question_length:1"),
+    (lambda i: i.update(answer=""), "no_answer"),
+    (lambda i: i.update(quotes=[]), "no_quotes"),
+])
 def test_factual_rejections(change, reason):
-    v = validate({**GOOD_FACTUAL, **change}, cand("factual", "d02-e0001"), CORPUS, CFG, [])
-    assert not v.ok and reason in v.reasons
+    it = {**GOOD_FACTUAL, "quotes": [dict(q) for q in GOOD_FACTUAL["quotes"]]}
+    change(it)
+    assert reason in validate(it, cand("factual", "d02-trial_design.design-001"), CORPUS, CFG, []).reasons
 
 
-def test_duplicate_questions_rejected():
-    seen = ["What kind of trial was CAPItello-291 and which patients did it enrol?"]
-    assert is_duplicate("What kind of trial was CAPItello-291, and which patients did it enrol?", seen, CFG["dedupe_jaccard"])
-    assert not is_duplicate("What was the list price of capivasertib per pack?", seen, CFG["dedupe_jaccard"])
-    v = validate(GOOD_FACTUAL, cand("factual", "d02-e0001"), CORPUS, CFG, seen)
-    assert "duplicate_question" in v.reasons
+def test_question_must_not_echo_the_quote_or_repeat_another():
+    quote = "The company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane was £24,567 per QALY gained, with incremental QALYs"
+    share, shared = question_overlap("What was the company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane, with incremental QALYs gained?", quote)
+    assert share > CFG["validate"]["max_question_overlap"] and shared >= CFG["validate"]["echo_min_shared"]
+    assert is_duplicate("How was the CAPItello-291 study designed?", ["How was the CAPItello-291 study designed?"], 0.7)
+    assert "duplicate_question" in validate(GOOD_FACTUAL, cand("factual", "d02-trial_design.design-001"), CORPUS, CFG, [GOOD_FACTUAL["question"]]).reasons
 
 
-def test_numerical_needs_a_number_from_the_evidence():
-    c = cand("numerical", "d02-e0008", subtype="prose", numbers=["24567", "0.61", "14986"])
-    quote = "The company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane was £24,567 per QALY gained"
-    ok = item("What was the company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane?",
-              "£24,567 per QALY gained.", ["£24,567"], [("d02-e0008", quote)])
-    assert validate(ok, c, CORPUS, CFG, []).ok
-    bad = {**ok, "answer_keys": ["per QALY gained"]}
-    assert "answer_key_without_number" in validate(bad, c, CORPUS, CFG, []).reasons
-    wrong = {**ok, "answer_keys": ["24,567"], "quotes": [{"unit_id": "d02-e0008", "quote": "incremental QALYs of 0.61 and incremental costs of £14,986"}]}
-    assert "answer_key_not_in_quotes:24,567" in validate(wrong, c, CORPUS, CFG, []).reasons
+def comparative_item(**over):
+    base = item("In CAPItello-291, did capivasertib plus fulvestrant or placebo plus fulvestrant give the longer median overall survival?",
+                "Capivasertib plus fulvestrant was longer, at 26.0 months against 22.3 months.", ["26.0 months", "22.3 months"],
+                [("d02-e0011", "median overall survival was 26.0 months with capivasertib plus fulvestrant versus 22.3 months with placebo plus fulvestrant")],
+                measure="median OS", label_a="capivasertib plus fulvestrant", value_a="26.0 months", label_b="placebo plus fulvestrant", value_b="22.3 months", higher="a")
+    return {**base, **over}
 
 
-COMP = cand("comparative", "d02-e0003", subtype="table", mode="columns",
-            labels=["Capivasertib + fulvestrant (N=155)", "Placebo + fulvestrant (N=134)"],
-            header="Progression or death | Capivasertib + fulvestrant (N=155) | Placebo + fulvestrant (N=134)", rows=["Median PFS (months) | 7.3 | 3.1"])
-GOOD_COMP = item("In the PI3K/AKT pathway-altered population of CAPItello-291, was median PFS longer with capivasertib plus fulvestrant or with placebo plus fulvestrant?",
-                 "Median PFS was longer with capivasertib plus fulvestrant: 7.3 months versus 3.1 months.", ["7.3", "3.1"],
-                 [("d02-e0003", "Progression or death | Capivasertib + fulvestrant (N=155) | Placebo + fulvestrant (N=134)"), ("d02-e0003", "Median PFS (months) | 7.3 | 3.1")],
-                 measure="Median PFS (months)", label_a="Capivasertib + fulvestrant (N=155)", value_a="7.3", label_b="Placebo + fulvestrant (N=134)", value_b="3.1", higher="a")
+def test_comparative_checks_values_direction_and_difference():
+    c = selected("comparative", "d02-efficacy.endpoint_result-003")
+    assert validate(comparative_item(), c, CORPUS, CFG, []).ok
+    assert any(r.startswith("direction_inconsistent") for r in validate(comparative_item(higher="b"), c, CORPUS, CFG, []).reasons)
+    tie = validate(comparative_item(value_a="26.0 months", value_b="26.0 months", higher="equal"), c, CORPUS, CFG, []).reasons
+    assert any(r.startswith("comparison_not_meaningful") for r in tie)
+    assert "comparative_values_not_in_facts" in validate(comparative_item(value_b="21.0 months"), c, CORPUS, CFG, []).reasons
 
 
-def test_comparative_passes_and_catches_direction_and_wording():
-    assert validate(GOOD_COMP, COMP, CORPUS, CFG, []).ok
-    assert "direction_inconsistent:b!=a" in validate({**GOOD_COMP, "higher": "b"}, COMP, CORPUS, CFG, []).reasons
-    flat = {**GOOD_COMP, "answer": "Capivasertib plus fulvestrant: 7.3 months; placebo plus fulvestrant: 3.1 months."}
-    assert "answer_lacks_direction" in validate(flat, COMP, CORPUS, CFG, []).reasons
-    missing = {**GOOD_COMP, "value_b": "3.2"}
-    assert "comparative_values_not_in_quotes" in validate(missing, COMP, CORPUS, CFG, []).reasons
-
-
-def test_multihop_question_must_draw_on_both_excerpts():
-    c = cand("multihop", "d02-e0002", "d02-e0003", subtype="xref", link="Table 7")
-    quotes = [("d02-e0002", "are presented in Table 7, with a 50% reduction in the risk of progression or death"),
-              ("d02-e0003", "Median PFS (months) | 7.3 | 3.1")]
-    good = item("For the PI3K/AKT pathway-altered population in which capivasertib halved the risk of progression, what was the median PFS in months on placebo plus fulvestrant?",
-                "3.1 months", ["3.1"], quotes)
-    assert validate(good, c, CORPUS, CFG, []).ok
-    one = item("What was the median PFS in months with placebo plus fulvestrant in the pathway-altered population?", "3.1 months", ["3.1"], quotes[1:])
-    assert "quotes_from_one_unit" in validate(one, c, CORPUS, CFG, []).reasons
-    named = {**good, "question": "In Table 7, for the population in which capivasertib halved the risk of progression, what was the median PFS on placebo plus fulvestrant?"}
-    assert "table_named_in_question:Table 7" in validate(named, c, CORPUS, CFG, []).reasons
-    e = cand("multihop", "d02-e0001", "d02-e0011", subtype="entity", link="CAPItello-291")
-    bridged = item("In CAPItello-291, what was the median overall survival with capivasertib plus fulvestrant?", "26.0 months", ["26.0"],
-                   [("d02-e0001", "a phase 3, randomised, double-blind, placebo-controlled trial"), ("d02-e0011", "median overall survival was 26.0 months")])
-    assert "bridge_named_in_question:CAPItello-291" in validate(bridged, e, CORPUS, CFG, []).reasons
-    positional = {**bridged, "question": "For the second trial named in the company's survival modelling, what was the median overall survival with capivasertib plus fulvestrant?"}
-    assert "bridge_identified_by_position" in validate(positional, e, CORPUS, CFG, []).reasons
-
-
-def test_crossdoc_needs_two_documents_and_no_copies():
-    c = cand("crossdoc", "d03-e0001", "d02-e0008", subtype="numbers", link="24567")
-    good = item("What did the EAG conclude about the company's base-case ICER of £24,567 per QALY for capivasertib plus fulvestrant?",
-                "That it underestimates uncertainty because proportional hazards was not met.", ["underestimates uncertainty"],
-                [("d03-e0001", "underestimates uncertainty, because the proportional hazards assumption was not met"),
-                 ("d02-e0008", "base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane was £24,567 per QALY gained")])
-    assert validate(good, c, CORPUS, CFG, []).ok
-    one_doc = {**good, "quotes": [good["quotes"][0]]}
-    assert "quotes_from_one_document" in validate(one_doc, c, CORPUS, CFG, []).reasons
-
-
-def test_attribution_speaker_rules_and_exclusivity():
-    c = cand("attribution", "d03-e0001", subtype="stance", speaker="the EAG", claim="underestimates uncertainty")
-    quote = "The EAG considers that the company's base-case ICER of £24,567 per QALY gained for capivasertib plus fulvestrant versus everolimus plus exemestane underestimates uncertainty"
-    good = item("Who considered that the base-case ICER of £24,567 per QALY for capivasertib plus fulvestrant understates the uncertainty in the analysis?",
-                "the EAG", ["EAG"], [("d03-e0001", quote)])
+def test_multihop_must_not_name_the_bridge():
+    c = selected("multihop", "d02-trial_design.primary_endpoint-001")
+    quotes = [(c.units[0].unit_id, "The primary endpoint of CAPItello-291 was progression-free survival (PFS) by investigator assessment"),
+              (c.units[1].unit_id, next(e["quote"] for e in c.facts[1].evidence))]
+    names = " and ".join(s[0] for s in c.hint["must_mention"])
+    value = next(iter(c.facts[1].values.values()))
+    good = item(f"For the primary endpoint of CAPItello-291, reported as {names}, what result did capivasertib plus fulvestrant reach?",
+                f"{value}.", [value], quotes, hop_a="names the endpoint", hop_b="gives the result")
     v = validate(good, c, CORPUS, CFG, [])
     assert v.ok, v.reasons
-    assert "speaker_named_in_question" in validate({**good, "question": "Who, according to the EAG report, found the base-case ICER of £24,567 per QALY uncertain?"}, c, CORPUS, CFG, []).reasons
-    assert "answer_not_speaker:the company" in validate({**good, "answer": "the company"}, c, CORPUS, CFG, []).reasons
-    # the same claim, unattributed, in the company's own document: not exclusive
-    restated = item("Who concluded that the proportional hazards assumption not being met underestimates uncertainty in the base-case ICER?", "the EAG", ["EAG"],
-                    [("d03-e0001", "The EAG considers that the company's base-case ICER of £24,567 per QALY gained for capivasertib plus fulvestrant versus everolimus plus exemestane underestimates uncertainty, because the proportional hazards assumption was not met")])
-    cfg = config()
-    cfg["attribution"]["restated_containment"] = 0.4
-    v = validate(restated, c, CORPUS, cfg, [])
-    assert any(r.startswith("claim_restated_in:d02-e0009") for r in v.reasons), v.reasons
+    named = {**good, "question": f"What progression-free survival result ({names}) did capivasertib plus fulvestrant reach in CAPItello-291?"}
+    assert "bridge_named_in_question:endpoint" in validate(named, c, CORPUS, CFG, []).reasons
+    one = {**good, "quotes": good["quotes"][1:]}
+    assert "quotes_from_one_unit" in validate(one, c, CORPUS, CFG, []).reasons
+
+
+def test_crossdoc_needs_both_documents():
+    c = selected("crossdoc", "d02-cost_effectiveness.icer-001")
+    quotes = [("d02-e0008", "The company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane was £24,567 per QALY gained"),
+              ("d03-e0030", "The EAG's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane is £31,200 per QALY gained")]
+    it = item("How does the EAG's base-case cost-effectiveness estimate against everolimus plus exemestane differ from the one in the company submission?",
+              "The company estimated £24,567 per QALY gained; the EAG estimated £31,200 per QALY gained.", ["£24,567", "£31,200"], quotes)
+    assert validate(it, c, CORPUS, CFG, []).ok
+    assert "quotes_from_one_document" in validate({**it, "quotes": it["quotes"][:1]}, c, CORPUS, CFG, []).reasons
+
+
+def test_attribution_answer_is_the_named_respondent():
+    c = selected("attribution", "d04-stakeholder_views.view-001")
+    quote = "capivasertib plus fulvestrant would be used after an aromatase inhibitor in patients whose disease has a PI3K/AKT pathway alteration"
+    it = item("Who expected capivasertib with fulvestrant to be used after an aromatase inhibitor once a PI3K/AKT pathway alteration is found?",
+              "Royal Marsden NHS Foundation Trust", ["Royal Marsden NHS Foundation Trust"], [(c.units[0].unit_id, quote)])
+    v = validate(it, c, CORPUS, CFG, [])
+    assert v.checks["answer_is_speaker"] and v.checks["speaker_not_in_question"]
+    assert validate({**it, "answer": "the clinical experts"}, c, CORPUS, CFG, []).checks["answer_is_speaker"]
+    assert not validate({**it, "answer": "the company"}, c, CORPUS, CFG, []).checks["answer_is_speaker"]
+    assert "speaker_named_in_question" in validate({**it, "question": "Which clinical experts expected capivasertib to be used after an aromatase inhibitor?"}, c, CORPUS, CFG, []).reasons
+
+
+def test_summary_keypoints_cite_and_state_their_facts():
+    c = selected("summary", "d02-efficacy.endpoint_result-001")
+    facts = c.facts
+    quotes = [{"unit_id": e["unit_id"], "quote": e["quote"]} for f in facts for e in f.evidence]
+    kps = [{"point": f"{f.value_text()} for {SHEET.describe(f)}", "fact_id": f.fact_id} for f in facts]
+    it = {"question": "What efficacy results did the company submission report for capivasertib plus fulvestrant in CAPItello-291?",
+          "answer": " ".join(k["point"] + "." for k in kps), "answer_keys": [], "keypoints": kps, "quotes": quotes}
+    v = validate(it, c, CORPUS, CFG, [])
+    assert v.ok, v.reasons
+    bad = {**it, "keypoints": kps[:1] + [{"point": "Median PFS was 9.9 months with capivasertib", "fact_id": facts[1].fact_id},
+                                       {"point": "x", "fact_id": "d99-nothing-001"}]}
+    reasons = validate(bad, c, CORPUS, CFG, []).reasons
+    assert f"keypoint_unsupported:{facts[1].fact_id}" in reasons and "keypoint_unknown_fact:d99-nothing-001" in reasons
 
 
 def test_unanswerable_redacted_requires_marker_and_no_answer():
-    c = cand("unanswerable", "d02-e0004", subtype="redacted", labels=["£"])
-    good = item("What is the list price of capivasertib per pack of 64 tablets, excluding VAT?", None, [],
-                [("d02-e0004", "The list price of capivasertib is £[REDACTED] per pack of 64 tablets (excluding VAT)")])
+    c = selected("unanswerable_redacted", "d02-economic_model.cost_input-001")
+    good = item("What is the list price per pack of capivasertib tablets?", None, [],
+                [("d02-e0004", "The list price of capivasertib is £[REDACTED] per pack of 64 tablets")])
     assert validate(good, c, CORPUS, CFG, []).ok
-    assert "quote_lacks_redacted_marker" in validate({**good, "quotes": [{"unit_id": "d02-e0004", "quote": "per pack of 64 tablets (excluding VAT)"}]}, c, CORPUS, CFG, []).reasons
-    assert "unanswerable_has_answer" in validate({**good, "answer": "£1,200"}, c, CORPUS, CFG, []).reasons
+    assert "unanswerable_has_answer" in validate({**good, "answer": "£5,000"}, c, CORPUS, CFG, []).reasons
+    no_marker = {**good, "quotes": [{"unit_id": "d02-e0004", "quote": "per pack of 64 tablets (excluding VAT), and the company estimates"}]}
+    assert "quote_lacks_redacted_marker" in validate(no_marker, c, CORPUS, CFG, []).reasons
 
 
-def test_multihop_comparison_takes_one_value_from_each_table():
-    more = build_corpus(CFG, ELEMENTS + MORE_ELEMENTS, DOCUMENTS + MORE_DOCUMENTS)
-    c = Candidate("multihop", "comparison", [more.units["d02-e0003"], more.units["d05-e0020"]],
-                  {"versions": ["company submission", "clarification"], "values": ["7.3", "7.2"], "must_mention": ["company submission", "clarification"]})
-    good = item("Was median PFS with capivasertib plus fulvestrant longer in the company submission or in the clarification response's later data cut?",
-                "The company submission's 7.3 months was higher than the clarification response's 7.2 months.", ["7.3", "7.2"],
-                [("d02-e0003", "Median PFS (months) | 7.3 | 3.1"), ("d05-e0020", "Median PFS (months) | 7.2 | 3.6")],
-                measure="Median PFS", label_a="company submission", value_a="7.3", label_b="clarification", value_b="7.2", higher="a")
-    v = validate(good, c, more, CFG, [])
-    assert v.ok, v.reasons
-    one_table = {**good, "answer": "The company submission's 7.3 months was higher than 3.1 months.", "answer_keys": ["7.3", "3.1"], "value_b": "3.1",
-                 "quotes": [{"unit_id": "d02-e0003", "quote": "Median PFS (months) | 7.3 | 3.1"}, {"unit_id": "d05-e0020", "quote": "Events, n (%) | 121 (78.1) | 108 (80.6)"}]}
-    assert "comparison_values_not_one_per_table" in validate(one_table, c, more, CFG, []).reasons
-    unnamed = {**good, "question": "Was median PFS with capivasertib plus fulvestrant longer at the first data cut or at the later one?"}
-    assert any(r.startswith("question_lacks_discriminator:") for r in validate(unnamed, c, more, CFG, []).reasons)
+@pytest.mark.parametrize("question, rejected", [
+    ("What assumption did the EAG make about treatment waning in CAPItello-291, and how did it affect the ICER?", True),
+    ("Which tool did the company use for the severity modifier and what estimate did it give for capivasertib?", True),
+    ("How was the pivotal CAPItello-291 study of capivasertib with fulvestrant designed?", False),
+])
+def test_one_question_asks_one_thing(question, rejected):
+    v = validate({**GOOD_FACTUAL, "question": question}, cand("factual", "d02-trial_design.design-001"), CORPUS, CFG, [])
+    assert any(r.startswith("compound_question") for r in v.reasons) == rejected
+
+
+def test_keys_are_values_not_labelled_values():
+    v = validate({**GOOD_FACTUAL, "answer_keys": ["Placebo plus fulvestrant: 0"]}, cand("factual", "d02-trial_design.design-001"), CORPUS, CFG, [])
+    assert "answer_key_has_label:Placebo plus fulvestrant: 0" in v.reasons
+
+
+def test_small_counts_are_not_compared():
+    from medrageval.generate.candidates import small_count, too_small
+    assert small_count("1 (1%)", 5) and small_count("0", 5) and too_small("1 (1%)", "0", CFG)
+    assert not small_count("3.1 months", 5) and not small_count("3%", 5) and not small_count("121 (78.1)", 5)
+    c = selected("comparative", "d02-efficacy.endpoint_result-003")
+    tiny = comparative_item(value_a="3 (4%)", value_b="0", answer="Capivasertib plus fulvestrant was higher, 3 (4%) against 0.",
+                            quotes=[{"unit_id": "d02-e0011", "quote": "median overall survival was 26.0 months with capivasertib plus fulvestrant versus 22.3 months with placebo plus fulvestrant"}])
+    assert any(r.startswith("comparison_too_small") for r in validate(tiny, c, CORPUS, CFG, []).reasons)

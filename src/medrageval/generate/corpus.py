@@ -1,7 +1,7 @@
-"""The corpus the selectors draw evidence from.
+"""The corpus that fact extraction reads and question generation quotes.
 
 Loads one parse output directory (elements.jsonl, sections.json,
-documents.json) and builds what question generation needs:
+documents.json) and builds what the later stages need:
 
 - evidence units: elements that passed the noise filter, with long tables
   split into row groups so a form's "question | answer" row can be cited on
@@ -10,10 +10,9 @@ documents.json) and builds what question generation needs:
   element.
 - a role for every document (company submission, EAG report, ...), scored
   from headings, running text and the first elements against config patterns.
-- a BM25 index over the units, used for cross-document pairing, attribution
-  exclusivity and the "is it really unanswerable" check.
-- indexes of captions ("Table 7" -> element) and trial names ("CAPItello-291"
-  -> units), the links behind multi-hop questions.
+- a BM25 index over the units, used to pick passages for extraction, to find
+  copies of a fact in other documents, for attribution exclusivity and for the
+  "is it really unanswerable" check.
 """
 
 import json
@@ -21,7 +20,6 @@ import math
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from difflib import SequenceMatcher
 from pathlib import Path
 
 from medrageval.text import normalize, table_rows
@@ -33,9 +31,6 @@ than then so such but if also any all each both into onto over under between abo
 """.split())
 
 CAPTION_RE = re.compile(r"^[\W_]*(Table|Figure)\s+([A-Z]?\d+(?:\.\d+)?)\b", re.I)   # "_Table 14: ..._": an italic caption
-REFERENCE_RE = re.compile(
-    r"\b(?:see|in|shown in|presented in|reported in|summari[sz]ed in|described in|outlined in|detailed in|listed in)"
-    r"\s+(Table|Figure)\s+([A-Z]?\d+(?:\.\d+)?)\b", re.I)
 YEAR_RE = re.compile(r"^(?:19|20)\d\d$")
 NUMBER_RE = re.compile(r"[£$€]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?%|\d+\.\d+|\d[\d,]{2,}")
 RANGE_RE = re.compile(r"[£$€]?\s?(\d[\d,]*(?:\.\d+)?\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?)(?=\s?%|\s?(?:months?|years?|weeks?|days?|mg|patients|participants)\b)|[£$€]\s?(\d[\d,]*(?:\.\d+)?\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?)")
@@ -274,58 +269,6 @@ def significant_numbers(plain: str) -> set[str]:
     return out
 
 
-def entity_key(name: str) -> str:
-    return re.sub(r"[- ]", "", name).upper()
-
-
-def extract_entities(plain: str, cfg: dict) -> dict[str, str]:
-    """canonical key -> surface form for study names: a name with 2+ capitals or a digit, right before "trial"/"study"."""
-    ec = cfg["entities"]
-    found = {}
-    for pat in ec["patterns"]:
-        for m in re.finditer(pat, plain):
-            name = m.group(1)
-            if any(re.search(s, name, re.I) for s in ec["stoplist"]):
-                continue
-            if sum(c.isupper() for c in name) < 2 and not any(c.isdigit() for c in name):
-                continue
-            found.setdefault(entity_key(name), name)
-    return found
-
-
-def mentions(plain: str, key: str) -> bool:
-    """Does the text mention the entity, ignoring hyphen/space variants (CAPItello-291, CAPItello291)?"""
-    return key in entity_key(plain)
-
-
-def _caption_words(caption: str | None) -> list[str]:
-    text = CAPTION_RE.sub("", caption or "", count=1).strip(" :.-*_")
-    return re.sub(r"\*\*|(?<!\w)_|_(?!\w)", "", text).split()
-
-
-def _distinct_phrase(mine: list[str], theirs: list[str]) -> str:
-    """The shortest run of `mine` around its first difference from `theirs` that is not a run of `theirs`."""
-    fold = lambda ws: [re.sub(r"[^\w]", "", w.lower()) for w in ws]   # noqa: E731  ("targeted-release" is "targetedrelease")
-    a, b = fold(mine), fold(theirs)
-    ops = [op for op in SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] in ("replace", "delete")]
-    if not ops:
-        return ""
-    lo, hi = ops[0][1], ops[0][1] + 1   # the first differing word, widened until the run is not in the twin's caption
-
-    def in_theirs(lo: int, hi: int) -> bool:
-        run = a[lo:hi]
-        return any(b[i:i + len(run)] == run for i in range(len(b) - len(run) + 1))
-
-    while in_theirs(lo, hi) and (hi < len(a) or lo > 0):
-        if hi < len(a):
-            hi += 1
-        if in_theirs(lo, hi) and lo > 0:
-            lo -= 1
-    while lo > 0 and not re.search(r"[^\W\d_]", " ".join(a[lo:hi])):
-        lo -= 1   # "1" or "0-12" alone is no phrase to put in a question: "Scenario 1", "Weeks 0-12"
-    return " ".join(w.strip("(),;:.") for w in mine[lo:hi]).strip()
-
-
 class Corpus:
     def __init__(self, interim_dir: Path, docs: list[dict], sections: list[dict], elements: list[dict], cfg: dict):
         self.interim_dir = interim_dir
@@ -367,158 +310,6 @@ class Corpus:
 
         self.bm25 = BM25({uid: u.tokens for uid, u in self.units.items()})
         self.df = self.bm25.df
-        self.captions = self._caption_index(elements)
-        self.entities, self.unit_entities, self.entity_names = self._entity_index()
-        self.twins, self.copies = self._twin_index()
-
-    # ----- indexes -----
-    def _caption_index(self, elements: list[dict]) -> dict[tuple[str, str, str], str]:
-        idx = {}
-        for i, e in enumerate(elements):
-            m = CAPTION_RE.match(e["caption"] or "") if e.get("caption") else None
-            if m and e["type"] in ("table", "figure"):
-                idx.setdefault((e["doc_id"], m.group(1).lower(), m.group(2)), e["element_id"])
-                continue
-            # an unattached caption: a short "Table N ..." element right before a table/figure
-            m = CAPTION_RE.match(e["plain"])
-            if m and len(e["plain"]) < 300 and i + 1 < len(elements):
-                nxt = elements[i + 1]
-                if nxt["doc_id"] == e["doc_id"] and nxt["type"] in ("table", "figure"):
-                    idx.setdefault((e["doc_id"], m.group(1).lower(), m.group(2)), nxt["element_id"])
-        return idx
-
-    def _entity_index(self):
-        ec = self.cfg["entities"]
-        names: dict[str, Counter] = defaultdict(Counter)
-        for u in self.units.values():
-            for key, surface in extract_entities(u.plain, self.cfg).items():
-                names[key][surface] += 1
-        hits: dict[str, set[str]] = defaultdict(set)
-        for uid, u in self.units.items():
-            folded = entity_key(u.plain)
-            for key in names:
-                if key in folded:
-                    hits[key].add(uid)
-        keep, per_unit, surface = {}, defaultdict(set), {}
-        for key, uids in hits.items():
-            if len(uids) < ec["min_units"]:
-                continue
-            per_doc = Counter(self.units[x].doc_id for x in uids)
-            ok = {x for x in uids if per_doc[self.units[x].doc_id] <= ec["max_doc_share"] * max(self.docs[self.units[x].doc_id].n_units, 1)}
-            if len(ok) < ec["min_units"]:
-                continue
-            keep[key] = ok
-            surface[key] = names[key].most_common(1)[0][0]
-        for key in list(keep):
-            longer = [k for k in keep if k != key and k.startswith(key) and len(keep[key]) <= 1.1 * len(keep[k])]
-            if longer:
-                del keep[key], surface[key]
-        for key, uids in keep.items():
-            for x in uids:
-                per_unit[x].add(key)
-        return keep, per_unit, surface
-
-    def _twin_index(self) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-        """unit_id -> other tables with the same row labels under the same columns, and unit_id -> copies of it.
-
-        Appraisals repeat a table per arm, population or data cut (TA1063's
-        clarification response has AIC tables for the capivasertib arm and
-        the fulvestrant arm with identical rows), and across documents: the
-        clarification response reprints the submission's goodness-of-fit
-        table with new values, the EAG report reprints tables unchanged. A
-        question about a twin has to say which, so selectors ask
-        `discriminator` for the words that tell it apart. A twin in another
-        document with the same cells is a copy, not a twin: either is valid
-        evidence for the same question, so `copies` records it instead.
-        """
-        groups: dict[tuple, list[str]] = defaultdict(list)
-        by_values: dict[tuple, list[str]] = defaultdict(list)
-        body: dict[str, list[list[str]]] = {}
-        for uid, u in self.units.items():
-            if u.type != "table" or u.row_index is not None or not u.caption:
-                continue
-            rows = table_rows(u.text)
-            # rows with a label and values, leaving out notes and sub-headings (a label with nothing after it):
-            # the EAG's reprint of FAKTION's SAE table adds a "Based on Jones 2020" note row
-            body[uid] = [[normalize(c) for c in r] for r in rows[1:] if r and r[0].strip() and any(c.strip() for c in r[1:])]
-            labels = frozenset(r[0] for r in body[uid])
-            # same rows under the same columns; a different header is told apart by naming the measure. The
-            # label column's own title is left out: the same table heads it "Serious adverse event" and "SAE"
-            columns = " | ".join(rows[0][1:])
-            if len(labels) >= 3:
-                groups[(columns, labels)].append(uid)
-            # a reprint may also shorten its labels (EAG Table 3.8 has "HR" for Table 7's "Hazard ratio"): the same
-            # numbers under the same columns are the same table. Rows of redactions alone match anything, so need a digit.
-            values = tuple(tuple(r[1:]) for r in body[uid])
-            if sum(any(re.search(r"\d", c) for c in r) for r in values) >= 3:
-                by_values[(columns, values)].append(uid)
-        twins: dict[str, list[str]] = {}
-        copies: dict[str, list[str]] = {}
-        for members in groups.values():
-            if len(members) < 2:
-                continue
-            cells = {m: body[m] for m in members}
-            for uid in members:
-                same = [o for o in members if o != uid and self.units[o].doc_id != self.units[uid].doc_id and cells[o] == cells[uid]]
-                other = [o for o in members if o != uid and o not in same]
-                if same:
-                    copies[uid] = same
-                if other:
-                    twins[uid] = other
-        for members in by_values.values():
-            for uid in members:
-                same = [o for o in members if self.units[o].doc_id != self.units[uid].doc_id]
-                if same:
-                    copies[uid] = sorted(set(copies.get(uid, [])) | set(same))
-                    twins[uid] = [t for t in twins.get(uid, []) if t not in same]
-                    if not twins[uid]:
-                        del twins[uid]
-        return twins, copies
-
-    def discriminator(self, unit: Unit) -> list[str] | None:
-        """Phrases that set this table apart from each twin; None without twins; "" for a twin it cannot be told from.
-
-        Each phrase is the shortest run of caption words around a difference
-        that does not occur in the twin's caption ("fulvestrant arm" against
-        "capivasertib arm"). The table number is left out: questions must not
-        rely on it. When the captions say nothing and the twin is in another
-        document, the document does ("company submission" against
-        "clarification", from roles.mention).
-        """
-        twins = self.twins.get(unit.unit_id)
-        if not twins:
-            return None
-        phrases = {self.distinguish(unit, self.units[t]) for t in twins}
-        # "Scenario" against one twin and "Scenario 1" against another: the longer phrase covers both
-        return sorted(p for p in phrases if not any(o != p and p.lower() in o.lower() for o in phrases))
-
-    def distinguish(self, unit: Unit, other: Unit) -> str:
-        """The phrase that sets this table apart from one twin: caption words, or failing those its document; "" when nothing does."""
-        phrase = _distinct_phrase(_caption_words(unit.caption), _caption_words(other.caption))
-        if not phrase and other.doc_id != unit.doc_id:
-            mention = self.cfg["roles"].get("mention", {})
-            own, theirs = mention.get(self.docs[unit.doc_id].role, ""), mention.get(self.docs[other.doc_id].role, "")
-            phrase = own if own and own != theirs else ""
-        return phrase
-
-    # ----- queries -----
-    def unit_for_element(self, element_id: str) -> Unit | None:
-        """The whole-element unit, or None when the element is noise or was split into rows."""
-        u = self.units.get(element_id)
-        return u if u and u.evidence else None
-
-    def resolve_references(self, unit: Unit) -> list[tuple[str, str, str]]:
-        """(kind, number, element_id) for every "see Table N" in the unit that resolves in its document."""
-        out, seen = [], set()
-        for m in REFERENCE_RE.finditer(unit.plain):
-            key = (unit.doc_id, m.group(1).lower(), m.group(2))
-            if key in seen:
-                continue
-            seen.add(key)
-            target = self.captions.get(key)
-            if target and target != unit.element_id:
-                out.append((key[1], key[2], target))
-        return out
 
     def rare_tokens(self, unit: Unit) -> set[str]:
         limit = self.cfg["attribution"]["rare_df_max"] * len(self.units)
@@ -563,8 +354,6 @@ class Corpus:
             "row_units": sum(u.row_index is not None for u in self.units.values()),
             "noise": dict(self.noise),
             "roles": {d.doc_id: d.role for d in self.docs.values()},
-            "captions": len(self.captions),
-            "entities": {self.entity_names[k]: len(v) for k, v in sorted(self.entities.items(), key=lambda kv: -len(kv[1]))[:15]},
             "topic": self.topic,
         }
 

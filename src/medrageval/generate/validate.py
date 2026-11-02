@@ -1,24 +1,26 @@
 """Programmatic checks on a generated item, before the LLM judge sees it.
 
-Every check is cheap and deterministic: quotes are matched against the cited
-units with `contains_quote`, answer keys against the quotes, numbers against
-the selector's hint, and the per-type rules from the spec (both values and a
-direction for comparative, two documents for cross-document, the speaker and
-exclusivity of the claim for attribution, the [REDACTED] marker for
-unanswerable). A failed check names its reason, which goes to rejects.jsonl.
+Every check is cheap and deterministic:
+- quotes are matched against the cited units with `contains_quote`;
+- answer keys must appear in the facts' values or the quotes;
+- the question must name every term the fact sheet says sets the fact apart from its siblings;
+- the question must not mention tables, figures, column headers, rows or columns;
+- per type: both values and a meaningful difference for comparative, the
+  bridge unnamed for multi-hop, two documents for cross-document, the speaker
+  and the claim's exclusivity for attribution, one supported keypoint per
+  fact for summary, the [REDACTED] marker for unanswerable.
+
+A failed check names its reason, which goes to rejects.jsonl and, for a
+rewrite, back to the generator.
 """
 
 import re
 from dataclasses import dataclass, field
 
-from medrageval.generate.candidates import Candidate, garbled
+from medrageval.facts.factsheet import NUMBER, content_tokens, numbers_in, term_mentioned
+from medrageval.generate.candidates import Candidate, first_number, garbled, meaningful, too_small
 from medrageval.generate.corpus import REDACTED, Corpus, tokenize
 from medrageval.text import contains_quote, normalize
-
-NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
-RANGE = re.compile(r"\d[\d,]*(?:\.\d+)?\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?")
-# "the second trial named", "the last-listed study": a bridge identified by its place in a list, not by a property
-POSITIONAL = re.compile(r"\b(first|second|third|fourth|fifth|last|latter|former)[- ](?:\w+[- ])?(named|listed|mentioned|cited)\b|\b(named|listed|mentioned|cited) (first|second|third|last)\b", re.I)
 
 
 def question_overlap(question: str, quotes: str) -> tuple[float, int]:
@@ -69,18 +71,6 @@ def is_duplicate(question: str, accepted: list[str], threshold: float) -> bool:
     return any(jaccard(question, q) >= threshold for q in accepted)
 
 
-def _number(s: str) -> float | None:
-    m = NUMBER.search(s or "")
-    try:
-        return float(m.group(0).replace(",", "")) if m else None
-    except ValueError:
-        return None
-
-
-def _range(s: str) -> str:
-    return re.sub(r"[\s,]", "", s).replace("–", "-").replace("‒", "-").replace("—", "-")
-
-
 def _mentions(label: str, text: str) -> bool:
     """A label is 'mentioned' when one of its content words of 4+ letters, or its number, appears in the text."""
     words = [t for t in tokenize(label) if len(t) >= 4 or t.replace(".", "").isdigit()]
@@ -92,16 +82,41 @@ def _aliases(speaker: str, cfg: dict) -> list[str]:
     return [speaker, speaker.removeprefix("the ")] + list(cfg["attribution"]["speakers"].get(speaker, []))
 
 
+def bridge_named(question: str, cand: Candidate) -> str | None:
+    """The bridged value a multi-hop question gives away, or None.
+
+    Named when the question contains the `via` value ("PFS"), or two content
+    words of the bridge fact's value that the bridge description and the
+    target fact's qualifiers do not already use ("progression-free survival").
+    """
+    h = cand.hint
+    via, value = str(h.get("via_value") or ""), str(h.get("bridge_value") or "")
+    q = token_set(question)
+    if via and (contains_quote(via, question) or (content_tokens(via) and content_tokens(via) <= q)):
+        return via
+    allowed = content_tokens(h.get("bridge", ""))
+    for f in cand.facts[1:]:
+        allowed |= {t for k, x in f.qualifiers.items() if k != h.get("via") for t in content_tokens(x)}
+    leaked = (content_tokens(value) - allowed) & q
+    return value if len(leaked) >= 2 or (leaked and leaked == content_tokens(value) - allowed) else None
+
+
 def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_questions: list[str]) -> Verdict:
     v = Verdict()
-    lim = cfg["limits"]
+    lim, vc = cfg["limits"], cfg["validate"]
     units = {u.unit_id: u for u in cand.units}
+    t = cand.type
     q = str(item.get("question") or "").strip()
-    if not v.check("question_present", bool(q)):
+    if not v.check("question_present", bool(q), "no_question"):
         return v
     n_words = len(q.split())
     v.check("question_length", lim["question_words"][0] <= n_words <= lim["question_words"][1], f"question_length:{n_words}")
-    v.check("no_deictic", not any(re.search(p, q, re.I) for p in cfg["validate"]["deictic_patterns"]), "deictic_question")
+    v.check("no_deictic", not any(re.search(p, q, re.I) for p in vc["deictic_patterns"]), "deictic_question")
+    banned = next((m.group(0) for p in vc["banned_patterns"] if (m := re.search(p, q, re.I))), None)
+    v.check("no_table_language", banned is None, f"table_language:{banned}")
+    if t in vc["single_ask_types"]:
+        joined_ask = next((m.group(0) for p in vc["compound_patterns"] if (m := re.search(p, q, re.I))), None)
+        v.check("single_ask", joined_ask is None, f"compound_question:{joined_ask}")
     v.check("not_duplicate", not is_duplicate(q, accepted_questions, cfg["dedupe_jaccard"]), "duplicate_question")
 
     quotes = [qt for qt in (item.get("quotes") or []) if isinstance(qt, dict)]
@@ -122,8 +137,12 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
             found.append(quote)
             quoted_units.append(u)
     joined = "\n".join(found)
+    support = joined + "\n" + "\n".join(f.value_text() for f in cand.facts)
 
-    if cand.type == "unanswerable":
+    for terms in cand.hint.get("must_mention") or []:
+        v.check("question_disambiguates", any(term_mentioned(term, q) for term in terms), f"question_lacks_discriminator:{terms[0][:60]}")
+
+    if t == "unanswerable":
         v.check("answer_null", not item.get("answer"), "unanswerable_has_answer")
         if cand.subtype == "redacted":
             v.check("quote_redacted", any(REDACTED in qt.get("quote", "") for qt in quotes), "quote_lacks_redacted_marker")
@@ -133,87 +152,78 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
 
     answer = str(item.get("answer") or "").strip()
     v.check("answer_present", bool(answer), "no_answer")
-    v.check("answer_length", len(answer) <= lim["answer_max_chars"], "answer_too_long")
+    if t == "summary":
+        v.check("answer_length", len(answer) <= cfg["summary"]["answer_max_chars"], "summary_answer_too_long")
+    else:
+        v.check("answer_length", len(answer) <= lim["answer_max_chars"], "answer_too_long")
     keys = [str(k).strip() for k in (item.get("answer_keys") or []) if str(k).strip()]
-    v.check("answer_keys_present", 1 <= len(keys) <= 6, "answer_keys_missing")
-    t = cand.type
-    compares = t == "comparative" or cand.subtype == "comparison"
+    if t != "summary":   # a summary is scored on its keypoints
+        v.check("answer_keys_present", 1 <= len(keys) <= 6, "answer_keys_missing")
+    compares = t == "comparative"
     labels = {normalize(str(item.get(k) or "")) for k in ("label_a", "label_b")} if compares else set()
+    generic = {normalize(g) for g in vc["generic_keys"]}
     for k in keys:
         if t != "attribution":   # the speaker of a form answer is implied by the document, not written in it
-            v.check("answer_key_in_quotes", contains_quote(k, joined), f"answer_key_not_in_quotes:{k[:40]}")
+            v.check("answer_key_supported", contains_quote(k, support), f"answer_key_unsupported:{k[:40]}")
+            v.check("answer_key_specific", not re.fullmatch(r"[<>≤≥]?\d{1,2}", k) and normalize(k) not in generic, f"answer_key_generic:{k[:40]}")
+            v.check("answer_key_unlabelled", not re.match(r"^[A-Za-z][^:]{2,60}:\s*\S", k), f"answer_key_has_label:{k[:40]}")
         if not any(normalize(k) in lb or lb in normalize(k) for lb in labels if lb):   # a comparative question has to name both compared things
             v.check("answer_key_not_in_question", not contains_quote(k, q), f"answer_key_in_question:{k[:40]}")
-    v.check("keys_clean", not any(garbled(k) or REDACTED in k for k in keys), "answer_key_garbled")   # "[REDACTED]" is no answer
+    v.check("keys_clean", not any(garbled(k) or REDACTED in k for k in keys), "answer_key_garbled")
     for k in keys:   # words, not tokens: "NHS reference costs 2021-22" is four
-        v.check("key_length", len(k.split()) <= cfg["validate"]["max_key_tokens"], f"answer_key_too_long:{k[:40]}")
-    for phrase in cand.hint.get("must_mention", []):   # a table with twins: the question has to say which one
-        v.check("question_mentions_discriminator", contains_quote(phrase, q), f"question_lacks_discriminator:{phrase[:40]}")
-    # a quoted caption does not count as copying: the question has to reuse its words to say which table is meant
-    substantive = [qt for qt, u in zip(found, quoted_units) if not (u.caption and contains_quote(qt, u.caption))] or found
-    if found:
-        overlap, shared = question_overlap(q, "\n".join(substantive))
+        v.check("key_length", len(k.split()) <= vc["max_key_tokens"], f"answer_key_too_long:{k[:40]}")
+    if found and t not in ("attribution", "summary"):
+        overlap, shared = question_overlap(q, joined)
         v.metrics["question_overlap"] = round(overlap, 2)
-        if t != "attribution":   # an attribution question has to state the claim; the others must not echo the quote
-            vc = cfg["validate"]
-            v.check("question_not_echo", overlap <= vc["max_question_overlap"] or shared < vc["echo_min_shared"], f"question_echoes_quote:{overlap:.2f}")
+        v.check("question_not_echo", overlap <= vc["max_question_overlap"] or shared < vc["echo_min_shared"], f"question_echoes_quote:{overlap:.2f}")
 
     if t == "numerical":
-        nums = [n for k in keys for n in NUMBER.findall(k)]
+        nums = {n.replace(",", "") for k in keys for n in NUMBER.findall(k)}
         v.check("key_has_number", bool(nums), "answer_key_without_number")
-        hint_ranges = {_range(x) for x in cand.hint.get("numbers", []) if RANGE.fullmatch(x)}
-        hint = {float(x.replace(",", "")) for x in cand.hint.get("numbers", []) if not RANGE.fullmatch(x) and _number(x) is not None}
-        if (hint or hint_ranges) and nums:
-            ranges = {_range(r) for k in keys for r in RANGE.findall(k)}
-            # a range in the evidence ("40-50%") is one value: a key must carry the whole range, not one end
-            v.check("number_in_hint", bool(ranges & hint_ranges) or any(_number(n) in hint for n in nums), "number_not_in_evidence_numbers")
+        hint = set(cand.hint.get("numbers") or [])
+        if hint and nums:
+            v.check("number_in_fact", bool(nums & hint), "number_not_in_fact")
 
     elif t == "comparative":
-        la, lb = _check_comparison(v, item, joined, answer, cfg)
-        if cand.hint.get("mode") in ("columns", "rows"):
-            src = cand.units[0].plain + "\n" + (cand.units[0].caption or "")
-            v.check("labels_in_table", _mentions(la, src) and _mentions(lb, src), "comparative_labels_not_in_table")
-        v.check("question_mentions_both", _mentions(la, q + " " + cand.hint.get("measure", "")) or _mentions(lb, q), "question_lacks_compared_labels")
+        la, lb = _check_comparison(v, item, support, answer, cfg)
+        v.check("question_mentions_both", _mentions(la, q) and _mentions(lb, q), "question_lacks_compared_labels")
 
     elif t == "multihop":
         v.check("two_units_quoted", len({u.unit_id for u in quoted_units}) >= 2, "quotes_from_one_unit")
-        if cand.subtype == "comparison":   # the two versions are named through must_mention above
-            _check_comparison(v, item, joined, answer, cfg)
-            ua, ub = cand.units
-            in_a = "\n".join(qt for qt, u in zip(found, quoted_units) if u.unit_id == ua.unit_id)
-            in_b = "\n".join(qt for qt, u in zip(found, quoted_units) if u.unit_id == ub.unit_id)
-            va, vb = str(item.get("value_a") or ""), str(item.get("value_b") or "")
-            v.check("values_from_both", bool(va and vb) and ((contains_quote(va, in_a) and contains_quote(vb, in_b)) or (contains_quote(va, in_b) and contains_quote(vb, in_a))),
-                    "comparison_values_not_one_per_table")
-        link = str(cand.hint.get("link") or "")
-        if cand.subtype == "entity" and link:
-            v.check("bridge_not_named", not contains_quote(link, q), f"bridge_named_in_question:{link}")
-            v.check("bridge_described", not POSITIONAL.search(q), "bridge_identified_by_position")
-        if cand.subtype == "xref" and link:
-            v.check("table_not_named", not contains_quote(link, q), f"table_named_in_question:{link}")
+        named = bridge_named(q, cand)
+        v.check("bridge_not_named", named is None, f"bridge_named_in_question:{str(cand.hint.get('via', 'value')).replace('_', ' ')}")
 
     elif t == "crossdoc":
         v.check("two_docs_quoted", len({u.doc_id for u in quoted_units}) >= 2, "quotes_from_one_document")
         if len(found) >= 2:
-            v.check("quotes_not_copies", jaccard(found[0], found[1]) < cfg["cross_doc"]["max_overlap"], "quotes_are_copies")
+            v.check("quotes_not_copies", jaccard(found[0], found[1]) < cfg["cross_doc_max_overlap"], "quotes_are_copies")
 
     elif t == "attribution":
         speaker = cand.hint.get("speaker", "")
-        v.check("answer_is_speaker", normalize(answer) == normalize(speaker) or normalize(answer).removeprefix("the ") == normalize(speaker).removeprefix("the "),
-                f"answer_not_speaker:{answer[:40]}")
-        v.check("speaker_not_in_question", not any(re.search(rf"\b{re.escape(a)}\b", q, re.I) for a in _aliases(speaker, cfg)), "speaker_named_in_question")
+        name = cand.hint.get("speaker_name") or ""
+        targets = {normalize(x).removeprefix("the ") for x in (speaker, name) if x}
+        v.check("answer_is_speaker", normalize(answer).removeprefix("the ") in targets, f"answer_not_speaker:{answer[:40]}")
+        names = _aliases(speaker, cfg) + ([name] if name else [])
+        v.check("speaker_not_in_question", not any(re.search(rf"\b{re.escape(a)}\b", q, re.I) for a in names), "speaker_named_in_question")
         if cand.subtype == "stance":
             v.check("quote_has_speaker", any(re.search(rf"\b{re.escape(a)}\b", joined, re.I) for a in _aliases(speaker, cfg)), "quote_lacks_speaker")
         _check_exclusivity(v, joined, cand, corpus, cfg)
+
+    elif t == "summary":
+        _check_keypoints(v, item, cand, cfg)
     return v
 
 
-def _check_comparison(v: Verdict, item: dict, joined: str, answer: str, cfg: dict) -> tuple[str, str]:
-    """Two quoted numeric values, a direction that matches them, an answer that names the winner. Returns the two labels."""
-    va, vb = item.get("value_a"), item.get("value_b")
-    fa, fb = _number(str(va)), _number(str(vb))
+def _check_comparison(v: Verdict, item: dict, support: str, answer: str, cfg: dict) -> tuple[str, str]:
+    """Two numeric values from the facts, a meaningful difference, a direction that matches, an answer that names the winner."""
+    va, vb = str(item.get("value_a") or ""), str(item.get("value_b") or "")
+    fa, fb = first_number(va), first_number(vb)
     v.check("values_numeric", fa is not None and fb is not None, "comparative_values_not_numeric")
-    v.check("values_in_quotes", bool(va) and bool(vb) and contains_quote(str(va), joined) and contains_quote(str(vb), joined), "comparative_values_not_in_quotes")
+    v.check("values_in_facts", bool(va) and bool(vb) and contains_quote(va, support) and contains_quote(vb, support), "comparative_values_not_in_facts")
+    threshold = cfg["comparative"]["min_relative_difference"]
+    if fa is not None and fb is not None:
+        v.check("comparison_meaningful", meaningful(fa, fb, threshold), f"comparison_not_meaningful:{va} vs {vb}")
+        v.check("comparison_large_enough", not too_small(va, vb, cfg), f"comparison_too_small:{va} vs {vb}")
     higher = str(item.get("higher") or "").lower()
     if fa is not None and fb is not None:
         expect = "a" if fa > fb else "b" if fb > fa else "equal"
@@ -225,6 +235,23 @@ def _check_comparison(v: Verdict, item: dict, joined: str, answer: str, cfg: dic
     if winner:
         v.check("answer_names_winner", _mentions(winner, answer), "answer_lacks_winning_label")
     return la, lb
+
+
+def _check_keypoints(v: Verdict, item: dict, cand: Candidate, cfg: dict) -> None:
+    """One keypoint per fact (at least min_facts), each citing a fact of the candidate and stating it."""
+    facts = {f.fact_id: f for f in cand.facts}
+    kps = [kp for kp in (item.get("keypoints") or []) if isinstance(kp, dict)]
+    need = min(len(facts), cfg["summary"]["min_facts"])
+    v.check("keypoints_present", need <= len(kps) <= len(facts) + 1, f"keypoints_missing:{len(kps)} of {len(facts)}")
+    for kp in kps:
+        fid = str(kp.get("fact_id") or "")
+        f = facts.get(fid)
+        if not v.check("keypoint_fact_known", f is not None, f"keypoint_unknown_fact:{fid[:40]}"):
+            continue
+        point = str(kp.get("point") or "")
+        source = f.value_text() + "\n" + f.quote
+        ok = len(content_tokens(point) & content_tokens(source)) >= 2 and numbers_in(point) <= numbers_in(source)
+        v.check("keypoint_supported", ok, f"keypoint_unsupported:{fid}")
 
 
 def _check_exclusivity(v: Verdict, claim: str, cand: Candidate, corpus: Corpus, cfg: dict) -> None:

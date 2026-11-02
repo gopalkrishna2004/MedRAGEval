@@ -204,3 +204,113 @@ def write_interim(path: Path, elements=None) -> Path:
     (path / "sections.json").write_text(json.dumps(SECTIONS))
     (path / "documents.json").write_text(json.dumps(DOCUMENTS))
     return path
+
+
+# ----- fact sheet fixtures -----
+# Elements the facts below need beyond ELEMENTS: a primary endpoint sentence, a later data cut in the
+# clarification response, the EAG's own ICER and extrapolation, and two tables captioned "Scenario 1"
+# (TA1063 prints both: plain Scenario 1 and Scenario 1 with a generalised gamma for OS).
+_SCEN_HEAD = ("Technologies", "Total costs (£)", "Total LYG", "Total QALYs")
+FACT_ELEMENTS = [
+    _el("d02", 40, "The primary endpoint of CAPItello-291 was progression-free survival (PFS) by investigator assessment in the PI3K/AKT pathway-altered population.",
+        section="d02-s001", path=["B.2 Clinical effectiveness", "B.2.3 Trial design"], page=11),
+    _el("d03", 30, "The EAG's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane is £31,200 per QALY gained, "
+        "after using a generalised gamma distribution for overall survival.", section="d03-s001", path=["5 Cost effectiveness", "5.2 EAG critique of the economic model"], page=93),
+    _el("d03", 31, "The EAG considers that the use of time to treatment discontinuation data from CAPItello-291 to model treatment duration is "
+        "inappropriate, because discontinuation and progression were not aligned in the trial.",
+        section="d03-s001", path=["5 Cost effectiveness", "5.2 EAG critique of the economic model"], page=94),
+    _el("d05", 31, _table([("Capivasertib + fulvestrant", "[REDACTED]", "3.26", "2.39")], _SCEN_HEAD), "table", section="d05-s001",
+        path=["Clarification questions", "Company response:"], caption="**Table 27. Deterministic pairwise base-case results (Scenario 1)**", page=133),
+    _el("d05", 32, _table([("Capivasertib + fulvestrant", "[REDACTED]", "3.52", "2.58")], _SCEN_HEAD), "table", section="d05-s001",
+        path=["Clarification questions", "Company response:"], caption="**Table 32. Deterministic pairwise base-case results (Scenario 1 – generalised gamma for OS)**", page=134),
+    _el("d05", 33, "In the updated analysis at DCO2, median PFS was 7.2 months with capivasertib plus fulvestrant versus 3.6 months with placebo plus fulvestrant.",
+        section="d05-s001", path=["Clarification questions", "Company response:"], page=135),
+]
+FACT_BUNDLE = ELEMENTS + FACT_ELEMENTS
+
+_POP = "PI3K/AKT pathway-altered"
+# (fact_id, slot, kind, element, quote, qualifiers, value fields). Units are resolved from the element and quote.
+FACT_SPECS = [
+    ("d02-efficacy.endpoint_result-001", "efficacy.endpoint_result", "number", "d02-e0003", "Median PFS (months) | 7.3 | 3.1",
+     {"trial": "CAPItello-291", "endpoint": "PFS", "measure": "median", "population": _POP, "data_cut": "DCO1"},
+     {"values": {"capivasertib plus fulvestrant": "7.3 months", "placebo plus fulvestrant": "3.1 months"}}),
+    ("d02-efficacy.endpoint_result-002", "efficacy.endpoint_result", "number", "d02-e0003", "Events, n (%) | 121 (78.1) | 108 (80.6)",
+     {"trial": "CAPItello-291", "endpoint": "PFS", "measure": "events", "population": _POP, "data_cut": "DCO1"},
+     {"values": {"capivasertib plus fulvestrant": "78.1%", "placebo plus fulvestrant": "80.6%"}}),
+    ("d02-efficacy.endpoint_result-003", "efficacy.endpoint_result", "number", "d02-e0011",
+     "median overall survival was 26.0 months with capivasertib plus fulvestrant versus 22.3 months with placebo plus fulvestrant",
+     {"trial": "CAPItello-291", "endpoint": "OS", "measure": "median"},
+     {"values": {"capivasertib plus fulvestrant": "26.0 months", "placebo plus fulvestrant": "22.3 months"}}),
+    ("d02-efficacy.treatment_effect-001", "efficacy.treatment_effect", "number", "d02-e0002", "hazard ratio 0.50; 95% CI 0.38 to 0.65",
+     {"trial": "CAPItello-291", "endpoint": "PFS", "population": _POP}, {"value": "0.50 (95% CI 0.38 to 0.65)"}),
+    ("d05-efficacy.endpoint_result-001", "efficacy.endpoint_result", "number", "d05-e0033",
+     "median PFS was 7.2 months with capivasertib plus fulvestrant versus 3.6 months with placebo plus fulvestrant",
+     {"trial": "CAPItello-291", "endpoint": "PFS", "measure": "median", "population": _POP, "data_cut": "DCO2"},
+     {"values": {"capivasertib plus fulvestrant": "7.2 months", "placebo plus fulvestrant": "3.6 months"}}),
+    ("d02-trial_design.primary_endpoint-001", "trial_design.primary_endpoint", "text", "d02-e0040",
+     "The primary endpoint of CAPItello-291 was progression-free survival (PFS) by investigator assessment",
+     {"trial": "CAPItello-291"}, {"value": "progression-free survival (PFS) by investigator assessment"}),
+    ("d02-trial_design.design-001", "trial_design.design", "text", "d02-e0001",
+     "CAPItello-291 was a phase 3, randomised, double-blind, placebo-controlled trial of capivasertib plus fulvestrant",
+     {"trial": "CAPItello-291"}, {"value": "phase 3, randomised, double-blind, placebo-controlled trial"}),
+    ("d02-cost_effectiveness.icer-001", "cost_effectiveness.icer", "number", "d02-e0008",
+     "The company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane was £24,567 per QALY gained",
+     {"owner": "company", "analysis": "base case"}, {"values": {"everolimus plus exemestane": "£24,567 per QALY gained"}, "also_in": ["d03-e0003"]}),
+    ("d03-cost_effectiveness.icer-001", "cost_effectiveness.icer", "number", "d03-e0030",
+     "The EAG's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane is £31,200 per QALY gained",
+     {"owner": "EAG", "analysis": "base case"}, {"values": {"everolimus plus exemestane": "£31,200 per QALY gained"}}),
+    ("d03-economic_model.extrapolation-001", "economic_model.extrapolation", "text", "d03-e0030",
+     "after using a generalised gamma distribution for overall survival", {"owner": "EAG", "endpoint": "OS"}, {"value": "generalised gamma distribution"}),
+    ("d05-cost_effectiveness.total_outcomes-001", "cost_effectiveness.total_outcomes", "number", "d05-e0031", "Capivasertib + fulvestrant | [REDACTED] | 3.26 | 2.39",
+     {"owner": "company", "measure": "total LYG", "scenario": "Scenario 1"}, {"values": {"capivasertib plus fulvestrant": "3.26"}}),
+    ("d05-cost_effectiveness.total_outcomes-002", "cost_effectiveness.total_outcomes", "number", "d05-e0032", "Capivasertib + fulvestrant | [REDACTED] | 3.52 | 2.58",
+     {"owner": "company", "measure": "total LYG", "scenario": "Scenario 1 – generalised gamma for OS"}, {"values": {"capivasertib plus fulvestrant": "3.52"}}),
+    ("d02-economic_model.cost_input-001", "economic_model.cost_input", "number", "d02-e0004",
+     "The list price of capivasertib is £[REDACTED] per pack of 64 tablets", {"item": "list price per pack", "technology": "capivasertib"},
+     {"value": "[REDACTED]", "redacted": True}),
+    ("d03-key_issues.issue-001", "key_issues.issue", "stance", "d03-e0031",
+     "The EAG considers that the use of time to treatment discontinuation data from CAPItello-291 to model treatment duration is inappropriate",
+     {"topic": "treatment duration"}, {"positions": {"EAG": "time to treatment discontinuation data are inappropriate to model treatment duration"}}),
+    ("d04-stakeholder_views.respondent-001", "stakeholder_views.respondent", "text", "d04-e0001", "2. Name of organisation | Royal Marsden NHS Foundation Trust",
+     {}, {"value": "Royal Marsden NHS Foundation Trust"}),
+    ("d04-stakeholder_views.view-001", "stakeholder_views.view", "text", "d04-e0001",
+     "capivasertib plus fulvestrant would be used after an aromatase inhibitor in patients whose disease has a PI3K/AKT pathway alteration",
+     {"topic": "place in pathway"}, {"value": "used after an aromatase inhibitor in patients whose disease has a PI3K/AKT pathway alteration"}),
+]
+
+
+def facts_config() -> dict:
+    return copy.deepcopy(load_config()["facts"])
+
+
+def schema():
+    from medrageval.facts.schema import known_roles, load_schema
+    return load_schema(facts_config()["schema"], known_roles(config()))
+
+
+def fact_list(corpus: Corpus) -> list:
+    """FACT_SPECS as Fact objects, each quote's unit found in its element (a long form table is split into row units)."""
+    from medrageval.facts.factsheet import Fact
+    from medrageval.generate.validate import quote_in
+    out = []
+    for fid, slot, kind, element, quote, quals, fields in FACT_SPECS:
+        unit = next(uid for uid in corpus.by_element[element] if quote_in(quote, corpus.units[uid].plain))
+        out.append(Fact.from_dict({"fact_id": fid, "slot": slot, "kind": kind, "doc_id": element[:3], "role": corpus.docs[element[:3]].role,
+                                   "evidence": [{"unit_id": unit, "quote": quote}], "qualifiers": dict(quals), **copy.deepcopy(fields)}))
+    return out
+
+
+def build_sheet(cfg: dict | None = None):
+    """(corpus, fact sheet) over the synthetic bundle with FACT_ELEMENTS."""
+    from medrageval.facts.factsheet import FactSheet
+    cfg = cfg or config()
+    corpus = build_corpus(cfg, FACT_BUNDLE)
+    return corpus, FactSheet(fact_list(corpus), schema(), corpus, cfg, facts_config())
+
+
+def write_factsheet(path: Path) -> Path:
+    """write_interim over FACT_BUNDLE plus its factsheet.jsonl."""
+    from medrageval.facts.factsheet import write_facts
+    write_interim(path, FACT_BUNDLE)
+    write_facts(path / "factsheet.jsonl", fact_list(build_corpus(elements=FACT_BUNDLE)))
+    return path

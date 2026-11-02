@@ -1,7 +1,7 @@
-"""Run question generation on one parse output directory.
+"""Run question generation on one parse output directory and its fact sheet.
 
-For each question type the selector proposes evidence, the generator LLM
-writes an item about it, the programmatic checks and then the judge LLM
+For each question type the selector proposes facts, the generator LLM
+writes an item about them, the programmatic checks and then the judge LLM
 decide whether to keep it, until the type's target is met or the attempt
 budget is spent. Accepted items are appended to dataset.jsonl as they come
 (a crash loses nothing), rejected ones to rejects.jsonl with their reasons,
@@ -23,6 +23,8 @@ from pathlib import Path
 from random import Random
 
 from medrageval.config import load_config
+from medrageval.facts.factsheet import FactSheet
+from medrageval.facts.schema import known_roles, load_schema
 from medrageval.generate.candidates import SELECTORS, Candidate, candidate_counts
 from medrageval.generate.corpus import Corpus, Unit, load_corpus
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llms
@@ -31,8 +33,8 @@ from medrageval.generate.prompts import (PROMPT_VERSION, build_alone_check, buil
 from medrageval.generate.validate import Verdict, is_duplicate, token_set, validate
 from medrageval.text import contains_quote
 
-TYPES = ["factual", "numerical", "comparative", "multihop", "crossdoc", "attribution", "unanswerable"]
-NEEDS_SINGLE_EXCERPT_CHECK = {"multihop"}   # cross-document items only need quotes from two documents
+TYPES = ["factual", "numerical", "comparative", "multihop", "crossdoc", "attribution", "summary", "unanswerable"]
+NEEDS_SINGLE_EXCERPT_CHECK = {"multihop", "crossdoc"}   # both need two excerpts: one alone must not answer
 # Failures a rewrite can fix: the checks, the judge, the coverage check. Not a skip (the model declined the evidence) or bad JSON.
 REWRITABLE_STAGES = {"programmatic", "judge", "unanswerable_check"}
 # Attribution claims that are too generic or restated by another party: the evidence's fault, not the wording's.
@@ -47,8 +49,8 @@ def attempts_per_item(cfg: dict, type_: str) -> int:
 class Run:
     """Shared state of one generation run."""
 
-    def __init__(self, corpus: Corpus, cfg: dict, gen, judge, out_dir: Path, seed: int):
-        self.corpus, self.cfg, self.gen, self.judge, self.out_dir, self.seed = corpus, cfg, gen, judge, out_dir, seed
+    def __init__(self, corpus: Corpus, sheet: FactSheet, cfg: dict, gen, judge, out_dir: Path, seed: int):
+        self.corpus, self.sheet, self.cfg, self.gen, self.judge, self.out_dir, self.seed = corpus, sheet, cfg, gen, judge, out_dir, seed
         self.accepted: list[dict] = []
         self.questions: list[str] = []
         self.stats: dict[str, dict] = defaultdict(lambda: {"attempted": 0, "accepted": 0, "rejected": Counter(), "subtypes": Counter(),
@@ -65,13 +67,13 @@ class Run:
     # ----- per candidate work, runs in a worker thread -----
     def process(self, cand: Candidate) -> list[dict]:
         """Generate and check an item; when it fails on something the wording can fix, send it back once with the reasons."""
-        messages = build_generation(cand, self.corpus, self.cfg)
+        messages = build_generation(cand, self.corpus, self.cfg, self.sheet)
         raw, results = self._attempt(cand, messages, cand.candidate_id)
         if not self._rewritable(results):
             return results
         retry = build_rewrite(messages, raw, rewrite_feedback(results, cand))
         _, rewritten = self._attempt(cand, retry, f"{cand.candidate_id}:rewrite")
-        first = {"item": {k: raw[k] for k in ("question", "answer", "answer_keys", "questions") if k in raw},
+        first = {"item": {k: raw[k] for k in ("question", "answer", "answer_keys", "keypoints", "questions") if k in raw},
                  "reasons": [reason for r in results for reason in r["reasons"]]}
         for r in rewritten:
             r["first"] = first
@@ -93,6 +95,8 @@ class Run:
             return raw, [{"cand": cand, "item": raw, "stage": "skipped", "reasons": [f"skip:{str(raw['skip'])[:120]}"]}]
         if cand.subtype == "not_covered":
             return raw, self._check_not_covered(cand, [q for q in (raw.get("questions") or [])[:self.cfg["unanswerable"]["questions_per_anchor"]] if isinstance(q, dict)])
+        if cand.type == "summary":   # the facts' own quotes are the evidence; the writer only cites fact ids
+            raw["quotes"] = [{"unit_id": e["unit_id"], "quote": e["quote"]} for f in cand.facts for e in f.evidence]
         verdict = validate(raw, cand, self.corpus, self.cfg, [])
         if not verdict.ok:
             return raw, [{"cand": cand, "item": raw, "stage": "programmatic", "reasons": verdict.reasons, "verdict": verdict}]
@@ -102,7 +106,7 @@ class Run:
         reasons = []
         if not judge.get("pass"):
             reasons.append("judge_failed")
-        for k in ("answer_supported", "self_contained", "type_fits"):
+        for k in ("answer_supported", "self_contained", "type_fits", "realistic"):
             if judge.get(k) is False:
                 reasons.append(f"judge:{k}")
         if cand.type in NEEDS_SINGLE_EXCERPT_CHECK:
@@ -179,7 +183,7 @@ class Run:
         cfg = self.cfg
         st = self.stats[type_]
         rng = Random(f"{self.seed}:{selector}")
-        it = SELECTORS[selector](self.corpus, cfg, rng)
+        it = SELECTORS[selector](self.corpus, self.sheet, cfg, rng)
         budget = target * attempts_per_item(cfg, type_)
         accepted_here, attempts = 0, 0
         quota = math.ceil(cfg["attribution"]["max_share_per_speaker"] * target) if type_ == "attribution" else None
@@ -255,6 +259,9 @@ class Run:
             "answer_keys": item.get("answer_keys") if cand.type != "unanswerable" else [],
             "answerable": cand.type != "unanswerable",
             "evidence": evidence,
+            "facts": [f.fact_id for f in cand.facts],
+            "group": cand.hint.get("group"),
+            "also_in": sorted({uid for f in cand.facts for uid in f.also_in if uid in self.corpus.units}),
             "anchor": [self._evidence(u, None) for u in cand.units] if cand.type == "unanswerable" and cand.subtype == "not_covered" else None,
             "hint": {k: v for k, v in cand.hint.items() if k != "rows"},
             "provenance": {"candidate_id": cand.candidate_id, "model": self.gen.model, "judge_model": self.judge.model,
@@ -265,11 +272,14 @@ class Run:
         }
         if cand.type == "attribution":
             sp = cand.hint.get("speaker", "")
-            rec["answer_aliases"] = list(dict.fromkeys([sp.removeprefix("the ")] + list(self.cfg["attribution"]["speakers"].get(sp, []))))
-        if cand.type == "comparative" or cand.subtype == "comparison":
+            name = cand.hint.get("speaker_name")
+            rec["answer_aliases"] = list(dict.fromkeys(([name] if name else []) + [sp.removeprefix("the ")] + list(self.cfg["attribution"]["speakers"].get(sp, []))))
+        if cand.type == "comparative":
             rec["comparison"] = {k: item.get(k) for k in ("measure", "label_a", "value_a", "label_b", "value_b", "higher")}
-        if cand.type == "multihop" and cand.subtype != "comparison":
-            rec["hops"] = {"a": item.get("hop_a"), "b": item.get("hop_b")}
+        if cand.type == "multihop":
+            rec["hops"] = {"a": item.get("hop_a"), "b": item.get("hop_b"), "bridge": cand.hint.get("bridge"), "link": cand.hint.get("link")}
+        if cand.type == "summary":
+            rec["keypoints"] = item.get("keypoints")
         if "search" in item:
             rec["search"] = item["search"]
         if res.get("first"):   # the rejected first version and why, so a rewrite can be audited
@@ -286,17 +296,26 @@ class Run:
                 "caption": u.caption, "quote": quote}
 
 
+def load_sheet(interim_dir: Path, cfg: dict, fcfg: dict, facts_path: Path | None = None) -> tuple[Corpus, FactSheet]:
+    """The corpus and its fact sheet; fails loudly when `medrageval extract` has not run."""
+    corpus = load_corpus(interim_dir, cfg)
+    schema = load_schema(fcfg["schema"], known_roles(cfg))
+    sheet = FactSheet.load(Path(facts_path or Path(interim_dir) / "factsheet.jsonl"), schema, corpus, cfg, fcfg)
+    return corpus, sheet
+
+
 def generate_dataset(interim_dir: Path, out_dir: Path, cfg: dict, gen, judge, targets: dict[str, int] | None = None,
-                     types: list[str] | None = None, seed: int | None = None) -> dict:
+                     types: list[str] | None = None, seed: int | None = None, fcfg: dict | None = None,
+                     facts_path: Path | None = None) -> dict:
     """Generate the dataset into out_dir and return the report. Raises after writing if a type fell short."""
     t0 = time.time()
     seed = cfg["seed"] if seed is None else seed
     targets = {**cfg["targets"], **(targets or {})}
     types = [t for t in TYPES if t in (types or TYPES) and targets.get(t, 0) > 0]
-    corpus = load_corpus(interim_dir, cfg)
+    corpus, sheet = load_sheet(interim_dir, cfg, fcfg or load_config()["facts"], facts_path)
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"{interim_dir}: {len(corpus.units)} evidence units in {len(corpus.docs)} documents; topic: {corpus.topic[:70]}")
-    run = Run(corpus, cfg, gen, judge, out_dir, seed)
+    print(f"{interim_dir}: {len(corpus.units)} evidence units in {len(corpus.docs)} documents, {len(sheet)} facts; topic: {corpus.topic[:70]}")
+    run = Run(corpus, sheet, cfg, gen, judge, out_dir, seed)
     error = None
     try:
         for t in types:
@@ -335,6 +354,8 @@ def build_report(run: Run, targets: dict, types: list[str], elapsed: float, erro
         "items": len(run.accepted),
         "per_type": per_type,
         "items_per_document": dict(Counter(e["doc_id"] for r in run.accepted for e in (r["evidence"] or r.get("anchor") or []))),
+        "items_per_group": dict(Counter(r.get("group") or "-" for r in run.accepted)),
+        "facts": run.sheet.stats(),
         "speakers": dict(run.speakers),
         "corpus": run.corpus.stats(),
         "llm": {"generator": dict(run.gen.stats), "judge": dict(run.judge.stats)},
@@ -357,22 +378,21 @@ def print_report(report: dict) -> None:
         print(f"  WARNING: {w}")
 
 
-def dry_run(interim_dir: Path, cfg: dict, seed: int | None = None) -> dict:
-    corpus = load_corpus(interim_dir, cfg)
+def dry_run(interim_dir: Path, cfg: dict, fcfg: dict, seed: int | None = None, facts_path: Path | None = None) -> dict:
+    corpus, sheet = load_sheet(interim_dir, cfg, fcfg, facts_path)
     s = corpus.stats()
     print(f"{interim_dir}: {s['units']} units ({s['row_units']} table rows), noise {s['noise']}")
     print(f"  topic: {s['topic']}")
     for d in corpus.docs.values():
-        print(f"  {d.doc_id} {d.role:20s} {d.n_units:4d} units  {d.title[:60]}")
-    print(f"  entities: {s['entities']}")
-    counts = candidate_counts(corpus, cfg, cfg["seed"] if seed is None else seed, examples=2)
+        print(f"  {d.doc_id} {d.role:20s} {d.n_units:4d} units  {len(sheet.by_doc.get(d.doc_id, [])):4d} facts  {d.title[:60]}")
+    fs = sheet.stats()
+    print(f"  facts: {fs['facts']} ({fs['redacted']} redacted, {fs['ambiguous']} indistinguishable from a sibling) {fs['by_group']}")
+    counts = candidate_counts(corpus, sheet, cfg, cfg["seed"] if seed is None else seed, examples=2)
     for sel, info in counts.items():
-        print(f"  {sel:26s} {info['total']:5d} candidates {info['by_subtype']}")
-        for sub, exs in info["examples"].items():
-            for e in exs[:1]:
-                desc = " || ".join(corpus.units[u].plain[:60].replace("\n", " / ") for u in e["units"])
-                print(f"      e.g. [{sub}] {e['units']}: {desc}")
-    return {"corpus": s, "candidates": counts}
+        print(f"  {sel:26s} {info['total']:5d} candidates {info['by_group']}")
+        for e in info["examples"][:1]:
+            print(f"      e.g. {e['facts']}")
+    return {"corpus": s, "facts": fs, "candidates": counts}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -388,21 +408,23 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--per-type", type=int, help="override every type's target (smoke runs)")
     ap.add_argument("--types", help="comma-separated subset of types to run")
     ap.add_argument("--no-cache", action="store_true", help="ignore and do not write the LLM response cache")
-    ap.add_argument("--dry-run", action="store_true", help="only load the corpus and count candidates; no LLM calls")
+    ap.add_argument("--dry-run", action="store_true", help="only load the corpus and fact sheet and count candidates; no LLM calls")
     ap.add_argument("--seed", type=int)
+    ap.add_argument("--facts", type=Path, help="fact sheet (default: <interim dir>/factsheet.jsonl from `medrageval extract`)")
 
 
 def run_cli(args: argparse.Namespace) -> None:
-    cfg = load_config(args.config)["generate"]
+    full = load_config(args.config)
+    cfg, fcfg = full["generate"], full["facts"]
     if args.dry_run:
-        dry_run(args.interim_dir, cfg, args.seed)
+        dry_run(args.interim_dir, cfg, fcfg, args.seed, args.facts)
         return
     gen, judge = make_llms(cfg, use_cache=not args.no_cache)
     out = args.out or Path("data/datasets") / args.interim_dir.name
     targets = {t: args.per_type for t in TYPES} if args.per_type else None
     types = args.types.split(",") if args.types else None
     try:
-        report = generate_dataset(args.interim_dir, out, cfg, gen, judge, targets, types, args.seed)
+        report = generate_dataset(args.interim_dir, out, cfg, gen, judge, targets, types, args.seed, fcfg, args.facts)
     except RuntimeError as e:
         print_report(json.loads((out / "generate_report.json").read_text()))
         raise SystemExit(f"error: {e}")

@@ -64,6 +64,7 @@ generate:
   attempts_per_item:
     default: 4
     multihop: 8
+    crossdoc: 6
     unanswerable: 8
   # A rejected item goes back to the generator once, in the same conversation,
   # with each failed check, the judge's issues and what a single excerpt
@@ -79,21 +80,24 @@ generate:
   min_share_of_target: 0.5
   abort_after_consecutive_failures: 5   # five bad calls in a row means a wrong key or model
 
-  # Items per type; the sum is the dataset size (150).
+  # Items per type; the sum is the dataset size (150). Every item is built
+  # from facts of the fact sheet (`medrageval extract`), drawn across schema
+  # groups in proportion to their weights.
+  # Paired types are set by what a bundle offers. TA1063 has 20 schema bridges,
+  # and only a handful of unredacted figures on which two documents disagree
+  # about the same arm and subject: 4,749 same-subject cross-document pairs
+  # are redacted, and the rest are copies. document2 has 12.
   targets:
-    factual: 22
-    numerical: 22
-    comparative: 21
-    multihop: 21
-    crossdoc: 21
-    attribution: 21
-    unanswerable: 22     # half redacted values, half not covered by the documents
+    factual: 26
+    numerical: 26
+    comparative: 20
+    multihop: 10
+    crossdoc: 4
+    attribution: 20
+    summary: 18          # open questions scored on keypoints, one per fact
+    unanswerable: 26     # half redacted values, half near misses the documents do not cover
 
   limits:
-    # Evidence paragraphs. Paragraph plain text: median ~250 chars, p90 ~730.
-    # Under 120 chars are mostly headings and fragments.
-    min_chars: 120
-    max_chars: 1500
     # Tables above this are split into row groups (table p90 is ~4300 chars;
     # expert statement forms are a single 14-19k char table each). A row group
     # keeps a form's "question | answer" pair together.
@@ -103,7 +107,7 @@ generate:
     max_per_section: 2           # items drawn from one section, for coverage
     quote_tokens: [3, 80]        # a short table row ("CAPItello-291 | Strong | Weak") is 4 tokens
     question_words: [8, 45]       # multi-hop questions carry two descriptions; 40 cut good ones in the smoke run
-    answer_max_chars: 400        # cross-document answers report two documents' positions
+    answer_max_chars: 400        # cross-document answers report two documents' positions; summaries have their own limit
     # OCR text carries glyph errors that end up in questions and answer keys
     # ("<65 yéárs", "Capivas ertib" in TA1063's Figure 10, 11 of 256 tables
     # and 14 of 1432 paragraphs are OCR). OCR units stay searchable.
@@ -117,20 +121,6 @@ generate:
   context:
     units: 2
     max_chars: 700
-  multihop:
-    # Excerpt B shows some facts about the bridge itself: its table row, its
-    # column header, its own sentence. A question that describes the bridge
-    # by those is answered by B alone, as both multi-hop items of the 31 Oct
-    # smoke run were ("the alpelisib-plus-fulvestrant study" is Table 24's
-    # column header; FAKTION is Table 15's only UK row). The generator is told
-    # what B shows, and a pair is dropped when the bridge sentence has fewer
-    # than min_new_tokens content words that B does not show.
-    min_new_tokens: 3
-    # Multi-hop comparisons take a cell that two twin tables print differently
-    # (Scenario 1 against Scenario 2, list against PAS price, submission against
-    # clarification). Fit statistics are not compared: twin AIC/BIC tables are
-    # models fitted to different outcomes or arms, 7 of TA1063's 17 comparisons.
-    incomparable_measures: ['\bAIC\b', '\bBIC\b', '\bDIC\b', 'deviance', 'log.?likelihood', 'goodness of fit']
 
   # Elements that must never become evidence or search hits. Counts are for
   # TA1063 / document2: reference lists 227 / 303 elements, elements under 25
@@ -193,12 +183,10 @@ generate:
       guidance: Committee guidance
       cover: Cover pages
       other: Document
-    primary: [company_submission, patient_summary]
-    secondary: [eag_report, clarification, factual_accuracy, guidance]
     override: {}
-    # How a question names a document when that is what tells a table from
-    # its twin in another document (TA1063: the clarification response
-    # reprints the submission's goodness-of-fit table, same rows, new values).
+    # How a question names a document: when two facts differ only in their
+    # document (the clarification response reprints the submission's
+    # goodness-of-fit table with new values), naming it tells them apart.
     mention:
       company_submission: company submission
       patient_summary: summary for patients
@@ -207,48 +195,20 @@ generate:
       factual_accuracy: factual accuracy check
       guidance: committee
 
-  # Evidence used only when nothing else is left, for the single-passage
-  # types (factual, numerical, comparative, not-covered anchors). The
-  # summary for patients restates the submission in lay terms; in the smoke
-  # run it produced "how many men are diagnosed with breast cancer each
-  # year", which has nothing to do with the appraisal. It is 12% of TA1063's
-  # factual candidates (57 of 456) and 9% of document2's.
-  demote:
-    roles: [patient_summary, cover, other]
-    section_patterns: ['\bbackground\b', 'epidemiolog', '\bthe condition\b', 'disease overview', 'burden of (the )?(disease|illness)']
-
-  # Trial and study names that link parts of a document (CAPItello-291 is in
-  # 278 elements of TA1063, PROTECT in 479 of document2). A name is learned
-  # from the capture group of a pattern ("the PROTECT trial", "SOLAR-1 study";
-  # a plain regex over capitalised words caught genes like CDK4 and missed
-  # PROTECT), then counted wherever it appears. Kept only when it occurs in at
-  # least min_units units and at most max_doc_share of a document's units.
-  entities:
-    patterns: ['\b([A-Za-z][A-Za-z]*[- ]?\d{0,4})\s+(?:trial|study)\b', '\b([A-Z][A-Za-z]{2,}-\d{1,4})\b', '\b(NCT\d{8})\b']
-    stoplist: ['^(I|II|III|IV|RCT|UK|US|NICE|NHS|EAG|ERG|CS|PAS|EQ-?5D|SF-?36|COVID-?19|MAIC|ITC|NMA|SLR|HTA|HRQoL|QoL|EVPI|SACT|CSR|ITT|PP|SG|AE|SAE|OS|PFS|ORR|HCRU|CKD|IgAN|QALY|ICER)$', '^phase\s*\d', '^(ICD|ISO|SF|EQ|CTCAE|CDK|HER|PIK|AKT|KDIGO|KDQOL|BMI|CKD)-?\d']
-    min_units: 2
-    max_doc_share: 0.4
-
-  # A number counts as "numeric evidence" when it carries a unit.
-  numeric_patterns: ['%', '\bmonths?\b', '\byears?\b', '\bweeks?\b', '\bdays?\b', '\bmg\b', '£', '\bQALYs?\b', '\bICER\b', '\bpatients\b', '\bparticipants\b', '\bevents\b', '\bn\s*=']
-
-  cross_doc:
-    # Explicit pointers from a reviewing document into the company submission.
-    reference_patterns:
-      - '(?:\bCS\b|company submission|Document B)[^.]{0,30}?(Table|Figure)\s+([A-Z]?\d+(?:\.\d+)?)'
-      - 'clarification question\s+([A-C]\s?\d+)'
-    min_shared_numbers: 2        # two shared significant numbers pair two passages
-    min_shared_rare: 3           # or one number plus three rare content tokens
-    max_overlap: 0.8             # above this token overlap the passages are copies (the EAG quotes the company verbatim)
-    query_terms: 20
-    top_k: 5
-    min_margin: 0.1              # BM25 top hit must beat the runner-up by this share
+  # Two quotes from different documents with more token overlap than this are
+  # copies, not two accounts (the EAG quotes the company verbatim).
+  cross_doc_max_overlap: 0.8
 
   comparative:
-    # A header cell that names an arm, group, timepoint or scenario.
-    arm_header_patterns: ['\(?\bN\s*=\s*\d+', '\b(placebo|comparator|control|intervention|arm|group|cohort|baseline|week|month|year|scenario|base[ -]case|company|EAG|ERG|plus|versus|vs)\b', '\+']
-    min_numeric_rows: 3
-    max_rows: 25
+    # Values that differ by less than this share of the larger are not worth
+    # comparing: v14 asked which of 3.25 and 3.26 life years was higher.
+    min_relative_difference: 0.10
+    # Two counts both below this (integers, not percentages, medians or costs)
+    # are no finding: the fresh smoke run compared 1 pleural-effusion SAE with 0.
+    min_count: 5
+    # Two facts of one slot are compared only when they differ in one of these: the same measure in two arms,
+    # data cuts, populations or scenarios. Not item, event or measure: two different things.
+    comparable_qualifiers: [arm, population, data_cut, timepoint, scenario, analysis, price, comparator, technology, health_state, trial, region]
     direction_words: [higher, lower, greater, less, longer, shorter, more, fewer, larger, smaller, better, worse, increase, increased, decrease, decreased, exceed, exceeds]
 
   attribution:
@@ -273,12 +233,6 @@ generate:
       patient_org: the patient organisations
       professional_org: the professional organisations
       guidance: the committee
-    # "The EAG considers that ...", "The company stated that ...": 50 / 62 such
-    # sentences in TA1063 / document2, nearly all in the EAG report.
-    stance_patterns:
-      - "\\b(?:the\\s+)?(EAG|ERG|company|manufacturer|clinical experts?|patient experts?|patient organisations?|professional organisations?|committee)(?:'s)?\\s+(?:also\\s+|therefore\\s+|however\\s+)?(considers?|notes?d?|argue[sd]?|believes?|agree[sd]?|disagree[sd]?|suggest(?:s|ed)?|conclude[sd]?|state[sd]?|acknowledge[sd]?|recommend(?:s|ed)?|prefer(?:s|red)?|highlight(?:s|ed)?|is concerned|was concerned|assume[sd]?|expect(?:s|ed)?|propose[sd]?|request(?:s|ed)?|advise[sd]?|indicate[sd]?|report(?:s|ed)?|emphasise[sd]?|view is|views?)\\b"
-    response_section_patterns: ['^company response']
-    min_answer_chars: 80         # form rows need a real answer, not a tick box
     # Experts and organisations speak for themselves only in their own
     # documents. Elsewhere their view is relayed by a party that holds it too:
     # "UK clinical experts therefore expect that capivasertib ... will be used
@@ -286,10 +240,6 @@ generate:
     # company's lay summary, and the company says the same in Document B and
     # at clarification, so "who" had two answers. The only such stance in TA1063.
     own_voice_only: [the clinical experts, the patient experts, the patient organisations, the professional organisations]
-    # Form rows about the respondent rather than the technology (4 of 14 form
-    # rows in TA1063: "4a. Brief description of the organisation", "5. How did
-    # you gather information ...").
-    form_skip_questions: ['your name', 'name of (your )?organi[sz]ation', 'job title', 'description of the organi[sz]ation', 'how did you gather information', 'links (with|to),? or funding from']
     max_share_per_speaker: 0.5
     # Exclusivity: a claim restated in a document with a different role is not
     # attributable. Rare tokens are those in at most rare_df_max of all units;
@@ -298,19 +248,8 @@ generate:
     rare_df_max: 0.03
     min_rare_tokens: 2
     restated_containment: 0.7
-    # A claim is contested when a top BM25 hit shares half its rare words and
-    # carries another party's stance verb ("the company considers ... appropriate"
-    # against "the EAG considers ... inappropriate"). Contested claims are
-    # offered first: the answerer has to tell two positions apart instead of
-    # guessing the speaker from the subject. Stance sentences naming a second
-    # party ("the EAG agrees with the company that") are not used at all:
-    # 13 of 48 in TA1063, 18 of 70 in document2.
-    contested_top_k: 10
-    contested_containment: 0.5
 
   unanswerable:
-    max_redactions: 12           # tables with 180 markers leave no label to ask about
-    min_clear_chars: 60
     top_k: 6                     # BM25 hits per question shown to the coverage check (one call per anchor)
     neighbours: 4                # same-section units shown to the generator as off limits and to the check
     questions_per_anchor: 3
@@ -335,11 +274,11 @@ generate:
 
   judge:
     max_chars_per_unit: 2500
-  # The judge pass costs a call per item. In the smoke runs it only ever
-  # changed the outcome for the paired and comparative types (a missing
-  # timepoint, a value table that answers alone); the others were already
-  # settled by the programmatic checks.
-  judge_types: [comparative, multihop, crossdoc]
+  # The judge pass costs a call per item. It runs on every answerable type:
+  # besides support, it checks that a question is realistic (one a clinician,
+  # health economist or committee member would ask, not one about a table's
+  # layout), which no programmatic check can.
+  judge_types: [factual, numerical, comparative, multihop, crossdoc, attribution, summary]
   # After the judge passes them, these items go back to the judge model once
   # per excerpt, with that excerpt alone, and are rejected when its answer
   # holds every answer key. The judge sees both excerpts at once and has to
@@ -349,7 +288,14 @@ generate:
   # shows the same gap: of the multi-hop items its all-chunks review accepted,
   # 15% (HotPot, 86 of 568) and 11% (MuSiQue, 59 of 537) were answerable from
   # one chunk by its per-chunk check. Two short calls per item that gets this far.
-  alone_check_types: [multihop]
+  # Cross-document items too: in v14 the judge said one excerpt answered
+  # crossdoc-004 alone and it was kept, because only multi-hop was checked.
+  alone_check_types: [multihop, crossdoc]
+
+  summary:
+    min_facts: 3                 # fewer is a factual question
+    max_facts: 6                 # more and the answer is a list, not a summary
+    answer_max_chars: 900
 
   validate:
     # A question must stand on its own: no pointing at the excerpt.
@@ -374,3 +320,60 @@ generate:
     # NHS reference costs (202122)", copied a parse defect and would have
     # failed a correct answer.
     max_key_tokens: 4
+    # Questions about the layout instead of the subject: v14 asked about
+    # "Table 37", "Capivasertib + fulvestrant (N=155)" and "the Capivasertib +
+    # fulvestrant row". Users do not know table numbers.
+    # Two questions glued with "and" (v14's crossdoc-001; the first fact-sheet
+    # smoke run's "what tool and estimate", "what assumption ..., and how did
+    # it affect"): two lookups, not one fact. Comparative, cross-document and
+    # summary items combine facts by design and are exempt.
+    single_ask_types: [factual, numerical, multihop, attribution, unanswerable]
+    compound_patterns: ['\b(and|or) (what|which|how|who|when|why|where|whether)\b', ',\s*and (did|does|do|was|were|is|are|has|had)\b']
+    banned_patterns: ['\b(table|figure|fig\.)\s*\d', '\(N\s*=\s*\d', '\brows?\b', '\bcolumns?\b']
+    # Keys that a wrong answer contains as easily as a right one (v14 had
+    # '0', 'Weak' and 'plausible'). Bare one- or two-digit numbers are
+    # rejected too. Attribution keys (the speaker) are exempt.
+    generic_keys: ['yes', 'no', 'none', 'weak', 'strong', 'moderate', 'high', 'low', 'plausible', 'appropriate', 'inappropriate', 'unclear', 'reasonable', 'increased', 'decreased', 'similar']   # quoted: YAML reads bare yes/no as booleans
+
+# Fact sheet (`medrageval extract`): the verified facts that question
+# generation is built on, as RAGEval builds its questions from a config of key
+# facts. The schema says which facts matter for the document family. The LLM
+# reads them out of batches of passages, and every fact is checked against a
+# verbatim quote before it is kept.
+facts:
+  schema: configs/schema/nice_sta.yaml
+  model: null                   # null: generate.model
+  temperature: 0.0              # extraction is reading, not writing: deterministic
+  max_tokens: 6000              # 25 facts with quotes and qualifiers run to ~4,500 tokens
+  max_workers: 6
+  batch:
+    # Per group and document: units whose section path matches the group, then
+    # the best keyword matches, up to max_units, packed into batches of
+    # max_batch_chars. Longer batches made the model skip facts late in them.
+    max_units: 60
+    bm25_top_k: 40
+    max_batch_chars: 12000
+    max_unit_chars: 2500
+  max_facts_per_batch: 25
+  quote_tokens: [3, 80]         # a table row may be three tokens ("Total LY | 3.25 | 2.41")
+  max_value_chars: 300
+  min_grounding_tokens: 2       # a text value or stance shares this many content words with its quote
+  # Two text facts of one slot differ when their content words overlap less than this.
+  text_conflict_jaccard: 0.5
+  # Copies in other documents (the EAG reprints the company's tables): every
+  # value number and min_shared_rare rare words of the quote, or for text
+  # facts text_containment of the quote's rare words.
+  also_in:
+    top_k: 8
+    rare_df_max: 0.03
+    min_shared_rare: 3
+    text_containment: 0.7
+  # The slot naming who wrote a stakeholder document; its value becomes the
+  # speaker of the document's other facts.
+  respondent_slot: stakeholder_views.respondent
+  abort_after_consecutive_failures: 5
+  # `medrageval schema draft`: what the LLM sees per document role.
+  draft:
+    max_titles_per_role: 120
+    samples_per_role: 3
+    sample_chars: 1200

@@ -137,6 +137,14 @@ def api_key(env_file: Path | None = None) -> str:
     return key
 
 
+def make_llm(section: dict, cfg: dict, use_cache: bool = True) -> LLM:
+    """A client for a stage with its own config section (`facts`): its model, temperature and token limit,
+    with the endpoint and response cache of the `generate` section."""
+    key = api_key()
+    cache = Path(cfg["cache_dir"]) if use_cache and cfg.get("cache_dir") else None
+    return LLM(section.get("model") or cfg["model"], cfg["base_url"], key, section["temperature"], section["max_tokens"], cache)
+
+
 def make_llms(cfg: dict, use_cache: bool = True) -> tuple[LLM, LLM]:
     """(generator, judge) clients from the `generate` config section."""
     key = api_key()

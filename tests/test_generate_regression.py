@@ -1,7 +1,8 @@
-"""Evidence selection on the real parse outputs, without an LLM.
+"""Extraction planning and fact-based selection on the real parse outputs, without an LLM.
 
 Run with: uv run pytest -m regression tests/test_generate_regression.py
 Needs data/interim/<name>/ from `medrageval parse`; each bundle is skipped when it is missing.
+The fact-sheet tests also need factsheet.jsonl from `medrageval extract`, and are skipped without it.
 """
 
 from pathlib import Path
@@ -10,61 +11,45 @@ from random import Random
 import pytest
 
 from medrageval.config import load_config
-from medrageval.generate.candidates import SELECTORS, candidate_counts, stated_elsewhere, table_comparison
+from medrageval.facts.extract import plan_batches
+from medrageval.facts.factsheet import FactSheet
+from medrageval.facts.schema import known_roles, load_schema
+from medrageval.generate.candidates import SELECTORS, stated_elsewhere
 from medrageval.generate.corpus import load_corpus
-from medrageval.text import table_rows
 
 pytestmark = pytest.mark.regression
 ROOT = Path(__file__).resolve().parents[1]
-CFG = load_config()["generate"]
+FULL = load_config()
+CFG, FCFG = FULL["generate"], FULL["facts"]
+SCHEMA = load_schema(FCFG["schema"], known_roles(CFG))
 
 EXPECTED = {
     "ta1063": {
         "roles": {"d01": "cover", "d02": "company_submission", "d03": "patient_summary", "d04": "clarification", "d05": "patient_org",
                   "d08": "clinical_expert", "d09": "patient_expert", "d12": "eag_report", "d13": "factual_accuracy"},
         "topic": "Capivasertib with fulvestrant",
-        "entities": ["CAPItello-291", "SOLAR-1", "BOLERO-2"],
-        "min_candidates": {"factual": 300, "numerical": 100, "comparative": 60, "multihop": 60, "crossdoc": 35,
-                           "attribution": 50, "unanswerable_redacted": 30, "unanswerable_not_covered": 25},
-        "crossdoc_pair": ("d12", "d02"),
-        # Tables 35 and 36 of the clarification response repeat the AIC/BIC rows for the two components of the regimen
-        # Tables 35 and 36 of the clarification response repeat the AIC/BIC rows for the two components of the regimen; the
-        # response also reprints the submission's goodness-of-fit table (Table 21 -> 39) and base-case table (44 -> 27, 28) with new values
-        "twins": {"d04-e0330": ["TTD", "capivasertib arm"], "d04-e0341": ["TTD", "fulvestrant arm"], "d04-e0268": ["Scenario 1"],
-                  "d02-e0321": ["company submission"], "d04-e0387": ["CAPItello-291"], "d02-e0419": ["company submission"], "d12-e0161": ["EAG"]},
-        # EAG Table 3.12 reprints clarification Table 18 unchanged; Table 3.13 reprints Table 19 (FAKTION SAEs, "SAE" for "Serious
-        # adverse event", plus a source note) and Table 4.8 reprints CS Table 29 (subsequent treatments) under another stub heading;
-        # Tables 3.8 and 3.20 reprint CS Table 7 and clarification Table 12 with shortened labels ("HR" for "Hazard ratio")
-        "copies": {"d12-e0291": ["d04-e0166"], "d04-e0166": ["d12-e0291"], "d04-e0172": ["d12-e0297"], "d12-e0297": ["d04-e0172"],
-                   "d02-e0364": ["d12-e0502"], "d12-e0502": ["d02-e0364"], "d02-e0109": ["d12-e0216"], "d12-e0216": ["d02-e0109"],
-                   "d04-e0137": ["d12-e0347"], "d12-e0347": ["d04-e0137"]},
-        "not_a_bridge": ["d12-e0381"],                            # lists the five NMA trials and describes none
-        "two_party_stance": "d12-e0415",                          # "The EAG agrees with the company that ..."
         "redacted_but_stated": {"d02-e0231": "d02-e0412#r00"},   # Table 14 redacts body surface area; Table 42 prints 1.82 / 1.70
         "figure_as_table": "d02-e0149",                           # Figure 10 (forest plot) came out of OCR as a table with "<65 yéárs"
-        "grouped_table": ("d12-e0317", "CAPItello-291 (PI3K/AKT altered population) | Placebo + fulvestrant 500 | 134"),
+        # units the extraction must read for a group (checked by hand against the PDF)
+        "reads": {"efficacy": ["d02-e0109"],                      # CS Table 7: median PFS 7.3 vs 3.1 months (p. 42)
+                  "cost_effectiveness": ["d02-e0419"]},           # CS Table 44: deterministic pairwise base case (p. 126)
     },
     "document2": {
         "roles": {"d01": "cover", "d02": "company_submission", "d03": "patient_summary", "d04": "clarification", "d06": "professional_org",
                   "d08": "eag_report", "d09": "factual_accuracy", "d10": "clinical_expert", "d12": "patient_expert"},
         "topic": "Sparsentan for treating primary IgA nephropathy",
-        "entities": ["PROTECT", "NefIgArd"],
-        # 14 redacted: the table repair rejoined a row whose label had been the fragment "scheme (if", and the marker now
-        # follows prose ("available for sparsentan [REDACTED].") rather than a cell separator, so it has no label to ask about
-        "min_candidates": {"factual": 400, "numerical": 150, "comparative": 100, "multihop": 60, "crossdoc": 60,
-                           "attribution": 100, "unanswerable_redacted": 14, "unanswerable_not_covered": 30},
-        "crossdoc_pair": ("d08", "d02"),
-        # base-case results at list and PAS price (company and clarification), transition matrices per arm and period (EAG)
-        # base-case results at list and PAS price (company and clarification) and the age-adjusted utility scenario share the rows
-        "twins": {"d02-e0643": ["Base-case", "List", "company submission"], "d02-e0645": ["Base-case", "PAS", "company submission"],
-                  "d04-e0337": ["Base-case", "List", "clarification"], "d04-e0342": ["clarification"],
-                  "d08-e0374": ["Weeks 0-12", "group", "sparsentan"], "d08-e0382": ["Weeks 12-108", "irbesartan"]},
-        "copies": {},
-        "not_a_bridge": [],
-        "two_party_stance": None,
         "redacted_but_stated": {"d05-e0009": "d10-e0014"},       # a redacted job title on one form, printed on another
-        "italic_caption": ("d04", "table", "14", "d04-e0337"),   # "_Table 14: ..._" is still a caption
+        "reads": {},
     },
+}
+
+# Facts checked by hand against the PDF: (slot, doc, numbers the fact's value must hold, words its qualifiers must hold).
+VERIFIED = {
+    "ta1063": [
+        ("efficacy.endpoint_result", "d02", {"7.3", "3.1"}, {"pfs"}),            # CS Table 7, p. 42: median PFS by investigator, DCO1
+        ("cost_effectiveness.total_outcomes", "d02", {"3.25"}, set()),           # CS Table 44, p. 126: capivasertib total LYG
+    ],
+    "document2": [],
 }
 
 
@@ -80,103 +65,81 @@ def bundle(request):
     return request.param, _corpus(request.param)
 
 
-def test_roles_topic_and_entities(bundle):
+@pytest.fixture(scope="module")
+def sheet(bundle):
+    name, c = bundle
+    path = ROOT / "data/interim" / name / "factsheet.jsonl"
+    if not path.exists():
+        pytest.skip(f"{path} is missing; run `medrageval extract` first")
+    return name, c, FactSheet.load(path, SCHEMA, c, CFG, FCFG)
+
+
+def test_roles_and_topic(bundle):
     name, c = bundle
     exp = EXPECTED[name]
     assert {d: c.docs[d].role for d in exp["roles"]} == exp["roles"]
     assert c.topic.startswith(exp["topic"])
-    assert set(exp["entities"]) <= set(c.entity_names.values())
 
 
 def test_noise_removes_reference_lists_and_figures(bundle):
     name, c = bundle
     assert c.noise["section"] >= 100 and c.noise["figure"] >= 60
     assert not any("References" in u.section_path[-1:] for u in c.units.values())
+    if "figure_as_table" in EXPECTED[name]:
+        assert EXPECTED[name]["figure_as_table"] not in c.units
 
 
-def test_every_type_has_candidates_to_spare(bundle):
+def test_every_group_is_read_from_its_roles(bundle):
     name, c = bundle
-    counts = candidate_counts(c, CFG, CFG["seed"])
-    for sel, minimum in EXPECTED[name]["min_candidates"].items():
-        assert counts[sel]["total"] >= minimum, (sel, counts[sel]["total"])
+    batches = plan_batches(c, SCHEMA, CFG, FCFG)
+    groups = {b.group for b in batches}
+    assert groups == {g for g, grp in SCHEMA.groups.items() if grp.weight > 0}, "a group with no document of its roles"
+    for b in batches:
+        assert c.docs[b.doc_id].role in SCHEMA.groups[b.group].roles
+        assert not any(u.source == "ocr" for u in b.units)
+        assert len(b.units) <= FCFG["batch"]["max_units"]
+    for group, uids in EXPECTED[name]["reads"].items():
+        read = {u.element_id for b in batches if b.group == group for u in b.units}
+        assert set(uids) <= read, (group, set(uids) - read)
 
 
-def test_crossdoc_pairs_reviewer_with_company(bundle):
-    name, c = bundle
-    a, b = EXPECTED[name]["crossdoc_pair"]
-    pairs = [(x.units[0].doc_id, x.units[1].doc_id) for x in SELECTORS["crossdoc"](c, CFG, Random(CFG["seed"]))]
-    assert (a, b) in pairs and all(p[0] != p[1] for p in pairs)
-
-
-def test_attribution_has_more_than_one_speaker(bundle):
-    name, c = bundle
-    cands = list(SELECTORS["attribution"](c, CFG, Random(CFG["seed"])))
-    speakers = {x.hint["speaker"] for x in cands}
-    assert "the EAG" in speakers and len(speakers) >= 3
-    if EXPECTED[name]["two_party_stance"]:
-        assert EXPECTED[name]["two_party_stance"] not in {x.units[0].unit_id for x in cands}
-    contested = [x for x in cands if "contested_by" in x.hint]
-    assert len(contested) >= 5 and next(x for x in cands if x.hint["speaker"] == "the EAG") in contested
-
-
-def test_bridges_describe_their_entity(bundle):
-    name, c = bundle
-    entity = [x for x in SELECTORS["multihop"](c, CFG, Random(CFG["seed"])) if x.subtype == "entity"]
-    # 23 in TA1063 once hops into a unit with no other trial to choose from are dropped (Table 4.6 cites CAPItello-291 on every row)
-    assert len(entity) >= 20
-    for x in entity:
-        assert x.hint["link"].lower()[:5] in x.hint["bridge"].lower() and x.hint["bridge"] in x.units[0].plain
-    assert not set(EXPECTED[name]["not_a_bridge"]) & {x.units[0].unit_id for x in entity}
-
-
-def test_lay_summary_is_used_last(bundle):
-    name, c = bundle
-    for sel in ("factual", "numerical", "unanswerable_not_covered"):
-        roles = [c.docs[x.units[0].doc_id].role for x in SELECTORS[sel](c, CFG, Random(CFG["seed"]))]
-        assert "patient_summary" in roles and roles.index("patient_summary") >= 0.8 * len(roles), sel
-
-
-def test_twin_tables_get_their_discriminating_words(bundle):
-    name, c = bundle
-    for uid, phrases in EXPECTED[name]["twins"].items():
-        assert c.discriminator(c.units[uid]) == phrases, uid
-    assert all(all(p for p in c.discriminator(c.units[uid])) for uid in c.twins), "a twin with nothing to tell it apart"
-    assert c.copies == EXPECTED[name]["copies"]
-    assert not any(cp in c.twins.get(uid, []) for uid, cps in c.copies.items() for cp in cps)
-
-
-def test_redacted_values_printed_elsewhere_are_skipped(bundle):
+def test_redacted_values_printed_elsewhere_are_found(bundle):
     name, c = bundle
     for uid, where in EXPECTED[name]["redacted_but_stated"].items():
         assert stated_elsewhere(c, c.units[uid], CFG) == where
-        assert uid not in {x.units[0].unit_id for x in SELECTORS["unanswerable_redacted"](c, CFG, Random(CFG["seed"]))}
 
 
-def test_ocr_and_figures_are_not_evidence(bundle):
-    name, c = bundle
-    if "figure_as_table" in EXPECTED[name]:
-        assert EXPECTED[name]["figure_as_table"] not in c.units
-    ocr = {uid for uid, u in c.units.items() if u.source == "ocr"}
-    assert ocr, "no OCR units at all; the check is vacuous"
+def test_verified_facts_were_extracted(sheet):
+    name, c, s = sheet
+    for slot, doc, numbers, words in VERIFIED[name]:
+        hits = [f for f in s.by_slot.get(slot, []) if f.doc_id == doc and numbers <= f.numbers()
+                and words <= {w.lower() for v in f.qualifiers.values() for w in v.replace("-", " ").split()}]
+        assert hits, (slot, doc, numbers, words)
+
+
+def test_fact_sheet_quotes_are_verbatim_and_mostly_distinguishable(sheet):
+    from medrageval.generate.validate import quote_in
+    name, c, s = sheet
+    assert len(s) >= 200
+    for f in s.facts.values():
+        for e in f.evidence:
+            assert quote_in(e["quote"], c.units[e["unit_id"]].plain), f.fact_id
+    askable = [f for f in s.facts.values() if s.askable(f)]
+    assert sum(s.ambiguous(f) for f in askable) <= 0.25 * len(askable)
+
+
+def test_every_type_has_candidates_and_selection_is_reproducible(sheet):
+    name, c, s = sheet
     for sel in SELECTORS:
-        assert not any(u.unit_id in ocr for x in SELECTORS[sel](c, CFG, Random(CFG["seed"])) for u in x.units), sel
-
-
-def test_grouped_table_rows_carry_their_group(bundle):
-    name, c = bundle
-    if "grouped_table" in EXPECTED[name]:
-        uid, line = EXPECTED[name]["grouped_table"]
-        assert any(l.startswith(line) for l in c.units[uid].plain.splitlines())
-        labels = table_comparison(table_rows(c.units[uid].text), CFG, Random(CFG["seed"]))["labels"]
-        assert len({lb.split(" ")[0] for lb in labels}) == 1, labels   # one study per comparison
-    if "italic_caption" in EXPECTED[name]:
-        doc, kind, number, element = EXPECTED[name]["italic_caption"]
-        assert c.captions[(doc, kind, number)] == element
-
-
-def test_selection_is_reproducible(bundle):
-    name, c = bundle
-    for sel in SELECTORS:
-        first = [x.candidate_id for x in SELECTORS[sel](c, CFG, Random(CFG["seed"]))][:30]
-        again = [x.candidate_id for x in SELECTORS[sel](c, CFG, Random(CFG["seed"]))][:30]
+        first = [x.candidate_id for x in SELECTORS[sel](c, s, CFG, Random(CFG["seed"]))]
+        again = [x.candidate_id for x in SELECTORS[sel](c, s, CFG, Random(CFG["seed"]))]
         assert first == again, sel
+        assert first, f"{sel}: no candidates"
+        assert not any(u.source == "ocr" for x in SELECTORS[sel](c, s, CFG, Random(CFG["seed"])) for u in x.units), sel
+
+
+def test_candidates_never_use_an_indistinguishable_fact(sheet):
+    name, c, s = sheet
+    for sel in ("factual", "numerical", "comparative", "multihop", "crossdoc", "summary", "unanswerable_not_covered"):
+        for x in SELECTORS[sel](c, s, CFG, Random(CFG["seed"])):
+            assert not any(s.ambiguous(f) for f in x.facts), (sel, x.candidate_id)

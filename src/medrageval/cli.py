@@ -2,6 +2,8 @@ import argparse
 from pathlib import Path
 
 from medrageval.config import load_config
+from medrageval.facts import draft as draft_stage
+from medrageval.facts import extract as extract_stage
 from medrageval.generate import generate as generate_stage
 from medrageval.parse.pipeline import parse_pdf, print_report
 
@@ -16,7 +18,14 @@ def main() -> None:
     p.add_argument("--config", type=Path)
     p.add_argument("--force", action="store_true", help="re-run conversion even if cached")
 
-    g = sub.add_parser("generate", help="generate an evaluation dataset from a parse output directory")
+    s = sub.add_parser("schema", help="fact-sheet schemas")
+    ssub = s.add_subparsers(dest="schema_command", required=True)
+    draft_stage.add_arguments(ssub.add_parser("draft", help="draft a schema for a new document family with an LLM, for review"))
+
+    e = sub.add_parser("extract", help="extract the fact sheet from a parse output directory")
+    extract_stage.add_arguments(e)
+
+    g = sub.add_parser("generate", help="generate an evaluation dataset from a parse output directory and its fact sheet")
     generate_stage.add_arguments(g)
 
     args = ap.parse_args()
@@ -24,6 +33,10 @@ def main() -> None:
         out = args.out or Path("data/interim") / args.pdf.stem
         print_report(parse_pdf(args.pdf, out, load_config(args.config), force=args.force))
         print(f"outputs in {out}/")
+    elif args.command == "schema":
+        draft_stage.run_cli(args)
+    elif args.command == "extract":
+        extract_stage.run_cli(args)
     elif args.command == "generate":
         generate_stage.run_cli(args)
 

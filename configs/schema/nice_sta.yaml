@@ -1,0 +1,226 @@
+# Fact-sheet schema for NICE single technology appraisal (STA) committee papers.
+#
+# Read by `medrageval extract`, which builds the fact sheet questions are
+# generated from. It is disease-agnostic on purpose: slots name kinds of fact
+# ("a trial endpoint's result per arm"), and the qualifiers carry what makes
+# one fact differ from another (trial, endpoint, population, data cut). It
+# must fit TA1063 (capivasertib, breast cancer) and document2 (sparsentan,
+# IgA nephropathy) alike.
+#
+# Per group:
+#   weight    share of the dataset drawn from the group (normalised over groups)
+#   roles     document roles to read (generate.roles in default.yaml)
+#   sections  regexes over a unit's section path; matching units are read first
+#   keywords  BM25 query that adds the best-matching units of the document
+# Per slot:
+#   kind        number (value, or values keyed by `per`), text, or stance (positions keyed by party)
+#   qualifiers  what tells two facts of the slot apart; questions must name the ones that differ
+#   ask: false  metadata other items use, never asked about
+#
+# Section patterns follow NICE's templates, which every STA uses: company
+# submission B.1 decision problem, B.2 clinical effectiveness, B.3 cost
+# effectiveness; EAG report sections 1-6 (key issues, decision problem,
+# clinical, cost effectiveness, results, additional analyses); the factual
+# accuracy check's "Issue N" headings.
+
+name: NICE single technology appraisal
+version: 1
+
+groups:
+  decision_problem:
+    weight: 0.08
+    describe: the decision problem and the technology's place in the treatment pathway
+    roles: [company_submission, eag_report]
+    sections: ['decision problem', 'description of the technology', 'treatment pathway', 'positioning', '\bintervention\b', '\bcomparators?\b', '\bpopulation\b']
+    keywords: [population, comparator, comparators, marketing authorisation, indication, dose, treatment pathway, positioning, excluded]
+    slots:
+      population:
+        kind: text
+        describe: the population the technology is appraised for, or a restriction the company proposes
+        qualifiers: [technology]
+      comparator_choice:
+        kind: text
+        describe: a comparator the company includes or excludes, and the reason given
+        qualifiers: [comparator]
+      dosing:
+        kind: text
+        describe: the dose, schedule or administration of the technology
+        qualifiers: [technology]
+      positioning:
+        kind: text
+        describe: where the technology would be used in the treatment pathway
+        qualifiers: [technology, line_of_therapy]
+
+  trial_design:
+    weight: 0.10
+    describe: design and conduct of the trials that provide the clinical evidence
+    roles: [company_submission, eag_report, clarification]
+    sections: ['methodology', 'statistical analysis', 'critical appraisal', 'list of relevant', 'critique of trials', 'study design', 'baseline', 'clinical effectiveness evidence', 'participant']
+    keywords: [randomised, phase, double-blind, open-label, enrolled, primary endpoint, eligibility, data cut-off, stratification, follow-up]
+    slots:
+      design:
+        kind: text
+        describe: the design of a trial (phase, randomisation, blinding, comparator arm, setting)
+        qualifiers: [trial]
+      primary_endpoint:
+        kind: text
+        describe: the primary endpoint of a trial
+        qualifiers: [trial]
+      enrolment:
+        kind: number
+        per: arm
+        describe: the number of patients randomised or enrolled
+        qualifiers: [trial, population, region]
+      data_cut:
+        kind: text
+        describe: the data cut-off date or follow-up of a trial analysis
+        qualifiers: [trial, analysis]
+      baseline_characteristic:
+        kind: number
+        per: arm
+        describe: a baseline characteristic of trial participants (age, proportion with a feature, prior treatment)
+        qualifiers: [trial, characteristic, population]
+
+  efficacy:
+    weight: 0.20
+    describe: clinical effectiveness results of the trials
+    roles: [company_submission, eag_report, clarification]
+    sections: ['(?<!cost[- ])effectiveness results', 'subgroup analys', 'efficacy', '\bendpoint', 'survival', '\bresponse\b', 'summary of phase', 'results of']
+    keywords: [median, hazard ratio, 95% CI, response rate, survival, change from baseline, odds ratio, events, proteinuria, progression]
+    slots:
+      endpoint_result:
+        kind: number
+        per: arm
+        describe: the result of a trial endpoint in each arm (a median, rate, mean change or event count)
+        qualifiers: [trial, endpoint, measure, population, data_cut, timepoint]
+      treatment_effect:
+        kind: number
+        describe: the relative treatment effect between trial arms (hazard ratio, odds ratio or difference) with its confidence interval
+        qualifiers: [trial, endpoint, comparison, population, data_cut]
+
+  safety:
+    weight: 0.08
+    describe: adverse events and tolerability
+    roles: [company_submission, eag_report, clarification]
+    sections: ['adverse', 'safety', 'tolerability']
+    keywords: [adverse events, grade 3, serious, discontinuation, dose reduction, treatment-related, hyperglycaemia, diarrhoea]
+    slots:
+      adverse_event_rate:
+        kind: number
+        per: arm
+        describe: the rate or count of an adverse event, or a category of adverse events, in each arm
+        qualifiers: [trial, event, grade, population]
+      safety_finding:
+        kind: text
+        describe: a conclusion about the technology's safety or tolerability
+        qualifiers: [trial]
+
+  indirect_comparison:
+    weight: 0.08
+    describe: indirect comparisons with treatments the trials did not include
+    roles: [company_submission, eag_report, clarification]
+    sections: ['indirect', 'network meta', 'meta-analysis', 'matching-adjusted', '\bITC\b', '\bNMA\b', '\bMAIC\b', 'mixed treatment']
+    keywords: [network meta-analysis, indirect comparison, hazard ratio, fixed effects, random effects, proportional hazards, MAIC, time-varying]
+    slots:
+      method:
+        kind: text
+        describe: the method of an indirect comparison and the trials or populations it uses
+        qualifiers: [analysis]
+      comparison_result:
+        kind: number
+        describe: a relative effect estimated by an indirect comparison
+        qualifiers: [analysis, endpoint, comparator, timepoint, model]
+
+  economic_model:
+    weight: 0.10
+    describe: the structure and inputs of the economic model
+    roles: [company_submission, eag_report, clarification]
+    sections: ['economic analysis', 'model structure', 'clinical parameters', 'valuation of health effects', 'utilit', 'resource use', '\bcosts?\b', 'treatment effectiveness', 'transition probabilit', 'mortality', 'discontinuation', 'critique of company', 'base-case analysis inputs', 'extrapolat']
+    keywords: [partitioned survival, Markov, time horizon, cycle length, discount, perspective, utility, extrapolation, acquisition cost, administration cost, generalised gamma, log-normal]
+    slots:
+      model_structure:
+        kind: text
+        describe: the structure of the economic model (model type, health states, time horizon, cycle length, perspective)
+        qualifiers: [owner]
+      extrapolation:
+        kind: text
+        describe: the survival distribution chosen to extrapolate an outcome beyond the trial
+        qualifiers: [owner, endpoint, arm]
+      utility_value:
+        kind: number
+        describe: a health state utility value used in the model
+        qualifiers: [owner, health_state, source]
+      cost_input:
+        kind: number
+        describe: a unit cost or cost input used in the model
+        qualifiers: [owner, item, technology]
+
+  cost_effectiveness:
+    weight: 0.14
+    describe: cost-effectiveness results, scenarios and severity
+    roles: [company_submission, eag_report, clarification]
+    sections: ['base[- ]case results', 'cost[- ]effectiveness results', 'sensitivity', 'scenario', 'uncertainty', 'severity', 'additional analyses', 'preferred', 'impact on the ICER', 'model outcomes', 'corrected base case', '(?:^|\| )results\b']
+    keywords: [ICER, QALYs, incremental, base case, scenario, probabilistic, deterministic, per QALY gained, life years, severity modifier]
+    slots:
+      icer:
+        kind: number
+        per: comparator
+        describe: the incremental cost-effectiveness ratio of the technology
+        qualifiers: [owner, analysis, scenario, price]
+      total_outcomes:
+        kind: number
+        per: technology
+        describe: total costs, life years or QALYs for each technology
+        qualifiers: [owner, measure, analysis, scenario, price]
+      scenario_definition:
+        kind: text
+        describe: what a named scenario or sensitivity analysis changes from the base case
+        qualifiers: [owner, scenario]
+      severity:
+        kind: text
+        describe: the severity modifier or QALY weighting applied, and the reason
+        qualifiers: [owner]
+
+  key_issues:
+    weight: 0.14
+    describe: issues on which the company and the External Assessment Group disagree
+    roles: [eag_report, factual_accuracy, clarification]
+    sections: ['key issue', '\bissue \d', 'summary of the EAG', 'preferred assumptions', 'conclusions', 'EAG comment', 'company response']
+    keywords: [EAG considers, company, uncertainty, inappropriate, preferred, disagree, concern, impact on the ICER, unresolved]
+    slots:
+      issue:
+        kind: stance
+        parties: [company, EAG]
+        describe: a point on which the company and the EAG take positions (an assumption, data source or method)
+        qualifiers: [topic]
+      eag_preference:
+        kind: text
+        describe: an assumption the EAG prefers in its own analysis, and its effect on the ICER
+        qualifiers: [topic]
+
+  stakeholder_views:
+    weight: 0.08
+    describe: views of patient organisations, professional organisations, clinical experts and patient experts
+    roles: [patient_org, professional_org, clinical_expert, patient_expert]
+    sections: ['.']
+    keywords: [unmet need, experience, quality of life, current treatment, benefit, side effects, place in therapy, name of organisation]
+    slots:
+      respondent:
+        kind: text
+        ask: false
+        describe: the name of the organisation that submitted the document, or the respondent's role if no organisation is named
+        qualifiers: []
+      view:
+        kind: text
+        describe: a view the respondent states (unmet need, living with the condition, experience of treatment, expected benefits or disadvantages, place in the pathway)
+        qualifiers: [topic]
+
+# Multi-hop: the value of a `from` fact names what a `to` fact is qualified by
+# (its `via` qualifier). The question refers to the bridge as `describe`,
+# filled from the `from` fact's qualifiers, never by its value.
+links:
+  - {from: trial_design.primary_endpoint, to: efficacy.endpoint_result, via: endpoint, describe: "the primary endpoint of {trial}"}
+  - {from: trial_design.primary_endpoint, to: efficacy.treatment_effect, via: endpoint, describe: "the primary endpoint of {trial}"}
+  - {from: economic_model.extrapolation, to: cost_effectiveness.total_outcomes, via: scenario, describe: "the extrapolation {owner} chose for {endpoint}"}
+  - {from: economic_model.extrapolation, to: cost_effectiveness.icer, via: scenario, describe: "the extrapolation {owner} chose for {endpoint}"}
+  - {from: key_issues.eag_preference, to: cost_effectiveness.icer, via: scenario, describe: "the EAG's preferred assumption on {topic}"}
