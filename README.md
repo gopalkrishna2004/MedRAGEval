@@ -106,7 +106,7 @@ The generation prompt tells the model that the answerer will search the whole
 bundle, so a question has to say what sets its fact apart (population, arm,
 data cut, whose figure), and asks for the question in its own words with short
 answer keys; the model may also decline evidence it cannot write a sound item
-on, and the reason is kept in `rejects.jsonl`. Every selector skips OCR'd text
+on, and the reason is kept in `rejects.jsonl`. A rejected item gets one rewrite: the generator sees its item and why each check failed, and the rewrite is checked again in full (`rewrite_rejected`). Every selector skips OCR'd text
 (its glyph errors would end up in questions and answer keys) and figures that
 OCR turned into tables, and uses the summary for patients and background
 sections only when nothing else is left. A table that has a twin anywhere in

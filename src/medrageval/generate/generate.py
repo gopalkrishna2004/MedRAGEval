@@ -26,12 +26,17 @@ from medrageval.config import load_config
 from medrageval.generate.candidates import SELECTORS, Candidate, candidate_counts
 from medrageval.generate.corpus import Corpus, Unit, load_corpus
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llms
-from medrageval.generate.prompts import PROMPT_VERSION, build_alone_check, build_generation, build_judge, build_unanswerable_check
+from medrageval.generate.prompts import (PROMPT_VERSION, build_alone_check, build_generation, build_judge, build_rewrite, build_unanswerable_check,
+                                         rewrite_feedback)
 from medrageval.generate.validate import Verdict, is_duplicate, token_set, validate
 from medrageval.text import contains_quote
 
 TYPES = ["factual", "numerical", "comparative", "multihop", "crossdoc", "attribution", "unanswerable"]
 NEEDS_SINGLE_EXCERPT_CHECK = {"multihop"}   # cross-document items only need quotes from two documents
+# Failures a rewrite can fix: the checks, the judge, the coverage check. Not a skip (the model declined the evidence) or bad JSON.
+REWRITABLE_STAGES = {"programmatic", "judge", "unanswerable_check"}
+# Attribution claims that are too generic or restated by another party: the evidence's fault, not the wording's.
+UNFIXABLE = {"claim_too_generic", "claim_restated_in"}
 
 
 def attempts_per_item(cfg: dict, type_: str) -> int:
@@ -46,7 +51,8 @@ class Run:
         self.corpus, self.cfg, self.gen, self.judge, self.out_dir, self.seed = corpus, cfg, gen, judge, out_dir, seed
         self.accepted: list[dict] = []
         self.questions: list[str] = []
-        self.stats: dict[str, dict] = defaultdict(lambda: {"attempted": 0, "accepted": 0, "rejected": Counter(), "subtypes": Counter()})
+        self.stats: dict[str, dict] = defaultdict(lambda: {"attempted": 0, "accepted": 0, "rejected": Counter(), "subtypes": Counter(),
+                                                           "rewrites": 0, "rewrites_accepted": 0, "first_reasons": Counter()})
         self.speakers = Counter()
         self.failures = 0
         self.dataset = (out_dir / "dataset.jsonl").open("w")
@@ -58,20 +64,40 @@ class Run:
 
     # ----- per candidate work, runs in a worker thread -----
     def process(self, cand: Candidate) -> list[dict]:
-        tag = cand.candidate_id
+        """Generate and check an item; when it fails on something the wording can fix, send it back once with the reasons."""
+        messages = build_generation(cand, self.corpus, self.cfg)
+        raw, results = self._attempt(cand, messages, cand.candidate_id)
+        if not self._rewritable(results):
+            return results
+        retry = build_rewrite(messages, raw, rewrite_feedback(results, cand))
+        _, rewritten = self._attempt(cand, retry, f"{cand.candidate_id}:rewrite")
+        first = {"item": {k: raw[k] for k in ("question", "answer", "answer_keys", "questions") if k in raw},
+                 "reasons": [reason for r in results for reason in r["reasons"]]}
+        for r in rewritten:
+            r["first"] = first
+        return rewritten
+
+    def _rewritable(self, results: list[dict]) -> bool:
+        """Every failure is one the generator can fix by rewording, and nothing from this candidate was accepted."""
+        if not self.cfg["rewrite_rejected"] or any(r["stage"] in ("accepted", "spare") for r in results):
+            return False
+        failed = [r for r in results if r["stage"] in REWRITABLE_STAGES]
+        return bool(failed) and all(reason.split(":")[0] not in UNFIXABLE for r in failed for reason in r["reasons"])
+
+    def _attempt(self, cand: Candidate, messages: list[dict], tag: str) -> tuple[dict, list[dict]]:
         try:
-            raw = self.gen.complete_json(build_generation(cand, self.corpus, self.cfg), tag)
+            raw = self.gen.complete_json(messages, tag)
         except LLMJsonError as e:
-            return [{"cand": cand, "item": {}, "stage": "generation", "reasons": [f"bad_json:{e}"[:200]]}]
+            return {}, [{"cand": cand, "item": {}, "stage": "generation", "reasons": [f"bad_json:{e}"[:200]]}]
         if raw.get("skip"):   # the model may decline evidence it cannot write a sound item on; the reason goes to rejects.jsonl
-            return [{"cand": cand, "item": raw, "stage": "skipped", "reasons": [f"skip:{str(raw['skip'])[:120]}"]}]
+            return raw, [{"cand": cand, "item": raw, "stage": "skipped", "reasons": [f"skip:{str(raw['skip'])[:120]}"]}]
         if cand.subtype == "not_covered":
-            return self._check_not_covered(cand, [q for q in (raw.get("questions") or [])[:self.cfg["unanswerable"]["questions_per_anchor"]] if isinstance(q, dict)])
+            return raw, self._check_not_covered(cand, [q for q in (raw.get("questions") or [])[:self.cfg["unanswerable"]["questions_per_anchor"]] if isinstance(q, dict)])
         verdict = validate(raw, cand, self.corpus, self.cfg, [])
         if not verdict.ok:
-            return [{"cand": cand, "item": raw, "stage": "programmatic", "reasons": verdict.reasons, "verdict": verdict}]
+            return raw, [{"cand": cand, "item": raw, "stage": "programmatic", "reasons": verdict.reasons, "verdict": verdict}]
         if cand.type not in self.cfg["judge_types"]:
-            return [{"cand": cand, "item": raw, "stage": "accepted", "reasons": [], "verdict": verdict, "judge": None}]
+            return raw, [{"cand": cand, "item": raw, "stage": "accepted", "reasons": [], "verdict": verdict, "judge": None}]
         judge = self.judge.complete_json(build_judge(raw, cand, self.corpus, self.cfg), f"judge:{tag}")
         reasons = []
         if not judge.get("pass"):
@@ -87,7 +113,7 @@ class Run:
         if not reasons and cand.type in self.cfg["alone_check_types"]:
             alone = self._answer_alone(raw, cand)
             reasons += [f"answerable_from:{uid}" for uid, r in alone.items() if r["matches"]]
-        return [{"cand": cand, "item": raw, "stage": "judge" if reasons else "accepted", "reasons": reasons, "verdict": verdict, "judge": judge, "alone": alone}]
+        return raw, [{"cand": cand, "item": raw, "stage": "judge" if reasons else "accepted", "reasons": reasons, "verdict": verdict, "judge": judge, "alone": alone}]
 
     def _answer_alone(self, raw: dict, cand: Candidate) -> dict[str, dict]:
         """Each excerpt on its own, with the question: an answer holding every answer key means one excerpt was enough.
@@ -180,9 +206,14 @@ class Run:
                     print(f"  LLM error: {e}")
                     continue
                 self.failures = 0
+                rewritten = set()
                 for res in (r for group in results for r in group):
                     if accepted_here >= target:
                         break
+                    if res.get("first") and id(res["first"]) not in rewritten:   # one count per candidate, though "not covered" has three results
+                        rewritten.add(id(res["first"]))
+                        st["rewrites"] += 1
+                        st["first_reasons"].update({r.split(":")[0] for r in res["first"]["reasons"]})
                     if res["stage"] == "accepted" and is_duplicate(res["item"].get("question", ""), self.questions, cfg["dedupe_jaccard"]):
                         res["stage"], res["reasons"] = "duplicate", ["duplicate_question"]
                     if res["stage"] == "accepted" and quota and self.speakers[res["cand"].hint.get("speaker")] >= quota:
@@ -191,6 +222,7 @@ class Run:
                     if res["stage"] == "accepted":
                         accepted_here += 1
                         st["accepted"] += 1
+                        st["rewrites_accepted"] += bool(res.get("first"))
                         st["subtypes"][res["cand"].subtype or "-"] += 1
                         self.accepted.append(rec)
                         self.questions.append(rec["question"])
@@ -240,6 +272,8 @@ class Run:
             rec["hops"] = {"a": item.get("hop_a"), "b": item.get("hop_b")}
         if "search" in item:
             rec["search"] = item["search"]
+        if res.get("first"):   # the rejected first version and why, so a rewrite can be audited
+            rec["first_attempt"] = res["first"]
         if res["stage"] != "accepted":
             rec["stage"] = res["stage"]
             rec["reasons"] = res["reasons"]
@@ -288,7 +322,9 @@ def generate_dataset(interim_dir: Path, out_dir: Path, cfg: dict, gen, judge, ta
 
 def build_report(run: Run, targets: dict, types: list[str], elapsed: float, error: Exception | None) -> dict:
     per_type = {t: {"target": targets[t], "attempted": run.stats[t]["attempted"], "accepted": run.stats[t]["accepted"],
-                    "subtypes": dict(run.stats[t]["subtypes"]), "rejected_by_reason": dict(run.stats[t]["rejected"])} for t in types}
+                    "subtypes": dict(run.stats[t]["subtypes"]), "rejected_by_reason": dict(run.stats[t]["rejected"]),
+                    "rewrites": {"tried": run.stats[t]["rewrites"], "accepted": run.stats[t]["rewrites_accepted"],
+                                 "first_reasons": dict(run.stats[t]["first_reasons"])}} for t in types}
     warnings = [f"{t}: {s['accepted']}/{s['target']} accepted" for t, s in per_type.items() if s["accepted"] < s["target"]]
     if error:
         warnings.append(f"aborted: {error}")
@@ -311,7 +347,9 @@ def print_report(report: dict) -> None:
     print(f"{report['items']} items in {report['elapsed_seconds']}s with {report['model']} (prompt v{report['prompt_version']}, seed {report['seed']})")
     for t, s in report["per_type"].items():
         rej = ", ".join(f"{k} {v}" for k, v in sorted(s["rejected_by_reason"].items(), key=lambda kv: -kv[1])[:4])
-        print(f"  {t:12s} {s['accepted']:3d}/{s['target']:<3d} of {s['attempted']:3d} tried  {dict(s['subtypes'])}  rejected: {rej}")
+        rw = s["rewrites"]
+        print(f"  {t:12s} {s['accepted']:3d}/{s['target']:<3d} of {s['attempted']:3d} tried  {dict(s['subtypes'])}  "
+              f"rewrites {rw['accepted']}/{rw['tried']} accepted  rejected: {rej}")
     g, j = report["llm"]["generator"], report["llm"]["judge"]
     print(f"  LLM calls: {g.get('calls', 0) + j.get('calls', 0)} ({g.get('cache_hits', 0) + j.get('cache_hits', 0)} cached), "
           f"tokens in/out: {g.get('prompt_tokens', 0) + j.get('prompt_tokens', 0)}/{g.get('completion_tokens', 0) + j.get('completion_tokens', 0)}")

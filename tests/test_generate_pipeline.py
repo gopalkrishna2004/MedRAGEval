@@ -2,16 +2,17 @@ import json
 import re
 
 import pytest
-from synthetic import config, write_interim
+from synthetic import build_corpus, config, write_interim
 
-from medrageval.generate.generate import generate_dataset
-from medrageval.generate.prompts import PROMPT_VERSION
+from medrageval.generate.candidates import Candidate
+from medrageval.generate.generate import Run, generate_dataset
+from medrageval.generate.prompts import PROMPT_VERSION, rewrite_feedback
 from medrageval.generate.llm import FakeLLM
 
 
 def scripted(messages, tag):
     """A generator that quotes the first sentence of each excerpt and a judge that passes everything."""
-    user = messages[-1]["content"]
+    user = next(m["content"] for m in messages if m["role"] == "user")   # a rewrite appends turns; the task is the first one
     if tag.startswith("judge:"):
         return {"pass": True, "answer_supported": True, "self_contained": True, "type_fits": True, "answerable_from_single_excerpt": {}, "issues": []}
     if tag.startswith("alone:"):
@@ -147,3 +148,69 @@ def test_multihop_answerable_from_one_excerpt_is_rejected(tmp_path, alone):
         items = [json.loads(l) for l in (out / "dataset.jsonl").open()]
         assert len(items) == 1 and not any(r["matches"] for r in items[0]["validation"]["alone"].values())
     assert sum(tag.startswith("alone:") for _, tag in llm.calls) >= 2   # one call per excerpt
+
+
+def test_rejected_item_is_rewritten_once_with_the_reasons(tmp_path):
+    def sloppy(messages, tag):
+        out = scripted(messages, tag)
+        if not tag.endswith(":rewrite") and out.get("answer"):   # the first version has an unusable key
+            out = {**out, "answer_keys": ["a key that is far too long for scoring"]}
+        return out
+    interim, out = write_interim(tmp_path / "interim"), tmp_path / "out"
+    llm = FakeLLM(sloppy)
+    report = generate_dataset(interim, out, config(), llm, llm, targets={"factual": 1}, types=["factual"])
+    items = [json.loads(l) for l in (out / "dataset.jsonl").open()]
+    assert len(items) == 1 and items[0]["first_attempt"]["item"]["answer_keys"] == ["a key that is far too long for scoring"]
+    assert any(r.startswith("answer_key_too_long:") for r in items[0]["first_attempt"]["reasons"])
+    rewrites = report["per_type"]["factual"]["rewrites"]   # every first version fails, so the accepted item is a rewrite
+    assert rewrites["accepted"] == 1 and rewrites["tried"] >= 1 and rewrites["first_reasons"]["answer_key_too_long"] >= 1
+    retry = next(m for m, t in llm.calls if t.endswith(":rewrite"))
+    assert retry[-2]["role"] == "assistant" and "far too long" in retry[-2]["content"]   # the model sees its own rejected item
+    assert retry[-1]["content"].startswith("That item was rejected:") and "is too long" in retry[-1]["content"]
+
+
+def test_not_covered_questions_the_documents_answer_are_rewritten(tmp_path):
+    first = "What was the median progression-free survival with capivasertib plus fulvestrant in the CAPItello-291 trial?"
+    second = "What was the median overall survival with capivasertib plus fulvestrant in CAPItello-291 at a five-year data cut?"
+    def covered(messages, tag):
+        if tag.startswith("check:"):
+            hit = first in messages[-1]["content"]
+            return {"results": [{"n": 1, "answered": "yes" if hit else "no", "passage_ids": [], "answer_if_any": "7.3 months" if hit else None}]}
+        if "UNANSWERABLE questions" in messages[1]["content"]:
+            return {"questions": [{"question": second if tag.endswith(":rewrite") else first, "missing_fact": "-"}]}
+        return scripted(messages, tag)
+    interim, out = write_interim(tmp_path / "interim"), tmp_path / "out"
+    llm = FakeLLM(covered)
+    cfg = config()
+    cfg["unanswerable"]["questions_per_anchor"] = 1
+    generate_dataset(interim, out, cfg, llm, llm, targets={"unanswerable": 2}, types=["unanswerable"])
+    nc = next(json.loads(l) for l in (out / "dataset.jsonl").open() if json.loads(l)["subtype"] == "not_covered")
+    assert nc["question"] == second and nc["first_attempt"]["reasons"] == ["answered:yes"]
+    retry = next(m for m, t in llm.calls if t.endswith(":rewrite"))
+    assert f'Question "{first}": The documents answer it (7.3 months)' in retry[-1]["content"]
+
+
+def test_only_failures_the_wording_can_fix_are_rewritten(tmp_path):
+    llm = FakeLLM(scripted)
+    run = Run(build_corpus(), config(), llm, llm, tmp_path, 1)
+    fixable = [{"stage": "programmatic", "reasons": ["answer_key_too_long:x", "question_echoes_quote:0.84"]}]
+    assert run._rewritable(fixable)
+    assert not run._rewritable([{"stage": "programmatic", "reasons": ["claim_restated_in:d02-e0001"]}])   # the evidence's fault
+    assert not run._rewritable([{"stage": "skipped", "reasons": ["skip:generic"]}])
+    assert not run._rewritable([{"stage": "generation", "reasons": ["bad_json:x"]}])
+    assert not run._rewritable([{"stage": "accepted", "reasons": []}, {"stage": "unanswerable_check", "reasons": ["answered:yes"]}])
+    run.cfg["rewrite_rejected"] = False
+    assert not run._rewritable(fixable)
+    run.close()
+
+
+def test_rewrite_feedback_explains_each_failure():
+    corpus = build_corpus()
+    c = Candidate("multihop", "entity", [corpus.units["d02-e0002"], corpus.units["d02-e0003"]], {})
+    results = [{"stage": "judge", "item": {"question": "q"}, "reasons": ["judge_failed", "answerable_from:d02-e0003"],
+                "judge": {"issues": ["The table alone gives 7.3 months."]}, "alone": {"d02-e0003": {"answer": "7.3 months", "matches": True}}}]
+    lines = rewrite_feedback(results, c)
+    assert any(l.startswith('Given only excerpt d02-e0003, a reader answered "7.3 months"') for l in lines)
+    assert "Reviewer: The table alone gives 7.3 months." in lines
+    lines = rewrite_feedback([{"stage": "programmatic", "item": {}, "reasons": ["question_lacks_discriminator:Scenario 1", "made_up_code"]}], c)
+    assert lines == ['The question must contain the words "Scenario 1", so a reader knows which table is meant.', "made_up_code"]

@@ -12,7 +12,7 @@ import json
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.corpus import Corpus, Unit
 
-PROMPT_VERSION = "13"
+PROMPT_VERSION = "14"
 
 SCHEMA = ('{"question": str, "answer": str, "answer_keys": [str, ...], '
           '"quotes": [{"unit_id": str, "quote": str}, ...]}')
@@ -182,6 +182,90 @@ def build_alone_check(question: str, unit: Unit, corpus: Corpus, cfg: dict) -> l
             "Do not use knowledge from outside the passage. "
             f"(prompt version {PROMPT_VERSION})"},
         {"role": "user", "content": f"Question: {question}\n\nPassage:\n{corpus.render(unit, cfg['judge']['max_chars_per_unit'])}"},
+    ]
+
+
+# Why an item was rejected, as an instruction the generator can act on. Keyed by reason code (the part before ":"),
+# or by the whole reason for the judge's verdicts; {d} is the detail after the colon.
+FEEDBACK = {
+    "answer_key_garbled": "An answer key is garbled or is the [REDACTED] marker: keys are readable values copied from the quotes.",
+    "answer_key_in_question": "The answer key \"{d}\" is already in the question: the question must not give the answer away.",
+    "answer_key_not_in_quotes": "The answer key \"{d}\" is not verbatim in your quotes: copy keys exactly from the quoted text, or quote the span that holds them.",
+    "answer_key_too_long": "The answer key \"{d}\" is too long: a key is a value, a name or a phrase of at most four words.",
+    "answer_key_without_number": "A numerical item needs the number with its unit among the answer keys.",
+    "answer_keys_missing": "Give 1 to 4 answer keys.",
+    "answer_lacks_direction": "The answer must say which value is higher or lower.",
+    "answer_lacks_winning_label": "The answer must name the side with the higher value.",
+    "answer_not_speaker": "The answer must be exactly the speaker named in the task.",
+    "answer_too_long": "The answer is too long: one sentence.",
+    "bridge_identified_by_position": "The question identifies the bridge by its place in a list: describe it by a property excerpt A states.",
+    "bridge_named_in_question": "The question names the bridge (\"{d}\"): refer to it only through excerpt A's description.",
+    "comparative_labels_missing": "Fill label_a and label_b with the two things compared.",
+    "comparative_labels_not_in_table": "label_a and label_b must be row or column labels of the table.",
+    "comparative_values_not_in_quotes": "value_a and value_b must appear verbatim in your quotes.",
+    "comparative_values_not_numeric": "value_a and value_b must be the numbers as written in the excerpt.",
+    "comparison_values_not_one_per_table": "Take value_a from one excerpt and value_b from the other, and quote each from its own excerpt.",
+    "deictic_question": "The question points at the excerpt (\"this table\", \"above\", a document id): name what it is about instead.",
+    "direction_inconsistent": "\"higher\" does not match the two values ({d}).",
+    "no_answer": "The answer is missing.",
+    "no_question": "The question is missing.",
+    "no_quotes": "Quote the span or row the answer rests on.",
+    "number_not_in_evidence_numbers": "The answer's number is not one of the excerpt numbers listed in the task.",
+    "question_echoes_quote": "The question copies the quote's wording (share of its words in the quote: {d}): ask it in your own words, keeping only names, numbers and technical terms.",
+    "question_lacks_compared_labels": "The question must name both things compared.",
+    "question_lacks_discriminator": "The question must contain the words \"{d}\", so a reader knows which table is meant.",
+    "question_length": "The question has {d} words: keep it within the word limit.",
+    "question_off_topic": "The question is not about the excerpt's subject.",
+    "quote_lacks_redacted_marker": "Quote the row or sentence that holds the [REDACTED] marker, marker included.",
+    "quote_lacks_speaker": "Quote the sentence that names the party making the claim.",
+    "quote_length": "A quote has {d} words: quotes are 5 to 80 words (a table row may be shorter).",
+    "quote_not_found": "A quote from {d} is not a verbatim span of that excerpt: copy it exactly, one table row per entry, never joining rows or cells.",
+    "quote_unit_unknown": "A quote cites \"{d}\", which is not an excerpt id: use the id shown in brackets.",
+    "quotes_are_copies": "The two quotes say the same thing: quote what each document says.",
+    "quotes_from_one_document": "Quote from both documents.",
+    "quotes_from_one_unit": "Quote from both excerpts.",
+    "speaker_named_in_question": "The question names or hints at the speaker: state the claim without it.",
+    "unanswerable_has_answer": "An unanswerable item has \"answer\": null and no answer keys.",
+    "judge_failed": "A reviewer rejected the item (reasons below, if given).",
+    "judge:answer_supported": "A reviewer found the answer is not supported by the quotes.",
+    "judge:self_contained": "A reviewer could not tell what is asked without the excerpts: name the drug, trial, population, comparator or document.",
+    "judge:type_fits": "A reviewer found the item does not do what its type asks.",
+    "judge:answerable_from_single_excerpt": "A reviewer found that one excerpt answers the question alone: it must need both.",
+    "answerable_from": "Given only excerpt {d}, a reader answered \"{answer}\": describe the subject only by what the other excerpt says, or ask for something only the two together give.",
+    "answered": "The documents answer it ({answer}): ask for a near miss they do not report.",
+}
+
+
+def rewrite_feedback(results: list[dict], cand: Candidate) -> list[str]:
+    """Why the item failed, one instruction per failed check, plus the reviewer's issues and what one excerpt alone answered."""
+    lines = []
+    for r in results:
+        if r["stage"] not in ("programmatic", "judge", "unanswerable_check"):
+            continue
+        prefix = f"Question \"{r['item'].get('question', '')}\": " if cand.subtype == "not_covered" else ""
+        for reason in r["reasons"]:
+            code, _, detail = reason.partition(":")
+            if code == "answerable_from":
+                answer = ((r.get("alone") or {}).get(detail) or {}).get("answer")
+                lines.append(prefix + FEEDBACK[code].format(d=detail, answer=answer))
+            elif code == "answered":
+                lines.append(prefix + FEEDBACK[code].format(answer=(r.get("judge") or {}).get("answer_if_any") or "a passage covers it"))
+            else:
+                text = FEEDBACK.get(reason) or FEEDBACK.get(code)
+                lines.append(prefix + (text.format(d=detail) if text else reason))
+        if r["stage"] == "judge":
+            lines += [f"Reviewer: {i}" for i in (r.get("judge") or {}).get("issues") or [] if isinstance(i, str)]
+    return list(dict.fromkeys(lines))
+
+
+def build_rewrite(messages: list[dict], raw: dict, feedback: list[str]) -> list[dict]:
+    """The generation conversation, the rejected item and why: one chance to fix it."""
+    notes = "\n".join(f"- {f}" for f in feedback)
+    return messages + [
+        {"role": "assistant", "content": json.dumps(raw, ensure_ascii=False)},
+        {"role": "user", "content": f"That item was rejected:\n{notes}\n"
+            "Rewrite it once so that every point is fixed, from the same excerpts and under the same task and rules. "
+            "Return the complete JSON object in the same shape, or {\"skip\": <reason>} if these excerpts cannot carry a sound item."},
     ]
 
 

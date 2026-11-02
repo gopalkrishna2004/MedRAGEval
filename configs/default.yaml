@@ -65,6 +65,17 @@ generate:
     default: 4
     multihop: 8
     unanswerable: 8
+  # A rejected item goes back to the generator once, in the same conversation,
+  # with each failed check, the judge's issues and what a single excerpt
+  # answered, and the rewrite is checked again in full. Most rejections are
+  # wording, not evidence: the first smoke run lost 10 of 24 generations to
+  # long keys, quotes not found, an echoed quote and a key in the question,
+  # discarding evidence that could carry an item (multi-hop pairs are scarce:
+  # 23 trial bridges in TA1063). TRIAD does the same with its reviewer's reason.
+  # Not rewritten: a skip, bad JSON, or an attribution claim that is too
+  # generic or restated by another party. Each item keeps its rejected first
+  # version under `first_attempt`; the report counts rewrites per type.
+  rewrite_rejected: true
   min_share_of_target: 0.5
   abort_after_consecutive_failures: 5   # five bad calls in a row means a wrong key or model
 
