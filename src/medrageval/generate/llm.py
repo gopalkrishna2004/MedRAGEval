@@ -1,11 +1,12 @@
-"""Chat-completions client for OpenRouter, with JSON parsing and a response cache.
+"""Chat-completions client for OpenRouter and local servers, with JSON parsing and a response cache.
 
-OpenRouter speaks the OpenAI API, so the `openai` SDK is pointed at its base
-URL. Every call is cached on disk by (model, temperature, messages): a rerun
-with the same config and seed makes no calls and writes the same dataset.
-Transport errors (429, 5xx, timeouts) are retried by the SDK; a response that
-is not JSON is re-asked once and then raised, so a wrong model or key stops
-the run instead of producing an empty dataset.
+OpenRouter and vLLM both speak the OpenAI API, so the `openai` SDK is pointed
+at their base URL. Every call is cached on disk by (model, temperature,
+messages): a rerun with the same config and seed makes no calls and writes the
+same dataset. Transport errors (429, 5xx, timeouts) are retried by the SDK; a
+response that is not JSON is re-asked once and then raised, so a wrong model
+or key stops the run instead of producing an empty dataset. Free-text answers
+(the RAG under evaluation) use `complete_text`, cached the same way.
 """
 
 import hashlib
@@ -62,12 +63,13 @@ class LLM:
         with self._lock:
             self.stats.update(kw)
 
-    def _call(self, messages: list[dict], _retry: bool = False) -> tuple[str, dict]:
+    def _call(self, messages: list[dict], _retry: bool = False, json_mode: bool = True) -> tuple[str, dict]:
         from openai import APIError
+        fmt = {"response_format": {"type": "json_object"}} if json_mode else {}
         try:
             r = self.client.chat.completions.create(
                 model=self.model, messages=messages, temperature=self.temperature,
-                max_tokens=self.max_tokens, response_format={"type": "json_object"})
+                max_tokens=self.max_tokens, **fmt)
         except APIError as e:
             raise LLMError(f"{self.model}: {e}") from e
         usage = {"prompt_tokens": getattr(r.usage, "prompt_tokens", 0) or 0,
@@ -76,13 +78,42 @@ class LLM:
         self._count(calls=1, **usage)
         if not text.strip() and not _retry:
             self._count(empty_responses=1)
-            return self._call(messages, _retry=True)
+            return self._call(messages, _retry=True, json_mode=json_mode)
+        return text, usage
+
+    def _key(self, messages: list[dict], fmt: str | None = None) -> str:
+        payload = {"model": self.model, "temperature": self.temperature, "messages": messages}
+        if fmt:   # only text calls carry it, so the keys of JSON responses cached before text mode existed still hit
+            payload["format"] = fmt
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    def _store(self, path: Path | None, tag: str, text: str, usage: dict) -> None:
+        if not path:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f".{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps({"tag": tag, "model": self.model, "temperature": self.temperature,
+                                   "response": text, "usage": usage}, ensure_ascii=False))
+        os.replace(tmp, path)
+
+    def complete_text(self, messages: list[dict], tag: str = "") -> tuple[str, dict]:
+        """(answer, usage) for a free-text reply. usage has "cached": True when served from disk.
+
+        An empty reply is asked again once and, if still empty, returned but not
+        cached, so a server hiccup does not become a permanent wrong answer.
+        """
+        path = self._cache_path(self._key(messages, "text"))
+        if path and path.exists():
+            self._count(cache_hits=1)
+            rec = json.loads(path.read_text())
+            return rec["response"], {**(rec.get("usage") or {}), "cached": True}
+        text, usage = self._call(messages, json_mode=False)
+        if text.strip():
+            self._store(path, tag, text, usage)
         return text, usage
 
     def complete_json(self, messages: list[dict], tag: str = "") -> dict:
-        key = hashlib.sha256(json.dumps({"model": self.model, "temperature": self.temperature, "messages": messages},
-                                        sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-        path = self._cache_path(key)
+        path = self._cache_path(self._key(messages))
         if path and path.exists():
             self._count(cache_hits=1)
             return parse_json_object(json.loads(path.read_text())["response"])
@@ -99,19 +130,17 @@ class LLM:
                 obj = parse_json_object(text)
             except (json.JSONDecodeError, ValueError) as e:
                 raise LLMJsonError(f"{tag}: model returned no JSON object: {text[:200]!r}") from e
-        if path:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(f".{threading.get_ident()}.tmp")
-            tmp.write_text(json.dumps({"tag": tag, "model": self.model, "temperature": self.temperature,
-                                       "response": text, "usage": usage}, ensure_ascii=False))
-            os.replace(tmp, path)
+        self._store(path, tag, text, usage)
         return obj
 
 
 class FakeLLM:
-    """Test double: answers from a callable (messages, tag) -> dict, or a list of dicts in order."""
+    """Test double: answers from a callable (messages, tag) -> response, or a list of responses in order.
 
-    def __init__(self, responses: Callable[[list[dict], str], dict] | list[dict]):
+    A response is a dict for `complete_json` and a str for `complete_text`.
+    """
+
+    def __init__(self, responses: Callable[[list[dict], str], dict | str] | list[dict | str]):
         self.responses = responses
         self.calls: list[tuple[list[dict], str]] = []
         self.stats = Counter()
@@ -128,6 +157,9 @@ class FakeLLM:
                 raise LLMJsonError(f"{tag}: no canned response left")
             return self.responses.pop(0)
 
+    def complete_text(self, messages: list[dict], tag: str = "") -> tuple[str, dict]:
+        return self.complete_json(messages, tag), {}
+
 
 def api_key(env_file: Path | None = None) -> str:
     load_dotenv(env_file) if env_file else load_dotenv()
@@ -138,11 +170,22 @@ def api_key(env_file: Path | None = None) -> str:
 
 
 def make_llm(section: dict, cfg: dict, use_cache: bool = True) -> LLM:
-    """A client for a stage with its own config section (`facts`): its model, temperature and token limit,
-    with the endpoint and response cache of the `generate` section."""
+    """A client for a stage with its own config section (`facts`, `rag.judge`): its model, temperature and token limit,
+    with the endpoint (unless the section sets `base_url`) and response cache of the `generate` section."""
     key = api_key()
     cache = Path(cfg["cache_dir"]) if use_cache and cfg.get("cache_dir") else None
-    return LLM(section.get("model") or cfg["model"], cfg["base_url"], key, section["temperature"], section["max_tokens"], cache)
+    return LLM(section.get("model") or cfg["model"], section.get("base_url") or cfg["base_url"], key,
+               section["temperature"], section["max_tokens"], cache)
+
+
+def make_local_llm(section: dict, cache_dir: str | Path | None, use_cache: bool = True) -> LLM:
+    """A client for a local OpenAI-compatible server (vLLM): the key is read from `api_key_env` when the
+    server was started with --api-key, and is the placeholder vLLM accepts otherwise."""
+    load_dotenv()
+    key = os.environ.get(section.get("api_key_env") or "", "").strip() or "EMPTY"
+    cache = Path(cache_dir) if use_cache and cache_dir else None
+    return LLM(section["model"], section["base_url"], key, section["temperature"], section["max_tokens"], cache,
+               timeout=section.get("timeout", 120.0))
 
 
 def make_llms(cfg: dict, use_cache: bool = True) -> tuple[LLM, LLM]:

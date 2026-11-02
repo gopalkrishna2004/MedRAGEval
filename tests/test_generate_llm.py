@@ -65,3 +65,53 @@ def test_missing_api_key_fails_loudly(tmp_path, monkeypatch):
         api_key(tmp_path / "absent.env")
     (tmp_path / ".env").write_text(f"{ENV_KEY}=sk-test\n")
     assert api_key(tmp_path / ".env") == "sk-test"
+
+
+def test_json_cache_key_is_unchanged_by_text_mode(tmp_path):
+    """Responses cached before text mode existed must still hit."""
+    import hashlib
+    messages = [{"role": "user", "content": "hello"}]
+    llm = _llm(tmp_path, [])
+    old = hashlib.sha256(json.dumps({"model": "test-model", "temperature": 0.5, "messages": messages},
+                                    sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    assert llm._key(messages) == old and llm._key(messages, "text") != old
+
+
+def test_text_mode_has_its_own_cache_entries(tmp_path):
+    messages = [{"role": "user", "content": "hello"}]
+    llm = LLM("test-model", "http://localhost:1/v1", "key", 0.5, 100, cache_dir=tmp_path / "cache")
+    sent = []
+
+    def call(messages, _retry=False, json_mode=True):
+        sent.append(json_mode)
+        return ('{"x": 1}' if json_mode else "plain answer"), {"prompt_tokens": 3}
+    llm._call = call
+    assert llm.complete_json(messages, "j") == {"x": 1}
+    assert llm.complete_text(messages, "t") == ("plain answer", {"prompt_tokens": 3})
+    assert llm.complete_text(messages, "t") == ("plain answer", {"prompt_tokens": 3, "cached": True})
+    assert sent == [True, False] and len(list((tmp_path / "cache").rglob("*.json"))) == 2
+
+
+def test_empty_text_reply_is_not_cached(tmp_path):
+    llm = LLM("test-model", "http://localhost:1/v1", "key", 0.5, 100, cache_dir=tmp_path / "cache")
+    llm._call = lambda messages, json_mode=True: ("", {})
+    assert llm.complete_text([{"role": "user", "content": "q"}]) == ("", {})
+    assert not list((tmp_path / "cache").rglob("*.json"))
+
+
+def test_text_mode_sends_no_response_format():
+    from types import SimpleNamespace
+    sent = {}
+
+    class Completions:
+        def create(self, **kw):
+            sent.clear()
+            sent.update(kw)
+            content = '{"a": 1}' if "response_format" in kw else "hi"
+            return SimpleNamespace(usage=None, choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+    llm = LLM("test-model", "http://localhost:1/v1", "key", 0.0, 100)
+    llm.client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    assert llm.complete_text([{"role": "user", "content": "q"}]) == ("hi", {})
+    assert "response_format" not in sent
+    assert llm.complete_json([{"role": "user", "content": "q"}]) == {"a": 1}
+    assert sent["response_format"] == {"type": "json_object"}

@@ -18,6 +18,8 @@ dependencies = [
     # python-dotenv loads OPENROUTER_API_KEY from a gitignored .env.
     "openai>=3.41.0",
     "python-dotenv>=1.2.4",
+    # The RAG's dense index: a normalised matrix and a dot product (about a thousand chunks per bundle).
+    "numpy>=2.0",
 ]
 
 [project.scripts]

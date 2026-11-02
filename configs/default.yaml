@@ -400,3 +400,69 @@ facts:
     max_titles_per_role: 120
     samples_per_role: 3
     sample_chars: 1200
+
+# The RAG the dataset evaluates (`medrageval index / ask / eval`): chunks of
+# the parse output, a hybrid BM25 + dense retriever, and a small local model
+# behind vLLM's OpenAI-compatible server. A frontier judge on OpenRouter
+# grades its answers.
+rag:
+  llm:
+    # `vllm serve Qwen/Qwen2.5-3B-Instruct --port 8000 --max-model-len 8192`.
+    # Any OpenAI-compatible server works: only the model id and URL change.
+    model: Qwen/Qwen2.5-3B-Instruct
+    base_url: http://localhost:8000/v1
+    api_key_env: VLLM_API_KEY      # read when vLLM runs with --api-key; "EMPTY" otherwise
+    temperature: 0.0               # greedy: a rerun gives the same answers, and the cache serves them
+    max_tokens: 512                # a factual answer is a sentence, a summary a paragraph
+    context_window: 8192           # = --max-model-len; retrieval.max_context_chars keeps prompts well under it
+    max_workers: 4                 # vLLM batches concurrent requests
+    timeout: 300
+  embedding:
+    # `vllm serve BAAI/bge-m3 --port 8001 --runner pooling` (older vLLM: --task embed).
+    # bge-m3 reads 8k tokens, so a 4,000-char table is embedded whole, and needs no query prefix.
+    model: BAAI/bge-m3
+    base_url: http://localhost:8001/v1
+    api_key_env: VLLM_API_KEY
+    batch_size: 32
+    query_prefix: ""               # e5 / bge-v1.5 models want "query: " or an instruction here
+    timeout: 300
+  chunking:
+    # Consecutive passages of one section are packed up to max_chars. A table,
+    # or a row group of a long one (header repeated, from generate.limits), is a
+    # chunk of its own: packed with prose or cut mid-table, values lose their
+    # column headers. Larger tables are split by rows past max_table_chars.
+    max_chars: 1500
+    max_table_chars: 4000
+  retrieval:
+    mode: hybrid                   # bm25 | dense | hybrid
+    top_k: 6
+    candidates: 40                 # per retriever, before fusion
+    rrf_k: 60                      # reciprocal rank fusion constant (Cormack et al., 2009)
+    # ~3.5k tokens of passages: with the instructions and a 512-token answer,
+    # well inside an 8k window. Lower-ranked chunks are dropped past it.
+    max_context_chars: 12000
+  index_dir: data/rag              # chunks and embeddings per parse output, reused while chunks and embedding model are unchanged
+  cache_dir: data/cache/llm        # answers cached by (model, temperature, messages), as generation is
+  judge:
+    # Always OpenRouter (OPENROUTER_API_KEY), never the local server: a 3B
+    # model cannot grade itself. null model / base_url: those of `generate`.
+    model: null
+    base_url: null
+    temperature: 0.0               # deterministic verdicts
+    max_tokens: 1500
+    max_workers: 6
+    max_chars_per_passage: 2500
+  eval:
+    bootstrap: 1000                # resamples for the 95% intervals over items
+    seed: 20251030
+    # A reply that declines. The prompt asks for "Not found in the documents."
+    # but small models paraphrase; on an unanswerable item any of these counts
+    # as declining, on an answerable one only when no answer key is stated.
+    abstain_patterns:
+      - '\bnot found in the documents\b'
+      - '\b(do|does|did) not (contain|provide|report|state|include|mention|specify|give|say)\b'
+      - '\bnot (reported|provided|available|stated|specified|disclosed|mentioned|given|included)\b'
+      - '\b(is|are|was|were) (redacted|confidential)\b'
+      - '\[REDACTED\]'
+      - "\\b(cannot|can't|can not|unable to) (be )?(determine|find|answer|identify|provide|say)"
+      - '\bno (information|data|mention)\b'

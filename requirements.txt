@@ -40,6 +40,7 @@ networkx==3.7
     # via pymupdf
 numpy==2.5.4
     # via
+    #   medrageval
     #   onnxruntime
     #   opencv-python-headless
     #   pymupdf
