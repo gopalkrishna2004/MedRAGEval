@@ -506,18 +506,35 @@ def select_attribution(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random)
             yield Candidate("attribution", sub, sheet.units(f), {"group": f.group, "slot": f.slot, **hint}, [f])
 
 
-def _by_group_doc(sheet: FactSheet) -> dict[tuple[str, str], list[Fact]]:
-    out: dict[tuple[str, str], list[Fact]] = defaultdict(list)
+# "B.3.11.3. ", "3.2.5.4 ", "A 13. Priority question: ", "b) ", "iv. ": each alternative consumes something, or the first would match nothing and win
+_NUMBERING = re.compile(r"^(?:A\s?\d+\.\s*(?:Priority question:\s*)?|[a-z]\)\s*|[ivx]+\.\s*|(?:[A-Z]\.)?\d+(?:\.\d+)*\.?\s*)", re.I)
+
+
+def heading(u: Unit) -> str:
+    """A section's title without its numbering: "B.3.11.3. Scenario analysis" is "Scenario analysis"."""
+    title = u.section_path[-1] if u.section_path else ""
+    return " ".join(_NUMBERING.sub("", title, count=1).split())[:120]
+
+
+def _by_theme(sheet: FactSheet) -> dict[tuple[str, str, str], list[Fact]]:
+    """Facts of one group, one document and one section: the section is the document's own statement of their theme."""
+    out: dict[tuple[str, str, str], list[Fact]] = defaultdict(list)
     for f in sheet.facts.values():
-        out[(f.group, f.doc_id)].append(f)
+        out[(f.group, f.doc_id, sheet.units(f)[0].section_id or "")].append(f)
     return out
 
 
 def select_summary(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
-    """Several facts of one group in one document: a question whose full answer covers them all."""
+    """Several facts of one group in one section of one document: a question whose full answer covers them all.
+
+    The section is the theme. Drawn from a whole document, the third smoke
+    run's summaries put an RDI scenario, testing costs, the severity modifier
+    and progressed-disease QALYs under one question, and exemestane's £4.18
+    beside the model's time horizon.
+    """
     sc = cfg["summary"]
     items = []
-    for (group, doc_id), facts in sorted(_by_group_doc(sheet).items()):
+    for (group, doc_id, section), facts in sorted(_by_theme(sheet).items()):
         ok = [f for f in facts if not f.redacted and usable(f, sheet, cfg)]
         if len(ok) < sc["min_facts"]:
             continue
@@ -536,7 +553,8 @@ def select_summary(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> 
         items.append(picked)
     for facts in _order(sheet, items, cfg, rng, lambda x: x[0]):
         f = facts[0]
-        hint = {"group": f.group, "group_describe": sheet.schema.groups[f.group].describe, "doc": sheet.doc_label(f), "speaker_name": f.speaker}
+        hint = {"group": f.group, "group_describe": sheet.schema.groups[f.group].describe, "doc": sheet.doc_label(f), "speaker_name": f.speaker,
+                "theme": heading(sheet.units(f)[0]), "section_path": sheet.units(f)[0].section_path}
         yield Candidate("summary", f.group, _units(sheet, *facts), hint, facts)
 
 

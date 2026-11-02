@@ -138,7 +138,7 @@ than page count.
 | Multi-hop | a schema link: fact A identifies what fact B is about, by its value ("the primary endpoint of CAPItello-291" → its median) or by describing it ("the comparator the company ruled out because of TA239" → its cost); B's passage must hold a rival the description rules out | the bridged thing is not named or spelled out; quotes from both; after the judge, neither excerpt alone answers it by its own words (an answer the model reaches from what it knows of the drug does not count) |
 | Cross-document | two documents of different roles giving different values for one subject (the company's ICER against the EAG's) | quotes from both documents, not copies; neither excerpt alone answers it |
 | Attribution | one party's side of a disputed point, or a stakeholder's view in its own document | the answer is the party, or the organisation by name; not named in the question; the claim not restated elsewhere |
-| Summary | 3–6 facts of one group in one document (the EAG's key issues, a respondent's views) | one keypoint per fact, each stating its fact; scored on keypoints |
+| Summary | 3–6 facts of one group in one section of one document, the section heading being the theme (the company's scenario analyses, the EAG's comparators critique) | one keypoint per fact, each stating its fact; scored on keypoints |
 | Unanswerable | a redacted fact with no disclosed sibling, or a near miss on a fact (a data cut, population or scenario the bundle does not report) | the quote holds the marker; or BM25 hits plus an LLM check find no answer |
 
 Every question is checked for layout talk: table or figure numbers, column

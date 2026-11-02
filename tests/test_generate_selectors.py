@@ -4,7 +4,8 @@ from random import Random
 import pytest
 from synthetic import build_sheet, config
 
-from medrageval.generate.candidates import SELECTORS, candidate_counts, labels_match, link_match, meaningful, weighted
+from medrageval.generate.candidates import SELECTORS, candidate_counts, heading, labels_match, link_match, meaningful, weighted
+from medrageval.generate.corpus import Unit
 
 CFG = config()
 
@@ -99,11 +100,17 @@ def test_attribution_names_the_respondent(sheet):
     assert form.subtype == "form" and form.hint["speaker"] == "the clinical experts" and form.hint["speaker_name"] == "Royal Marsden NHS Foundation Trust"
 
 
-def test_summary_groups_facts_of_one_document(sheet):
+def test_summary_groups_facts_of_one_section(sheet):
     cs = cands(sheet, "summary")
     eff = next(c for c in cs if c.hint["group"] == "efficacy")
     assert {f.doc_id for f in eff.facts} == {"d02"} and 3 <= len(eff.facts) <= CFG["summary"]["max_facts"]
-    assert eff.hint["doc"] == "Company evidence submission"
+    assert eff.hint["doc"] == "Company evidence submission" and eff.hint["theme"] == "Clinical effectiveness results"
+    assert all(u.section_id == "d02-s002" for u in eff.units)   # the section is the theme: not facts from all over the document
+    assert heading(eff.units[0]) == "Clinical effectiveness results"
+    for title, want in [("B.3.11.3. Scenario analysis", "Scenario analysis"), ("3.2.5.4 Adverse events of special interest", "Adverse events of special interest"),
+                        ("A 13. Priority question: Please provide subgroup analyses", "Please provide subgroup analyses"), ("iv. The increment", "The increment"),
+                        ("b) As testing is not commissioned", "As testing is not commissioned"), ("Other issues", "Other issues")]:
+        assert heading(Unit("x", "x", "d02", "paragraph", "", "", None, None, [title], 1, 1, 0)) == want, title
 
 
 def test_unanswerable_selectors(sheet):

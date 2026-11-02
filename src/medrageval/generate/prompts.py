@@ -71,10 +71,10 @@ TYPE_INSTRUCTIONS = {
                    "Keep the part of the claim that is this party's own (its argument, judgement, survey or experience), not background any party could state. "
                    "No first person, no wording only the speaker would use (\"our model\", \"the submission\", \"the EAG's critique\"). "
                    "The answer must be exactly \"{answer}\" and answer_keys must be [\"{answer_key}\"]. Quote the sentence that carries the claim.",
-    "summary": "Write a SUMMARY question: the facts below are all about {group_describe}, in the {doc}{respondent}. "
-               "Find the specific theme they share and ask one open question about it, naming the theme, the drug and the document{or_respondent} "
-               "(\"How did the company justify applying the severity modifier and its dose-intensity scenarios?\", not \"How did the company present the cost-effectiveness evidence?\"). "
-               "Do not list the facts in the question. If they share no theme a reader would ask about, return {{\"skip\": reason}}. "
+    "summary": "Write a SUMMARY question: the facts below are all about {group_describe}, in the {doc}{respondent}, under the heading \"{theme}\". "
+               "That heading is their theme: ask one open question about it, in plain words (not the heading's numbering or wording), naming the theme, the drug and the document{or_respondent} "
+               "(\"What scenario analyses did the company run on its base case for capivasertib plus fulvestrant?\", not \"How did the company present the cost-effectiveness evidence?\"). "
+               "Do not list the facts in the question. If the heading is too generic to name a theme (\"Other issues\") and the facts share none a reader would ask about, return {{\"skip\": reason}}. "
                "\"answer\": one sentence per keypoint, in order, and nothing beyond them. "
                "\"keypoints\": [{{\"point\": one sentence stating one fact, \"fact_id\": that fact's id}}, ...], one per fact. "
                "\"answer_keys\": []. \"quotes\": [] (the system attaches each fact's quote).",
@@ -162,7 +162,7 @@ def build_generation(cand: Candidate, corpus: Corpus, cfg: dict, sheet: FactShee
         doc_a=(h.get("docs") or ["", ""])[0], doc_b=(h.get("docs") or ["", ""])[1],
         speaker_label=(f"{speaker_name} ({h.get('speaker', '')})" if speaker_name else h.get("speaker", "")), claim=str(h.get("claim", ""))[:400],
         answer=answer, answer_key=answer.removeprefix("the ").strip(),
-        group_describe=h.get("group_describe", ""), doc=h.get("doc", ""),
+        group_describe=h.get("group_describe", ""), doc=h.get("doc", ""), theme=h.get("theme") or "-",
         respondent=f", submitted by {speaker_name}" if speaker_name else "", or_respondent=" or the respondent" if speaker_name else "",
         max_sentences=max(3, len(facts) + 1),
         labels=" / ".join(h.get("labels", [])),
@@ -189,7 +189,8 @@ JUDGE_CRITERIA = {
     "crossdoc": "The quotes come from two different documents, and the answer reports what each says about the same figure, assumption or claim. Fail if one document alone gives everything the answer needs, "
                 "or if the question does not say which documents and subject it is about.",
     "attribution": "The quoted claim is made by the party given as the answer, the question identifies that claim unambiguously, and the question does not name or hint at the party.",
-    "summary": "The question is open but specific (names the drug and the document or respondent); every keypoint is supported by the quotes; the answer covers all keypoints and adds nothing unsupported.",
+    "summary": "The question is open but specific (names the drug and the document or respondent) and asks about one theme that every keypoint belongs to; "
+               "every keypoint is supported by the quotes; the answer covers all keypoints and adds nothing unsupported. Fail if the keypoints are a grab-bag no single question would call for.",
     "unanswerable": "The question asks for a value that is redacted in the quote, as a reader who expected it to be present would ask.",
 }
 

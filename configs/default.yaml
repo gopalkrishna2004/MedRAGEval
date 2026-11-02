@@ -311,6 +311,10 @@ generate:
   # has not answered from the passage.
   alone_check_types: [multihop, crossdoc]
 
+  # A summary draws its facts from one section of one document: the section
+  # heading is the theme the question asks about. Drawn from a whole document
+  # (v17), a summary mixed an RDI scenario, testing costs and the severity
+  # modifier under one question.
   summary:
     min_facts: 3                 # fewer is a factual question
     max_facts: 6                 # more and the answer is a list, not a summary
