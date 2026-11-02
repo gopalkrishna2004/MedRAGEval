@@ -215,12 +215,34 @@ groups:
         describe: a view the respondent states (unmet need, living with the condition, experience of treatment, expected benefits or disadvantages, place in the pathway)
         qualifiers: [topic]
 
-# Multi-hop: the value of a `from` fact names what a `to` fact is qualified by
-# (its `via` qualifier). The question refers to the bridge as `describe`,
-# filled from the `from` fact's qualifiers, never by its value.
+# Multi-hop: a `from` fact identifies the thing a `to` fact is about (its
+# `via` qualifier, or one of the labels of a number slot with `per`), and the
+# question refers to that thing through the `from` fact instead of naming it.
+#   match: value (default)  the `from` fact's value names it; `describe` is
+#                           filled from the `from` fact's qualifiers
+#                           ("the primary endpoint of {trial}" -> its median)
+#   match: qualifier        the `from` fact's `source_via` qualifier names it
+#                           and its value describes it; `describe` may use
+#                           {value} ("the comparator the company ruled out
+#                           because of TA239" -> its cost; "the scenario in
+#                           which the OS distribution is changed to Weibull"
+#                           -> its QALYs)
+# A pair is used only when the `to` fact's passage also holds a rival the
+# description rules out (another endpoint's median, another technology's
+# row); otherwise that passage answers alone and the item is no multi-hop.
 links:
   - {from: trial_design.primary_endpoint, to: efficacy.endpoint_result, via: endpoint, describe: "the primary endpoint of {trial}"}
   - {from: trial_design.primary_endpoint, to: efficacy.treatment_effect, via: endpoint, describe: "the primary endpoint of {trial}"}
   - {from: economic_model.extrapolation, to: cost_effectiveness.total_outcomes, via: scenario, describe: "the extrapolation {owner} chose for {endpoint}"}
   - {from: economic_model.extrapolation, to: cost_effectiveness.icer, via: scenario, describe: "the extrapolation {owner} chose for {endpoint}"}
   - {from: key_issues.eag_preference, to: cost_effectiveness.icer, via: scenario, describe: "the EAG's preferred assumption on {topic}"}
+  - {from: decision_problem.comparator_choice, to: economic_model.cost_input, via: technology, match: qualifier, source_via: comparator,
+     describe: "the comparator described as follows: {value}"}
+  - {from: decision_problem.comparator_choice, to: cost_effectiveness.total_outcomes, via: technology, match: qualifier, source_via: comparator,
+     describe: "the comparator described as follows: {value}"}
+  - {from: decision_problem.comparator_choice, to: cost_effectiveness.icer, via: comparator, match: qualifier, source_via: comparator,
+     describe: "the comparator described as follows: {value}"}
+  - {from: cost_effectiveness.scenario_definition, to: cost_effectiveness.total_outcomes, via: scenario, match: qualifier, source_via: scenario,
+     describe: "the scenario in which {value}"}
+  - {from: cost_effectiveness.scenario_definition, to: cost_effectiveness.icer, via: scenario, match: qualifier, source_via: scenario,
+     describe: "the scenario in which {value}"}

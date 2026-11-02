@@ -17,8 +17,8 @@ rewrite, back to the generator.
 import re
 from dataclasses import dataclass, field
 
-from medrageval.facts.factsheet import NUMBER, content_tokens, numbers_in, term_mentioned
-from medrageval.generate.candidates import Candidate, first_number, garbled, meaningful, too_small
+from medrageval.facts.factsheet import NUMBER, content_tokens, numbers_in, spells_acronym, term_mentioned
+from medrageval.generate.candidates import CONNECTORS, Candidate, first_number, garbled, meaningful, too_small
 from medrageval.generate.corpus import REDACTED, Corpus, tokenize
 from medrageval.text import contains_quote, normalize
 
@@ -82,23 +82,36 @@ def _aliases(speaker: str, cfg: dict) -> list[str]:
     return [speaker, speaker.removeprefix("the ")] + list(cfg["attribution"]["speakers"].get(speaker, []))
 
 
-def bridge_named(question: str, cand: Candidate) -> str | None:
-    """The bridged value a multi-hop question gives away, or None.
+_ACRONYM = re.compile(r"\b[A-Z]{2,6}\d?\b")
 
-    Named when the question contains the `via` value ("PFS"), or two content
-    words of the bridge fact's value that the bridge description and the
-    target fact's qualifiers do not already use ("progression-free survival").
+
+def bridge_named(question: str, cand: Candidate, corpus: Corpus) -> str | None:
+    """The bridged thing a multi-hop question gives away, or None.
+
+    Named when the question holds the bridged label ("PFS", "alpelisib plus
+    fulvestrant"), spells out its acronym ("progression-free survival"), or
+    uses the words by which the source fact's value names it ("generalised
+    gamma" for "Scenario 1 – generalised gamma for OS"). Words the target fact's
+    other qualifiers or the bridge description use are not a leak: a question
+    has to say "OS" to ask about the extrapolation chosen for OS, and
+    "fulvestrant" to ask about a regimen's fulvestrant cost.
     """
     h = cand.hint
-    via, value = str(h.get("via_value") or ""), str(h.get("bridge_value") or "")
+    via, value, described = str(h.get("via_value") or ""), str(h.get("bridge_value") or ""), h.get("mode") == "qualifier"
     q = token_set(question)
-    if via and (contains_quote(via, question) or (content_tokens(via) and content_tokens(via) <= q)):
+    via_tokens = content_tokens(via) - CONNECTORS
+    if via and (contains_quote(via, question) or (via_tokens and via_tokens <= q)):
         return via
-    allowed = content_tokens(h.get("bridge", ""))
+    if any(spells_acronym(a, question) for a in _ACRONYM.findall(via)):
+        return via
+    allowed = set() if described else content_tokens(h.get("bridge", ""))   # a described bridge carries the name itself
     for f in cand.facts[1:]:
         allowed |= {t for k, x in f.qualifiers.items() if k != h.get("via") for t in content_tokens(x)}
-    leaked = (content_tokens(value) - allowed) & q
-    return value if len(leaked) >= 2 or (leaked and leaked == content_tokens(value) - allowed) else None
+    if described:
+        leaked = (via_tokens - content_tokens(corpus.topic) - allowed) & q
+        return via if leaked else None
+    leaked = ((content_tokens(value) & via_tokens) - allowed) & q
+    return value if leaked else None
 
 
 def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_questions: list[str]) -> Verdict:
@@ -190,7 +203,7 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
 
     elif t == "multihop":
         v.check("two_units_quoted", len({u.unit_id for u in quoted_units}) >= 2, "quotes_from_one_unit")
-        named = bridge_named(q, cand)
+        named = bridge_named(q, cand, corpus)
         v.check("bridge_not_named", named is None, f"bridge_named_in_question:{str(cand.hint.get('via', 'value')).replace('_', ' ')}")
 
     elif t == "crossdoc":

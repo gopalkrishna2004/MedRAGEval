@@ -161,12 +161,12 @@ def labels_match(a: str, b: str) -> bool:
     return any(not t.replace(".", "").isdigit() for t in ta & tb)
 
 
-_CONNECTORS = {"+", "plus", "with", "and"}
+CONNECTORS = {"+", "plus", "with", "and"}
 
 
 def same_arm(a: str, b: str) -> bool:
     """Two arm or technology labels for the same regimen: "Everolimus + exemestane", "everolimus with exemestane"."""
-    ta, tb = content_tokens(a) - _CONNECTORS, content_tokens(b) - _CONNECTORS
+    ta, tb = content_tokens(a) - CONNECTORS, content_tokens(b) - CONNECTORS
     return bool(ta and tb) and (ta <= tb or tb <= ta) and _codes(a) == _codes(b)
 
 
@@ -293,40 +293,150 @@ def select_comparative(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random)
         yield Candidate("comparative", hint["mode"], _units(sheet, *facts), {"group": facts[0].group, "slot": facts[0].slot, **hint}, facts)
 
 
-def select_multihop(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
-    """A schema link: fact A's value names what fact B is qualified by; the question reaches B through A's description."""
-    items = []
-    for link in sheet.schema.links:
-        for a in sheet.by_slot.get(link.source, []):
-            if a.redacted or not a.value or not usable(a, sheet, cfg):
+def _via_tokens(label: str) -> set[str]:
+    return content_tokens(label) - CONNECTORS
+
+
+def label_names(bridged: str, label: str, mode: str) -> bool:
+    """Does a bridge name this label? By the words the source's value shares with it (`value` links) or as one regimen (`qualifier` links)."""
+    return link_match(bridged, label) if mode == "value" else (same_arm(bridged, label) or labels_match(bridged, label))
+
+
+def agree_but_via(b: Fact, g: Fact, via: str, lb: str, lg: str) -> bool:
+    """b and g agree on every qualifier both give once each side's own bridged label is taken out of the words:
+    "median PFS" and "median PFS2" are one measure, "OS rate" is another."""
+    for k in (set(b.qualifiers) & set(g.qualifiers)) - {via}:
+        vb, vg = b.qualifiers[k], g.qualifiers[k]
+        if normalize(vb) == normalize(vg) or labels_match(vb, vg):
+            continue
+        tb, tg = content_tokens(vb) - _via_tokens(lb), content_tokens(vg) - _via_tokens(lg)
+        if not (tb and tg and (tb <= tg or tg <= tb)):
+            return False
+    return True
+
+
+def _overlap(a: set[str], b: set[str]) -> float:
+    return len(a & b) / max(len(a | b), 1)
+
+
+def _labels(f: Fact, via: str, per_keyed: bool) -> list[str]:
+    return [l for l, v in (f.values or {}).items() if v] if per_keyed else [f.qualifiers[via]] if f.qualifiers.get(via) else []
+
+
+def rival_of(sheet: FactSheet, b: Fact, via: str, per_keyed: bool, bridged: str, mode: str, label: str) -> dict | None:
+    """What a reader of b's passage could take for b while the bridge is unresolved: another label of b's own values, a fact
+    of the slot in the same table or paragraph ("unit"), or one in the same section ("section"). None when the passage
+    answers alone, as the PFS tables of TA1063 do for "the primary endpoint": nothing else in them has a median."""
+    for other in _labels(b, via, per_keyed):
+        if other != label and not label_names(bridged, other, mode):
+            return {"tier": "unit", "id": b.fact_id, "label": other}
+    elements = {u.element_id for u in sheet.units(b)}
+    sections = {(u.doc_id, u.section_id) for u in sheet.units(b)}
+    best = None
+    for g in sheet.by_slot[b.slot]:
+        if g is b or sheet.copies(b, g):
+            continue
+        for other in _labels(g, via, per_keyed):
+            if label_names(bridged, other, mode) or not agree_but_via(b, g, via, label, other):
                 continue
-            bridge = fill(link.describe, a.qualifiers)
+            units = sheet.units(g)
+            if any(u.element_id in elements for u in units):
+                return {"tier": "unit", "id": g.fact_id, "label": other}
+            if best is None and any((u.doc_id, u.section_id) in sections for u in units):
+                best = {"tier": "section", "id": g.fact_id, "label": other}
+    return best
+
+
+def visible_tokens(sheet: FactSheet, f: Fact) -> set[str]:
+    """Words a reader of f's passage sees: the units, their captions and section titles, and the context shown before them."""
+    out: set[str] = set()
+    for u in sheet.units(f):
+        heads = f"{u.caption or ''} {' '.join(u.section_path)}"
+        out |= set(u.tokens) | content_tokens(heads) | idents(u.plain) | idents(heads)
+        for p in sheet.corpus.preceding(u, sheet.cfg["context"]["units"]):
+            out |= set(p.tokens) | idents(p.plain)
+    return out
+
+
+_IDENT = re.compile(r"\b[A-Za-z]+\d+[A-Za-z]*\b")   # "PIK3CA", "TA239", "CDK4": the tokenizer splits them
+
+
+def idents(text: str) -> set[str]:
+    return {m.lower() for m in _IDENT.findall(text or "")}
+
+
+def description_tokens(sheet: FactSheet, a: Fact, link) -> set[str]:
+    """The words of a `qualifier` link's description that carry it: identifiers and words rare in the bundle, without the
+    bridged name, the topic's names or connectors. "is a relevant comparator" describes nothing; "only recommended in the
+    PIK3CA mutated population" does."""
+    corpus = sheet.corpus
+    limit = sheet.cfg["multihop"]["rare_df_max"] * len(corpus.units)
+    label = a.qualifiers.get(link.source_via, "")
+    own = content_tokens(label) | CONNECTORS | content_tokens(corpus.topic)
+    words = {t for t in content_tokens(a.value) - own if len(t) > 3 and corpus.df.get(t, 0) <= limit}
+    return words | (idents(a.value) - idents(f"{label} {corpus.topic}"))
+
+
+def select_multihop(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
+    """A schema link: fact A identifies what fact B is about; the question reaches B through A's description.
+
+    A pair is kept only when B's passage holds a rival the description rules
+    out, so that passage alone cannot answer: the third smoke run put all 12
+    candidates through "the primary endpoint" onto PFS tables that report
+    nothing but PFS, and the judge failed every one. Pairs whose rival is in
+    B's own table or paragraph come before those whose rival is elsewhere in
+    the section (the judge sees the section's context; a retriever may not).
+    """
+    tiers: dict[str, dict[str, list]] = {"unit": defaultdict(list), "section": defaultdict(list)}
+    for link in sheet.schema.links:
+        per_keyed = sheet.schema.slot(link.target).per == link.via
+        targets = [b for b in sheet.by_slot.get(link.target, []) if not b.redacted and usable(b, sheet, cfg)]
+        sources = [a for a in sheet.by_slot.get(link.source, []) if not a.redacted and a.value and usable(a, sheet, cfg)]
+        bridge_words = {t for t in content_tokens(re.sub(r"\{\w+\}", " ", link.describe)) if len(t) > 3}
+        for a in sources:
+            if link.match == "qualifier":
+                bridged = a.qualifiers.get(link.source_via, "")
+                desc = description_tokens(sheet, a, link)
+                # a description two comparators share ("was considered in the model") picks neither
+                if not bridged or len(desc) < cfg["multihop"]["min_description_tokens"] or any(
+                        o is not a and not label_names(bridged, o.qualifiers.get(link.source_via, ""), "qualifier")
+                        and _overlap(desc, description_tokens(sheet, o, link)) >= 0.5 for o in sources):
+                    continue
+                bridge = fill(link.describe, {**a.qualifiers, "value": a.value})
+            else:
+                bridged, desc = a.value, bridge_words
+                bridge = fill(link.describe, a.qualifiers)
             if not bridge:
                 continue
-            bridge_words = {t for t in content_tokens(re.sub(r"\{\w+\}", " ", link.describe)) if len(t) > 3}
-            for b in sheet.by_slot.get(link.target, []):
-                via = b.qualifiers.get(link.via)
-                if (not via or b.redacted or not usable(b, sheet, cfg) or not link_match(a.value, via)
-                        or not compatible(a, b, {link.via}) or set(a.unit_ids) & set(b.unit_ids)):
+            for b in targets:
+                if set(a.unit_ids) & set(b.unit_ids) or not compatible(a, b, {link.via, link.source_via or ""}):
                     continue
-                # B's passage already says what the bridge describes ("the primary endpoint ... PFS ... 0.50"): one excerpt
-                # answers. In the first smoke run the judge failed or the writer skipped 13 of 17 such pairs.
-                if bridge_words and all(bridge_words <= set(u.tokens) for u in sheet.units(b)):
+                matched = [l for l in _labels(b, link.via, per_keyed) if label_names(bridged, l, link.match)]
+                if len(matched) != 1 or (per_keyed and REDACTED in (b.values or {}).get(matched[0], "")):
                     continue
-                # without a sibling of another `via` value, the slot alone gives the answer and A is no hop
-                if not any(g is not b and g.qualifiers.get(link.via) and not link_match(a.value, g.qualifiers[link.via])
-                           for g in sheet.by_slot[link.target]):
+                label = matched[0]
+                # B's passage already says what the description says ("Primary endpoint: PFS" above the table): one excerpt answers
+                seen = visible_tokens(sheet, b)
+                if desc and len(desc & seen) / len(desc) >= (1.0 if link.match == "value" else 0.5):
                     continue
-                items.append((a, b, link, bridge, via))
-    by_link: dict[str, list] = defaultdict(list)
-    for it in items:
-        by_link[f"{it[2].source}->{it[2].target}"].append(it)
-    # round robin over links: the second smoke run took all four items through one link
-    orders = [list(_order(sheet, by_link[k], cfg, rng, lambda x: x[1])) for k in sorted(by_link)]
-    for a, b, link, bridge, via in interleave(orders):
-        hint = {"group": b.group, "slot": b.slot, "link": f"{link.source} -> {link.target}", "bridge": bridge, "bridge_value": a.value,
-                "via": link.via, "via_value": via, "must_mention": without(sheet.must_mention(b), via, a.value)}
-        yield Candidate("multihop", "bridge", _units(sheet, a, b), hint, [a, b])
+                rival = rival_of(sheet, b, link.via, per_keyed, bridged, link.match, label)
+                if rival is None:
+                    continue
+                value = b.values[label] if per_keyed else (b.value or b.value_text())
+                tiers[rival["tier"]][f"{link.source}->{link.target}"].append((a, b, link, bridge, label, value, rival, desc))
+    asked: set[tuple[str, str]] = set()
+    for tier in ("unit", "section"):
+        by_link = tiers[tier]
+        # round robin over links: the second smoke run took all four items through one link
+        orders = [list(_order(sheet, by_link[k], cfg, rng, lambda x: x[1])) for k in sorted(by_link)]
+        for a, b, link, bridge, label, value, rival, desc in interleave(orders):
+            if (b.fact_id, label) in asked:   # one question per value: two descriptions of alpelisib asked the same cost twice
+                continue
+            asked.add((b.fact_id, label))
+            hint = {"group": b.group, "slot": b.slot, "link": f"{link.source} -> {link.target}", "mode": link.match, "bridge": bridge,
+                    "bridge_value": a.value, "via": link.via, "via_value": label, "value": value, "rival": rival,
+                    "description": sorted(desc), "must_mention": without(sheet.must_mention(b), label, a.value)}
+            yield Candidate("multihop", "bridge" if link.match == "value" else "described", _units(sheet, a, b), hint, [a, b])
 
 
 def select_crossdoc(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:

@@ -30,7 +30,9 @@ def test_factual_uses_askable_text_facts(sheet):
 
 
 def test_numerical_skips_redacted_and_indistinguishable_facts(sheet):
-    cs = cands(sheet, "numerical")
+    corpus, s = sheet
+    uncapped = {**CFG, "limits": {**CFG["limits"], "max_per_section": 10}}   # the seeded per-section cap is not under test here
+    cs = list(SELECTORS["numerical"](corpus, s, uncapped, Random(1)))
     got = {c.facts[0].fact_id for c in cs}
     assert "d05-cost_effectiveness.total_outcomes-001" not in got   # plain "Scenario 1": two right answers
     assert "d05-cost_effectiveness.total_outcomes-002" in got and "d02-economic_model.cost_input-001" not in got
@@ -54,10 +56,30 @@ def test_multihop_follows_schema_links_and_hides_the_bridge(sheet):
     assert ("d02-trial_design.primary_endpoint-001", "d02-efficacy.endpoint_result-001") in pairs
     assert not any(p[0] == "d03-economic_model.extrapolation-001" for p in pairs)   # the EAG's curve is not the company's scenario
     c = next(c for c in cs if c.facts[1].fact_id == "d02-efficacy.endpoint_result-001")
-    assert c.hint["bridge"] == "the primary endpoint of CAPItello-291" and c.hint["via_value"] == "PFS"
+    assert c.subtype == "bridge" and c.hint["bridge"] == "the primary endpoint of CAPItello-291" and c.hint["via_value"] == "PFS"
+    assert c.hint["value"] == "capivasertib plus fulvestrant: 7.3 months; placebo plus fulvestrant: 3.1 months"
+    assert c.hint["rival"] == {"tier": "section", "id": "d02-efficacy.endpoint_result-003", "label": "OS"}   # the OS median, in the same section
     assert all("PFS" not in s for s in c.hint["must_mention"])   # named through the bridge, so not required
     assert [u.unit_id for u in c.units] == ["d02-e0040", "d02-e0003"]
     assert link_match("generalised gamma distribution", "Scenario 1 – generalised gamma for OS") and not labels_match("generalised gamma distribution", "Scenario 1 – generalised gamma for OS")
+    # the EAG's copy of the PFS table has the same rival in no shared section, and the DCO2 table has none: no candidates
+    assert not any(p[1] in ("d03-efficacy.endpoint_result-001", "d05-efficacy.endpoint_result-001") for p in pairs)
+
+
+def test_multihop_describes_a_thing_through_a_qualifier_link(sheet):
+    cs = cands(sheet, "multihop")
+    described = [c for c in cs if c.subtype == "described"]
+    assert {tuple(f.fact_id for f in c.facts) for c in described} == {
+        ("d02-decision_problem.comparator_choice-001", "d05-cost_effectiveness.total_outcomes-004"),
+        ("d02-decision_problem.comparator_choice-002", "d05-cost_effectiveness.total_outcomes-003")}
+    c = next(c for c in described if c.facts[0].fact_id == "d02-decision_problem.comparator_choice-002")
+    assert c.hint["mode"] == "qualifier" and c.hint["via"] == "technology" and c.hint["via_value"] == "alpelisib plus fulvestrant"
+    assert c.hint["value"] == "1.78 QALYs" and c.hint["bridge"] == "the comparator described as follows: relevant only for PIK3CA-mutated disease"
+    assert c.hint["rival"]["tier"] == "unit" and c.hint["rival"]["label"] == "everolimus plus exemestane"   # the table's other row
+    assert all("alpelisib" not in t.lower() for s in c.hint["must_mention"] for t in s)
+    assert cs.index(c) < cs.index(next(c for c in cs if c.subtype == "bridge"))   # a rival in the passage itself comes first
+    # the company's ICER is given for one comparator only: nothing in that passage to tell apart
+    assert not any(c.facts[1].slot == "cost_effectiveness.icer" for c in cs)
 
 
 def test_crossdoc_pairs_two_parties_on_one_subject(sheet):

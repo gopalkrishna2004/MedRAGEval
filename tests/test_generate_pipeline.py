@@ -90,7 +90,7 @@ def test_end_to_end_writes_dataset_rejects_and_report(tmp_path):
 
     assert report["items"] == 4 and report["per_type"]["factual"]["accepted"] == 2
     assert report["per_type"]["unanswerable"]["subtypes"] == {"redacted": 1, "not_covered": 1}
-    assert report["facts"]["facts"] == 16 and report["items_per_group"]
+    assert report["facts"]["facts"] == 20 and report["items_per_group"]
     assert sum(1 for m, t in llm.calls if t.startswith("check:")) == 1      # one coverage call per anchor, not per question
 
 
@@ -162,22 +162,33 @@ def test_missing_parse_output_or_fact_sheet_fails_loudly(tmp_path):
 
 
 def bridged(alone_answers: bool):
-    """Multi-hop items reaching a result through "the primary endpoint of CAPItello-291"; given alone, the result's excerpt answers when alone_answers."""
-    keys = {}
+    """Multi-hop items reaching a value through the task's bridge; given alone, the value's excerpt answers when alone_answers."""
+    keys, sources = {}, {}
 
     def respond(messages, tag):
         user = next(m["content"] for m in messages if m["role"] == "user")
         if tag.startswith("alone:"):
             cid, uid = tag.split(":", 1)[1].rsplit(":", 1)
-            first = cid.split(":", 1)[1].split("+")[0]
-            return {"answer": " and ".join(keys.get(cid, [])) if alone_answers and not uid.startswith(first[:3] + "-e0040") else None, "reason": "-"}
+            if not alone_answers or uid == sources.get(cid):
+                return {"answer": None, "identified_by": None, "reason": "-"}
+            # the table's caption says "PIK3CA": the one word of the description the passage holds
+            return {"answer": " and ".join(keys.get(cid, [])), "identified_by": "PIK3CA-tested population" if "PIK3CA" in user else "Alpelisib", "reason": "-"}
         if not tag.startswith(("multihop:")):
             return scripted(messages, tag)
         facts, exs = facts_in(user), excerpts(user)
-        b = facts[1]
-        keys[tag.removesuffix(":rewrite")] = [b["value"]]
-        return {"question": f"For the primary endpoint of CAPItello-291 ({', '.join(must_terms(user)) or 'company submission'}), what result did capivasertib plus fulvestrant reach?",
-                "answer": f"It reached {b['value']}.", "answer_keys": [b["value"]], "hop_a": "names the endpoint", "hop_b": "gives the result",
+        cid = tag.removesuffix(":rewrite")
+        sources[cid] = exs[0][0]   # the bridge fact's excerpt comes first
+        terms = ", ".join(must_terms(user)) or "company submission"
+        if "describes the" in user:   # a described bridge: the comparator's value in a table with a row per technology
+            value = re.search(r"gives a value for that \w+: (.+?)\. Ask", user).group(1)
+            question = f"What total QALYs ({terms}) did the company estimate for the comparator it considers relevant only for PIK3CA-mutated disease?"
+            hops = {"hop_a": "identifies the comparator", "hop_b": "gives its QALYs"}
+        else:
+            value = facts[1]["value"]
+            question = f"For the primary endpoint of CAPItello-291 ({terms}), what result did capivasertib plus fulvestrant reach?"
+            hops = {"hop_a": "names the endpoint", "hop_b": "gives the result"}
+        keys[cid] = [value]
+        return {"question": question, "answer": f"It was {value}.", "answer_keys": [value], **hops,
                 "quotes": [{"unit_id": uid, "quote": " ".join(body.split()[:12])} for uid, body in exs]}
     return respond
 
@@ -187,14 +198,19 @@ def test_multihop_answerable_from_one_excerpt_is_rejected(tmp_path, alone):
     interim, out = write_factsheet(tmp_path / "interim"), tmp_path / "out"
     llm = FakeLLM(bridged(alone))
     if alone:
+        cfg = config()
+        cfg["attempts_per_item"] = {**cfg["attempts_per_item"], "multihop": 1}   # the first pair only: its passage holds a word of the description
         with pytest.raises(RuntimeError, match="short of target"):
-            generate_dataset(interim, out, config(), llm, llm, targets={"multihop": 1}, types=["multihop"])
+            generate_dataset(interim, out, cfg, llm, llm, targets={"multihop": 1}, types=["multihop"])
         rejects = [json.loads(l) for l in (out / "rejects.jsonl").open()]
-        assert any(r["reasons"][0].startswith("answerable_from:") and any(a["matches"] for a in r["validation"]["alone"].values()) for r in rejects)
+        assert any(r["reasons"][0].startswith("answerable_from:") and any(a["matches"] and a["grounded"] for a in r["validation"]["alone"].values()) for r in rejects)
+        assert not any(t.endswith(":rewrite") for _, t in llm.calls)   # the pair's fault, not the wording's: no rewrite
     else:
         generate_dataset(interim, out, config(), llm, llm, targets={"multihop": 1}, types=["multihop"])
         items = [json.loads(l) for l in (out / "dataset.jsonl").open()]
-        assert len(items) == 1 and items[0]["hops"]["bridge"] == "the primary endpoint of CAPItello-291"
+        assert len(items) == 1 and items[0]["subtype"] == "described" and items[0]["hops"]["mode"] == "qualifier"   # a rival in the passage itself comes first
+        assert items[0]["hops"]["bridge"] == "the comparator described as follows: relevant only for PIK3CA-mutated disease"
+        assert items[0]["hops"]["rival"] == {"tier": "unit", "id": "d05-cost_effectiveness.total_outcomes-004", "label": "everolimus plus exemestane"}
         assert not any(r["matches"] for r in items[0]["validation"]["alone"].values())
     assert sum(tag.startswith("alone:") for _, tag in llm.calls) >= 2   # one call per excerpt
 

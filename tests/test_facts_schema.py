@@ -21,6 +21,8 @@ def test_curated_schema_loads_and_is_disease_agnostic():
     assert s.slot("key_issues.issue").kind == "stance" and s.slot("key_issues.issue").parties == ("company", "EAG")
     assert not s.slot("stakeholder_views.respondent").ask
     assert {(ln.source, ln.target, ln.via) for ln in s.links} >= {("trial_design.primary_endpoint", "efficacy.endpoint_result", "endpoint")}
+    described = next(ln for ln in s.links if ln.target == "cost_effectiveness.total_outcomes" and ln.match == "qualifier")
+    assert described.source_via == "comparator" and described.via == s.slot("cost_effectiveness.total_outcomes").per   # a per label, not a qualifier
     text = yaml.safe_dump(curated()).lower()
     assert "capivasertib" not in text and "sparsentan" not in text and "capitello" not in text
 
@@ -32,6 +34,8 @@ def test_curated_schema_loads_and_is_disease_agnostic():
     (lambda d: d["groups"]["efficacy"]["slots"]["treatment_effect"].update(per="arm", kind="text"), "only for number slots"),
     (lambda d: d["links"].append({"from": "efficacy.nothing", "to": "efficacy.endpoint_result", "via": "endpoint", "describe": "x"}), "unknown slot"),
     (lambda d: d["links"].append({"from": "trial_design.design", "to": "efficacy.endpoint_result", "via": "colour", "describe": "x"}), "no qualifier"),
+    (lambda d: d["links"].append({"from": "trial_design.design", "to": "efficacy.endpoint_result", "via": "endpoint", "describe": "x", "match": "guess"}), "match must be"),
+    (lambda d: d["links"].append({"from": "trial_design.design", "to": "efficacy.endpoint_result", "via": "endpoint", "describe": "x", "match": "qualifier"}), "source_via"),
     (lambda d: d["groups"]["safety"].update(sections=["(unclosed"]), "bad section pattern"),
     (lambda d: d.update(groups={}), "non-empty 'groups'"),
 ])

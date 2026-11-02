@@ -185,7 +185,8 @@ class FactSheet:
         return self.schema.slot(f.slot).ask
 
     # ----- siblings -----
-    def _copies(self, f: Fact, g: Fact) -> bool:
+    def copies(self, f: Fact, g: Fact) -> bool:
+        """One fact is a copy of the other: the EAG's table reproduces the company's."""
         return bool(set(g.unit_ids) & set(f.also_in) or set(f.unit_ids) & set(g.also_in))
 
     def conflicts(self, f: Fact) -> list[Fact]:
@@ -198,7 +199,7 @@ class FactSheet:
         """
         out = []
         for g in self.by_slot.get(f.slot, []):
-            if g is f or g.redacted or f.redacted or self._copies(f, g):
+            if g is f or g.redacted or f.redacted or self.copies(f, g):
                 continue
             if f.kind == "number":
                 differ = f.numbers() != g.numbers()

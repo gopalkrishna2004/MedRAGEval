@@ -137,6 +137,20 @@ def test_multihop_must_not_name_the_bridge():
     assert "quotes_from_one_unit" in validate(one, c, CORPUS, CFG, []).reasons
 
 
+def test_described_multihop_must_not_name_the_comparator():
+    c = selected("multihop", "d02-decision_problem.comparator_choice-002")
+    quotes = [("d02-e0041", "alpelisib plus fulvestrant is relevant only for PIK3CA-mutated disease"), ("d05-e0034", "Alpelisib + fulvestrant | 51,365 | 2.41 | 1.78")]
+    good = item("In the company's updated base case, what total QALYs were estimated for the comparator it considers relevant only for PIK3CA-mutated disease?",
+                "1.78 QALYs.", ["1.78 QALYs"], quotes, hop_a="identifies the comparator", hop_b="gives its QALYs")
+    v = validate(good, c, CORPUS, CFG, [])
+    assert v.ok, v.reasons
+    named = {**good, "question": "In the company's updated base case, what total QALYs were estimated for alpelisib, the comparator relevant only for PIK3CA-mutated disease?"}
+    assert "bridge_named_in_question:technology" in validate(named, c, CORPUS, CFG, []).reasons
+    # "fulvestrant" is in the bundle's topic and in every regimen: saying it names nothing
+    ful = {**good, "question": "In the company's updated base case, what total QALYs were estimated for the fulvestrant-based comparator it considers relevant only for PIK3CA-mutated disease?"}
+    assert validate(ful, c, CORPUS, CFG, []).ok
+
+
 def test_crossdoc_needs_both_documents():
     c = selected("crossdoc", "d02-cost_effectiveness.icer-001")
     quotes = [("d02-e0008", "The company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane was £24,567 per QALY gained"),

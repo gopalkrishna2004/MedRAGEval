@@ -70,8 +70,10 @@ SCHEMA_SHAPE = {
                                      "parties": ["for stance slots"], "describe": "one sentence", "qualifiers": ["what tells two facts apart"]}},
         }
     },
-    "links": [{"from": "group.slot whose value names ...", "to": "group.slot ... qualified by it", "via": "a qualifier of `to`",
-               "describe": "how a question refers to the bridge, with {qualifier} placeholders from `from`"}],
+    "links": [{"from": "group.slot whose value names ...", "to": "group.slot ... qualified by it", "via": "a qualifier (or the `per` key) of `to`",
+               "describe": "how a question refers to the bridge, with {qualifier} placeholders from `from`",
+               "match": "optional: 'qualifier' when a qualifier of `from` (named in source_via) names the thing and the value of `from` describes it; "
+                        "describe may then use {value}"}],
 }
 
 

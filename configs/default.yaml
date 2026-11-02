@@ -59,8 +59,10 @@ generate:
   # Candidates tried per accepted item before a type gives up; below
   # min_share_of_target the run fails after writing what it has. Smoke runs
   # accepted about half of the single-excerpt candidates, but one in four
-  # multi-hop ones (the judge rejects questions the value table answers alone)
-  # and one in five "not covered" questions (the bundle usually does answer).
+  # multi-hop ones (the judge rejects questions the value table answers alone;
+  # since the third smoke run the selector keeps only pairs whose value
+  # passage holds a rival) and one in five "not covered" questions (the
+  # bundle usually does answer).
   attempts_per_item:
     default: 4
     multihop: 8
@@ -73,8 +75,10 @@ generate:
   # long keys, quotes not found, an echoed quote and a key in the question,
   # discarding evidence that could carry an item (multi-hop pairs are scarce:
   # 23 trial bridges in TA1063). TRIAD does the same with its reviewer's reason.
-  # Not rewritten: a skip, bad JSON, or an attribution claim that is too
-  # generic or restated by another party. Each item keeps its rejected first
+  # Not rewritten: a skip, bad JSON, an attribution claim that is too
+  # generic or restated by another party, or a pair of excerpts one of which
+  # answers alone (the evidence's fault: no multi-hop rewrite ever fixed it).
+  # Each item keeps its rejected first
   # version under `first_attempt`; the report counts rewrites per type.
   rewrite_rejected: true
   min_share_of_target: 0.5
@@ -278,6 +282,16 @@ generate:
   # besides support, it checks that a question is realistic (one a clinician,
   # health economist or committee member would ask, not one about a table's
   # layout), which no programmatic check can.
+  # Multi-hop through a `qualifier` link describes a thing by a fact's value
+  # ("the comparator the company ruled out because of TA239"). The description
+  # counts only by its identifiers and its words rare in the bundle (in at
+  # most rare_df_max of units): "is a relevant comparator" describes nothing.
+  # Fewer than min_description_tokens, or half of them shared with another
+  # thing's description, and the fact is not a bridge.
+  multihop:
+    rare_df_max: 0.03
+    min_description_tokens: 2
+
   judge_types: [factual, numerical, comparative, multihop, crossdoc, attribution, summary]
   # After the judge passes them, these items go back to the judge model once
   # per excerpt, with that excerpt alone, and are rejected when its answer
@@ -290,6 +304,11 @@ generate:
   # one chunk by its per-chunk check. Two short calls per item that gets this far.
   # Cross-document items too: in v14 the judge said one excerpt answered
   # crossdoc-004 alone and it was kept, because only multi-hop was checked.
+  # The alone check also asks by which words of the passage the model told
+  # the items apart; for a multi-hop item its answer counts only when those
+  # words are in the passage and belong to the bridge's description. A model
+  # that picks alpelisib's row because it knows alpelisib is the PIK3CA drug
+  # has not answered from the passage.
   alone_check_types: [multihop, crossdoc]
 
   summary:

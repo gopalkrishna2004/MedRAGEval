@@ -58,13 +58,24 @@ class Group:
     slots: dict[str, Slot] = field(default_factory=dict)
 
 
+MATCHES = {"value", "qualifier"}
+
+
 @dataclass(frozen=True)
 class Link:
-    """Multi-hop: the value of a `source` fact names what a `target` fact is qualified by (its `via` qualifier)."""
+    """Multi-hop: a `source` fact identifies the thing a `target` fact is about (its `via` qualifier, or one of its
+    `per` labels), and a question refers to that thing through the source instead of naming it.
+
+    match "value": the source's value names it ("the primary endpoint of {trial}" is PFS; the target is PFS's median).
+    match "qualifier": the source's `source_via` qualifier names it and the source's value describes it ("the
+    comparator the company ruled out because of TA239" is fulvestrant; the target is fulvestrant's cost).
+    """
     source: str
     target: str
     via: str
-    describe: str     # how a question refers to the bridge without naming it, e.g. "the trial's primary endpoint"
+    describe: str     # how a question refers to the bridge: {qualifier} placeholders from the source, {value} its value
+    match: str = "value"
+    source_via: str | None = None
 
 
 @dataclass
@@ -161,9 +172,16 @@ def parse_schema(data: dict, roles: Iterable[str], path: Path | None = None) -> 
         for end in ("from", "to"):
             if ln[end] not in all_slots:
                 raise SchemaError(f"{where}: unknown slot {ln[end]!r}")
-        if ln["via"] not in all_slots[ln["to"]].qualifiers:
-            raise SchemaError(f"{where}: {ln['to']} has no qualifier {ln['via']!r}")
-        schema.links.append(Link(ln["from"], ln["to"], ln["via"], ln["describe"]))
+        target = all_slots[ln["to"]]
+        if ln["via"] not in target.qualifiers and ln["via"] != target.per:
+            raise SchemaError(f"{where}: {ln['to']} has no qualifier or per key {ln['via']!r}")
+        match = str(ln.get("match") or "value")
+        if match not in MATCHES:
+            raise SchemaError(f"{where}: match must be one of {sorted(MATCHES)}, got {match!r}")
+        source_via = ln.get("source_via")
+        if match == "qualifier" and source_via not in all_slots[ln["from"]].qualifiers:
+            raise SchemaError(f"{where}: a qualifier link names a source_via qualifier of {ln['from']}, got {source_via!r}")
+        schema.links.append(Link(ln["from"], ln["to"], ln["via"], ln["describe"], match, source_via if match == "qualifier" else None))
     if sum(g.weight for g in groups.values()) <= 0:
         raise SchemaError("at least one group needs a weight above 0")
     return schema

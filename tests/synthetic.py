@@ -225,6 +225,13 @@ FACT_ELEMENTS = [
         path=["Clarification questions", "Company response:"], caption="**Table 32. Deterministic pairwise base-case results (Scenario 1 – generalised gamma for OS)**", page=134),
     _el("d05", 33, "In the updated analysis at DCO2, median PFS was 7.2 months with capivasertib plus fulvestrant versus 3.6 months with placebo plus fulvestrant.",
         section="d05-s001", path=["Clarification questions", "Company response:"], page=135),
+    # a described bridge: the company's reasons for its comparators, and a results table with a row per technology
+    _el("d02", 41, "The company considers everolimus plus exemestane a relevant comparator because it is the NICE-recommended option after a CDK4/6 inhibitor, "
+        "whereas alpelisib plus fulvestrant is relevant only for PIK3CA-mutated disease.",
+        section="d02-s008", path=["B.1 Decision problem", "B.1.1 Comparators"], page=8),
+    _el("d05", 34, _table([("Capivasertib + fulvestrant", "[REDACTED]", "3.25", "2.40"), ("Alpelisib + fulvestrant", "51,365", "2.41", "1.78"),
+                           ("Everolimus + exemestane", "25,714", "1.96", "1.45")], _SCEN_HEAD), "table", section="d05-s002",
+        path=["Clarification questions", "Updated base case"], caption="**Table 33. Deterministic pairwise base-case results (PIK3CA-tested population)**", page=136),
 ]
 FACT_BUNDLE = ELEMENTS + FACT_ELEMENTS
 
@@ -271,6 +278,16 @@ FACT_SPECS = [
     ("d03-key_issues.issue-001", "key_issues.issue", "stance", "d03-e0031",
      "The EAG considers that the use of time to treatment discontinuation data from CAPItello-291 to model treatment duration is inappropriate",
      {"topic": "treatment duration"}, {"positions": {"EAG": "time to treatment discontinuation data are inappropriate to model treatment duration"}}),
+    ("d02-decision_problem.comparator_choice-001", "decision_problem.comparator_choice", "text", "d02-e0041",
+     "The company considers everolimus plus exemestane a relevant comparator because it is the NICE-recommended option after a CDK4/6 inhibitor",
+     {"comparator": "everolimus plus exemestane"}, {"value": "a relevant comparator because it is the NICE-recommended option after a CDK4/6 inhibitor"}),
+    ("d02-decision_problem.comparator_choice-002", "decision_problem.comparator_choice", "text", "d02-e0041",
+     "alpelisib plus fulvestrant is relevant only for PIK3CA-mutated disease", {"comparator": "alpelisib plus fulvestrant"},
+     {"value": "relevant only for PIK3CA-mutated disease"}),
+    ("d05-cost_effectiveness.total_outcomes-003", "cost_effectiveness.total_outcomes", "number", "d05-e0034", "Alpelisib + fulvestrant | 51,365 | 2.41 | 1.78",
+     {"owner": "company", "measure": "total QALYs", "analysis": "updated base case"}, {"values": {"alpelisib plus fulvestrant": "1.78 QALYs"}}),
+    ("d05-cost_effectiveness.total_outcomes-004", "cost_effectiveness.total_outcomes", "number", "d05-e0034", "Everolimus + exemestane | 25,714 | 1.96 | 1.45",
+     {"owner": "company", "measure": "total QALYs", "analysis": "updated base case"}, {"values": {"everolimus plus exemestane": "1.45 QALYs"}}),
     ("d04-stakeholder_views.respondent-001", "stakeholder_views.respondent", "text", "d04-e0001", "2. Name of organisation | Royal Marsden NHS Foundation Trust",
      {}, {"value": "Royal Marsden NHS Foundation Trust"}),
     ("d04-stakeholder_views.view-001", "stakeholder_views.view", "text", "d04-e0001",

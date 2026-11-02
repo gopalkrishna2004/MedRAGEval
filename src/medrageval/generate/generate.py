@@ -25,7 +25,7 @@ from random import Random
 from medrageval.config import load_config
 from medrageval.facts.factsheet import FactSheet
 from medrageval.facts.schema import known_roles, load_schema
-from medrageval.generate.candidates import SELECTORS, Candidate, candidate_counts
+from medrageval.generate.candidates import SELECTORS, Candidate, candidate_counts, idents
 from medrageval.generate.corpus import Corpus, Unit, load_corpus
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llms
 from medrageval.generate.prompts import (PROMPT_VERSION, build_alone_check, build_generation, build_judge, build_rewrite, build_unanswerable_check,
@@ -37,8 +37,9 @@ TYPES = ["factual", "numerical", "comparative", "multihop", "crossdoc", "attribu
 NEEDS_SINGLE_EXCERPT_CHECK = {"multihop", "crossdoc"}   # both need two excerpts: one alone must not answer
 # Failures a rewrite can fix: the checks, the judge, the coverage check. Not a skip (the model declined the evidence) or bad JSON.
 REWRITABLE_STAGES = {"programmatic", "judge", "unanswerable_check"}
-# Attribution claims that are too generic or restated by another party: the evidence's fault, not the wording's.
-UNFIXABLE = {"claim_too_generic", "claim_restated_in"}
+# The evidence's fault, not the wording's: an attribution claim that is too generic or restated by another party, or a
+# pair of excerpts one of which answers alone (12 of 12 multi-hop rewrites failed on that in the third smoke run).
+UNFIXABLE = {"claim_too_generic", "claim_restated_in", "judge:answerable_from_single_excerpt", "answerable_from"}
 
 
 def attempts_per_item(cfg: dict, type_: str) -> int:
@@ -84,7 +85,7 @@ class Run:
         if not self.cfg["rewrite_rejected"] or any(r["stage"] in ("accepted", "spare") for r in results):
             return False
         failed = [r for r in results if r["stage"] in REWRITABLE_STAGES]
-        return bool(failed) and all(reason.split(":")[0] not in UNFIXABLE for r in failed for reason in r["reasons"])
+        return bool(failed) and all(reason not in UNFIXABLE and reason.split(":")[0] not in UNFIXABLE for r in failed for reason in r["reasons"])
 
     def _attempt(self, cand: Candidate, messages: list[dict], tag: str) -> tuple[dict, list[dict]]:
         try:
@@ -125,14 +126,24 @@ class Run:
         The judge sees both excerpts at once and has to imagine one away; asked
         separately, the model answers from what is there. Matching its answer to
         the keys, rather than trusting a yes/no, keeps a lucky guess between two
-        values from counting unless it lands on every key.
+        values from counting unless it lands on every key. For a multi-hop item
+        the answer must also be grounded: the words the model says identified
+        the subject must be in the passage and come from the bridge's
+        description. Asked for alpelisib's QALYs as "the comparator the company
+        considers relevant for PIK3CA-mutated disease", the model picked the
+        alpelisib row of a results table from what it knows of alpelisib (nine
+        of the fourth smoke run's candidates); the passage says nothing of the
+        kind, so it does not answer alone.
         """
         keys = [str(k) for k in raw.get("answer_keys") or []]
+        description = set(cand.hint.get("description") or [])
         out = {}
         for u in cand.units:
             r = self.judge.complete_json(build_alone_check(str(raw.get("question") or ""), u, self.corpus, self.cfg), f"alone:{cand.candidate_id}:{u.unit_id}")
-            answer = str(r.get("answer") or "")
-            out[u.unit_id] = {"answer": answer or None, "matches": bool(answer and keys) and all(contains_quote(k, answer) for k in keys)}
+            answer, span = str(r.get("answer") or ""), str(r.get("identified_by") or "")
+            matches = bool(answer and keys) and all(contains_quote(k, answer) for k in keys)
+            grounded = not description or bool(span and contains_quote(span, u.plain) and description & (token_set(span) | idents(span)))
+            out[u.unit_id] = {"answer": answer or None, "identified_by": span or None, "grounded": grounded, "matches": matches and grounded}
         return out
 
     def _check_not_covered(self, cand: Candidate, qds: list[dict]) -> list[dict]:
@@ -277,7 +288,8 @@ class Run:
         if cand.type == "comparative":
             rec["comparison"] = {k: item.get(k) for k in ("measure", "label_a", "value_a", "label_b", "value_b", "higher")}
         if cand.type == "multihop":
-            rec["hops"] = {"a": item.get("hop_a"), "b": item.get("hop_b"), "bridge": cand.hint.get("bridge"), "link": cand.hint.get("link")}
+            rec["hops"] = {"a": item.get("hop_a"), "b": item.get("hop_b"), "bridge": cand.hint.get("bridge"), "link": cand.hint.get("link"),
+                           "mode": cand.hint.get("mode"), "rival": cand.hint.get("rival")}
         if cand.type == "summary":
             rec["keypoints"] = item.get("keypoints")
         if "search" in item:
