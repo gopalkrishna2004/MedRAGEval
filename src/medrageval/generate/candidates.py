@@ -4,7 +4,9 @@ The system decides what each item is about, and the LLM writes it. Every
 selector yields Candidates lazily, in an order that is deterministic for the
 seed. The order is weighted across schema groups, so the schema's weights set
 the topic mix rather than page count, and spread across documents and
-sections.
+sections. The rotation continues from the items earlier types accepted
+(`taken`), so the weights hold over the whole dataset rather than within each
+type.
 
 A fact that cannot be told apart from a sibling (`FactSheet.must_mention` is
 None) is never used: a question about it would have two right answers, as
@@ -12,7 +14,7 @@ TA1063's two "Scenario 1" tables gave the v14 dataset.
 """
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from itertools import combinations
@@ -45,10 +47,12 @@ class Candidate:
 
 
 # ----- ordering -----
-def spread(items: list, key: Callable, rng: Random, cap: int | None = None) -> Iterator:
-    """Seeded shuffle, then round-robin over key buckets (at most cap per bucket)."""
+def spread(items: list, key: Callable, rng: Random, cap: int | None = None, prefer: Callable | None = None) -> Iterator:
+    """Seeded shuffle, then round-robin over key buckets (at most cap per bucket). `prefer` ranks the items to put first (stable)."""
     items = list(items)
     rng.shuffle(items)
+    if prefer is not None:
+        items.sort(key=prefer)
     buckets: dict = defaultdict(list)
     for it in items:
         if cap is None or len(buckets[key(it)]) < cap:
@@ -75,9 +79,18 @@ def interleave(queues: list[list]) -> Iterator:
         queues = nxt
 
 
-def weighted(items: list, group_of: Callable, weights: dict[str, float], rng: Random, key: Callable, cap: int | None) -> Iterator:
+def weighted(items: list, group_of: Callable, weights: dict[str, float], rng: Random, key: Callable, cap: int | None,
+             taken: Counter | None = None, prefer: Callable | None = None) -> Iterator:
     """Interleave schema groups in proportion to their weights (smooth weighted round robin); within a group, `spread` by key.
 
+    `taken` counts the items earlier types accepted per group. The rotation
+    starts as if it had made those picks, so the group furthest below its
+    share comes first and the weights hold across the dataset, not within
+    each type. Started from zero, every type opened with its heaviest group,
+    and a smoke run of two items per type was cost-effectiveness almost
+    throughout. Only groups present here count, so a group that this type
+    cannot supply is neither owed nor charged. Ties fall to a seeded order,
+    not to the alphabet.
     A group that runs out leaves the rotation and the others share its turns,
     so a bundle without, say, an indirect comparison still fills its target.
     Groups of weight 0 are left out.
@@ -85,13 +98,19 @@ def weighted(items: list, group_of: Callable, weights: dict[str, float], rng: Ra
     by_group: dict[str, list] = defaultdict(list)
     for it in items:
         by_group[group_of(it)].append(it)
-    iters = {g: spread(by_group[g], key, rng, cap) for g in sorted(by_group) if weights.get(g, 0) > 0}
-    current = {g: 0.0 for g in iters}
+    iters = {g: spread(by_group[g], key, rng, cap, prefer) for g in sorted(by_group) if weights.get(g, 0) > 0}
+    order = list(iters)
+    rng.shuffle(order)
+    rank = {g: i for i, g in enumerate(order)}
+    taken = taken or Counter()
+    total = sum(weights[g] for g in iters)
+    before = sum(taken.get(g, 0) for g in iters)
+    current = {g: before * weights[g] - total * taken.get(g, 0) for g in iters}
     while current:
         total = sum(weights[g] for g in current)
         for g in current:
             current[g] += weights[g]
-        g = max(sorted(current), key=lambda k: current[k])
+        g = max(current, key=lambda k: (current[k], -rank[k]))
         current[g] -= total
         try:
             yield next(iters[g])
@@ -222,9 +241,10 @@ def _units(sheet: FactSheet, *facts: Fact) -> list[Unit]:
     return list(out.values())
 
 
-def _order(sheet: FactSheet, items: list, cfg: dict, rng: Random, fact_of: Callable = lambda x: x) -> Iterator:
+def _order(sheet: FactSheet, items: list, cfg: dict, rng: Random, fact_of: Callable = lambda x: x,
+           taken: Counter | None = None, prefer: Callable | None = None) -> Iterator:
     return weighted(items, lambda it: fact_of(it).group, sheet.schema.weights(), rng,
-                    lambda it: section_key(sheet.units(fact_of(it))[0]), cfg["limits"]["max_per_section"])
+                    lambda it: section_key(sheet.units(fact_of(it))[0]), cfg["limits"]["max_per_section"], taken, prefer)
 
 
 # ----- selectors -----
@@ -235,13 +255,13 @@ def restates_qualifiers(f: Fact) -> bool:
     return bool(value) and len(value & roots(" ".join(f.qualifiers.values()))) / len(value) >= 0.8
 
 
-def select_factual(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
+def select_factual(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random, taken: Counter | None = None) -> Iterator[Candidate]:
     facts = [f for f in sheet.facts.values() if f.kind == "text" and not f.redacted and usable(f, sheet, cfg) and not restates_qualifiers(f)]
-    for f in _order(sheet, facts, cfg, rng):
+    for f in _order(sheet, facts, cfg, rng, taken=taken):
         yield Candidate("factual", f.group, sheet.units(f), _hint(sheet, f), [f])
 
 
-def select_numerical(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
+def select_numerical(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random, taken: Counter | None = None) -> Iterator[Candidate]:
     items = []
     for f in sorted(sheet.facts.values(), key=lambda f: f.fact_id):
         if f.kind == "number" and not f.redacted and usable(f, sheet, cfg) and f.numeric_values():
@@ -251,13 +271,13 @@ def select_numerical(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -
                 continue
             label, value = rng.choice(values)
             items.append((f, label, value))
-    for f, label, value in _order(sheet, items, cfg, rng, lambda x: x[0]):
+    for f, label, value in _order(sheet, items, cfg, rng, lambda x: x[0], taken):
         numbers = sorted({n.replace(",", "") for n in NUMBER.findall(value)})
         yield Candidate("numerical", f.group, sheet.units(f),
                         _hint(sheet, f, label=label if f.values else None, value=value, numbers=numbers), [f])
 
 
-def select_comparative(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
+def select_comparative(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random, taken: Counter | None = None) -> Iterator[Candidate]:
     """Two values of one measure: two arms of one fact, or two facts of a slot in one document that differ in one qualifier."""
     threshold = cfg["comparative"]["min_relative_difference"]
     items = []
@@ -286,7 +306,7 @@ def select_comparative(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random)
             la, lb = a.qualifiers[k], b.qualifiers[k]
             items.append(([a, b], {"labels": [la, lb], "values": [a.value, b.value], "measure": sheet.describe(a), "mode": "facts",
                                    "differ_by": k, "must_mention": without((sheet.must_mention(a) or []) + (sheet.must_mention(b) or []), la, lb)}))
-    for facts, hint in _order(sheet, items, cfg, rng, lambda x: x[0][0]):
+    for facts, hint in _order(sheet, items, cfg, rng, lambda x: x[0][0], taken):
         yield Candidate("comparative", hint["mode"], _units(sheet, *facts), {"group": facts[0].group, "slot": facts[0].slot, **hint}, facts)
 
 
@@ -374,7 +394,7 @@ def description_tokens(sheet: FactSheet, a: Fact, link) -> set[str]:
     return words | (idents(a.value) - idents(f"{label} {corpus.topic}"))
 
 
-def select_multihop(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
+def select_multihop(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random, taken: Counter | None = None) -> Iterator[Candidate]:
     """A schema link: fact A identifies what fact B is about; the question reaches B through A's description.
 
     A pair is kept only when B's passage holds a rival the description rules
@@ -425,7 +445,7 @@ def select_multihop(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) ->
     for tier in ("unit", "section"):
         by_link = tiers[tier]
         # round robin over links: the second smoke run took all four items through one link
-        orders = [list(_order(sheet, by_link[k], cfg, rng, lambda x: x[1])) for k in sorted(by_link)]
+        orders = [list(_order(sheet, by_link[k], cfg, rng, lambda x: x[1], taken)) for k in sorted(by_link)]
         for a, b, link, bridge, label, value, rival, desc in interleave(orders):
             if (b.fact_id, label) in asked:   # one question per value: two descriptions of alpelisib asked the same cost twice
                 continue
@@ -445,14 +465,17 @@ def speaker_for(party: str, cfg: dict) -> str | None:
     return None
 
 
-def select_attribution(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
+def select_attribution(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random, taken: Counter | None = None) -> Iterator[Candidate]:
     """Who holds a position: a party's side of a disputed point, or a stakeholder's view in its own document.
 
-    Disputed positions come first: telling two parties apart is the test,
-    guessing the speaker from the topic is not.
+    Within a group, disputed positions come first: telling two parties apart
+    is the test, guessing the speaker from the topic is not. Across groups
+    the weighted rotation decides, as for every type: taken first outright,
+    disputed positions filled the whole type from the key issues, which in an
+    appraisal are mostly points of economic modelling.
     """
     ac = cfg["attribution"]
-    contested, rest = [], []
+    items = []
     for f in sorted(sheet.facts.values(), key=lambda f: f.fact_id):
         if f.redacted or not sheet.askable(f) or not all(native(u, cfg) for u in sheet.units(f)):
             continue
@@ -461,14 +484,13 @@ def select_attribution(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random)
                 speaker = speaker_for(party, cfg)
                 others = [p for k, p in f.positions.items() if k != party]
                 if speaker and not any(jaccard_tokens(pos, o) >= 0.5 for o in others):   # parties that agree are no attribution item
-                    (contested if others else rest).append((f, "stance", {"speaker": speaker, "claim": pos, "contested": bool(others)}))
+                    items.append((f, "stance", {"speaker": speaker, "claim": pos, "contested": bool(others)}))
         elif f.kind == "text" and f.value:
             speaker = ac["role_speakers"].get(f.role)
             if speaker and speaker in ac["own_voice_only"]:
-                rest.append((f, "form", {"speaker": speaker, "claim": f.value, "speaker_name": f.speaker}))
-    for items in (contested, rest):
-        for f, sub, hint in _order(sheet, items, cfg, rng, lambda x: x[0]):
-            yield Candidate("attribution", sub, sheet.units(f), {"group": f.group, "slot": f.slot, **hint}, [f])
+                items.append((f, "form", {"speaker": speaker, "claim": f.value, "speaker_name": f.speaker, "contested": False}))
+    for f, sub, hint in _order(sheet, items, cfg, rng, lambda x: x[0], taken, prefer=lambda x: not x[2]["contested"]):
+        yield Candidate("attribution", sub, sheet.units(f), {"group": f.group, "slot": f.slot, **hint}, [f])
 
 
 # "B.3.11.3. ", "3.2.5.4 ", "A 13. Priority question: ", "b) ", "iv. ": each alternative consumes something, or the first would match nothing and win
@@ -489,7 +511,7 @@ def _by_theme(sheet: FactSheet) -> dict[tuple[str, str, str], list[Fact]]:
     return out
 
 
-def select_summary(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
+def select_summary(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random, taken: Counter | None = None) -> Iterator[Candidate]:
     """Several facts of one group in one section of one document: a question whose full answer covers them all.
 
     The section is the theme. Drawn from a whole document, the third smoke
@@ -516,14 +538,14 @@ def select_summary(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> 
                     queues.remove(q)
         picked.sort(key=lambda f: corpus.position[f.unit_ids[0]])
         items.append(picked)
-    for facts in _order(sheet, items, cfg, rng, lambda x: x[0]):
+    for facts in _order(sheet, items, cfg, rng, lambda x: x[0], taken):
         f = facts[0]
         hint = {"group": f.group, "group_describe": sheet.schema.groups[f.group].describe, "doc": sheet.doc_label(f), "speaker_name": f.speaker,
                 "theme": heading(sheet.units(f)[0]), "section_path": sheet.units(f)[0].section_path}
         yield Candidate("summary", f.group, _units(sheet, *facts), hint, facts)
 
 
-SELECTORS: dict[str, Callable[[Corpus, FactSheet, dict, Random], Iterator[Candidate]]] = {
+SELECTORS: dict[str, Callable[..., Iterator[Candidate]]] = {
     "factual": select_factual,
     "numerical": select_numerical,
     "comparative": select_comparative,

@@ -96,6 +96,9 @@ def test_end_to_end_writes_dataset_rejects_and_report(tmp_path):
     assert report["items"] == 4 and report["per_type"]["factual"]["accepted"] == 2
     assert report["per_type"]["unanswerable"]["subtypes"] == {"withheld": 2}
     assert report["facts"]["facts"] == 20 and report["items_per_group"] and set(report["items_per_document"]) >= {"d02"}
+    mix = report["group_mix"]   # answerable items per group against the weights' share of the answerable targets
+    assert sum(m["answerable"] for m in mix.values()) == 2 and abs(sum(m["target"] for m in mix.values()) - 2) < 0.5
+    assert all(m["items"] >= m["answerable"] for m in mix.values()) and sum(m["items"] for m in mix.values()) == 4
     assert sum(1 for m, t in llm.calls if t.startswith("withhold:")) == 2      # one screening call per item, every candidate passage in it
 
 
@@ -304,3 +307,21 @@ def test_judge_sees_the_context_the_writer_saw():
     item = {"question": "q", "answer": "a", "answer_keys": ["7.3 months"], "quotes": [{"unit_id": "d02-e0003", "quote": "Median PFS (months) | 7.3 | 3.1"}]}
     user = build_judge(item, c, corpus, config())[1]["content"]
     assert "Context before [d02-e0003]:\nProgression-free survival results by investigator assessment" in user
+
+
+def test_each_type_continues_the_group_rotation_from_earlier_types(tmp_path, monkeypatch):
+    from collections import Counter
+
+    from medrageval.generate import generate as gen
+    seen = []
+    real = gen.SELECTORS["numerical"]
+
+    def recording(corpus, sheet, cfg, rng, taken=None):
+        seen.append(Counter(taken))
+        return real(corpus, sheet, cfg, rng, taken)
+    monkeypatch.setitem(gen.SELECTORS, "numerical", recording)
+    interim = write_factsheet(tmp_path / "interim")
+    llm = FakeLLM(scripted)
+    generate_dataset(interim, tmp_path / "out", config(), llm, llm, targets={"factual": 2, "numerical": 1}, types=["factual", "numerical"])
+    items = [json.loads(l) for l in (tmp_path / "out" / "dataset.jsonl").open()]
+    assert seen == [Counter(i["group"] for i in items if i["type"] == "factual")]   # the numerical selector started from the factual items' groups

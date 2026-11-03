@@ -86,7 +86,9 @@ generate:
 
   # Items per type; the sum is the dataset size (146). Every item is built
   # from facts of the fact sheet (`medrageval extract`), drawn across schema
-  # groups in proportion to their weights.
+  # groups in proportion to their weights, held over the whole dataset: each
+  # type continues the group rotation from what earlier types accepted, and
+  # the report's group_mix shows the result against the weights' targets.
   # Multi-hop is set by what a bundle offers: TA1063 has 20 schema bridges,
   # document2 has 12.
   # No cross-document type: in TA1063 the EAG's figures differ from the

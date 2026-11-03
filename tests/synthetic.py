@@ -20,10 +20,14 @@ TABLE7 = (
     "<tr><td>Hazard ratio (95% CI)</td><td>0.50 (0.38, 0.65)</td><td></td></tr></table>"
 )
 
+# One answer on the technology's place, then answers on other matters of the same length: a form whose every row restated
+# the first answer left an item asked with that row withheld no passage that did not hold the answer.
 FORM_ROWS = [("1. Your name", "Charlotte Moss"), ("2. Name of organisation", "Royal Marsden NHS Foundation Trust")] + [
     (f"{n}. Question {n} about the technology and current practice?",
      f"Answer {n}: capivasertib plus fulvestrant would be used after an aromatase inhibitor in patients whose disease has a PI3K/AKT pathway alteration, "
-     "which is a clear unmet need because current options such as everolimus plus exemestane are poorly tolerated in frail patients.")
+     "which is a clear unmet need because current options such as everolimus plus exemestane are poorly tolerated in frail patients." if n < 6 else
+     f"Answer {n}: everolimus plus exemestane is the usual option today and is poorly tolerated in frail patients, so a better tolerated "
+     "treatment after an aromatase inhibitor would meet a clear unmet need in this group, as would fewer hospital visits for monitoring.")
     for n in range(3, 40)]
 FORM = "<table>" + "".join(f"<tr><td>{q}</td><td>{a}</td></tr>" for q, a in FORM_ROWS) + "</table>"
 

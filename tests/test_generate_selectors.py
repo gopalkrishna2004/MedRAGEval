@@ -107,12 +107,21 @@ def test_summary_groups_facts_of_one_section(sheet):
 
 def test_weighted_order_follows_group_weights():
     items = [("a", i) for i in range(30)] + [("b", i) for i in range(30)] + [("c", i) for i in range(2)]
-    order = list(weighted(items, lambda x: x[0], {"a": 0.6, "b": 0.3, "c": 0.1, }, Random(0), lambda x: x, None))
+    w = {"a": 0.6, "b": 0.3, "c": 0.1}
+    order = list(weighted(items, lambda x: x[0], w, Random(0), lambda x: x, None))
     first = Counter(g for g, _ in order[:10])
     assert first["a"] == 6 and first["b"] == 3 and first["c"] == 1
     assert len(order) == 62   # groups that run out drop out; nothing is lost
     assert list(weighted(items, lambda x: x[0], {"a": 1, "b": 0}, Random(0), lambda x: x, None)) == \
         list(weighted([i for i in items if i[0] == "a"], lambda x: x[0], {"a": 1}, Random(0), lambda x: x, None))
+    # the rotation continues from what earlier types accepted: a has had its six, so b and c go first until a is owed one
+    cont = [g for g, _ in weighted(items, lambda x: x[0], w, Random(0), lambda x: x, None, taken=Counter({"a": 6}))]
+    assert cont[:5] == ["b", "b", "c", "b", "a"]
+    # items of a group this selector has none of are neither owed nor charged
+    assert [g for g, _ in weighted(items, lambda x: x[0], w, Random(0), lambda x: x, None, taken=Counter({"z": 40}))][:10] == [g for g, _ in order[:10]]
+    # preferred items come first within their group, whatever the shuffle
+    pref = list(weighted([("a", i) for i in range(6)], lambda x: x[0], {"a": 1}, Random(3), lambda x: x, None, prefer=lambda x: x[1] % 2))
+    assert [i % 2 for _, i in pref] == [0, 0, 0, 1, 1, 1]
 
 
 def test_selection_is_reproducible_and_counted(sheet):

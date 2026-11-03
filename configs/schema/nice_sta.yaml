@@ -8,7 +8,13 @@
 # IgA nephropathy) alike.
 #
 # Per group:
-#   weight    share of the dataset drawn from the group (normalised over groups)
+#   weight    share of the dataset drawn from the group (normalised over groups),
+#             held over the whole dataset: each item type continues the group
+#             rotation from what earlier types accepted. The clinical groups
+#             (trial design, efficacy, safety, indirect comparisons) carry just
+#             over half. An appraisal's pages are mostly economics, and with the
+#             economic groups and the key issues (nearly all modelling disputes)
+#             at 0.38 the dataset read as a cost-effectiveness quiz.
 #   roles     document roles to read (generate.roles in default.yaml)
 #   sections  regexes over a unit's section path; matching units are read first
 #   keywords  BM25 query that adds the best-matching units of the document
@@ -52,7 +58,7 @@ groups:
         qualifiers: [technology, line_of_therapy]
 
   trial_design:
-    weight: 0.10
+    weight: 0.12
     describe: design and conduct of the trials that provide the clinical evidence
     roles: [company_submission, eag_report, clarification]
     sections: ['methodology', 'statistical analysis', 'critical appraisal', 'list of relevant', 'critique of trials', 'study design', 'baseline', 'clinical effectiveness evidence', 'participant']
@@ -82,11 +88,11 @@ groups:
         qualifiers: [trial, characteristic, population]
 
   efficacy:
-    weight: 0.20
+    weight: 0.24
     describe: clinical effectiveness results of the trials
     roles: [company_submission, eag_report, clarification]
     sections: ['(?<!cost[- ])effectiveness results', 'subgroup analys', 'efficacy', '\bendpoint', 'survival', '\bresponse\b', 'summary of phase', 'results of']
-    keywords: [median, hazard ratio, 95% CI, response rate, survival, change from baseline, odds ratio, events, proteinuria, progression]
+    keywords: [median, hazard ratio, 95% CI, response rate, survival, change from baseline, odds ratio, events, proteinuria, progression, subgroup, consistent, immature]
     slots:
       endpoint_result:
         kind: number
@@ -97,9 +103,13 @@ groups:
         kind: number
         describe: the relative treatment effect between trial arms (hazard ratio, odds ratio or difference) with its confidence interval
         qualifiers: [trial, endpoint, comparison, population, data_cut]
+      finding:
+        kind: text
+        describe: a conclusion the document draws from an endpoint's results (statistical significance, consistency across subgroups, maturity of the data, clinical meaningfulness)
+        qualifiers: [trial, endpoint, population]
 
   safety:
-    weight: 0.08
+    weight: 0.14
     describe: adverse events and tolerability
     roles: [company_submission, eag_report, clarification]
     sections: ['adverse', 'safety', 'tolerability']
@@ -116,7 +126,7 @@ groups:
         qualifiers: [trial]
 
   indirect_comparison:
-    weight: 0.08
+    weight: 0.06
     describe: indirect comparisons with treatments the trials did not include
     roles: [company_submission, eag_report, clarification]
     sections: ['indirect', 'network meta', 'meta-analysis', 'matching-adjusted', '\bITC\b', '\bNMA\b', '\bMAIC\b', 'mixed treatment']
@@ -132,7 +142,7 @@ groups:
         qualifiers: [analysis, endpoint, comparator, timepoint, model]
 
   economic_model:
-    weight: 0.10
+    weight: 0.08
     describe: the structure and inputs of the economic model
     roles: [company_submission, eag_report, clarification]
     sections: ['economic analysis', 'model structure', 'clinical parameters', 'valuation of health effects', 'utilit', 'resource use', '\bcosts?\b', 'treatment effectiveness', 'transition probabilit', 'mortality', 'discontinuation', 'critique of company', 'base-case analysis inputs', 'extrapolat']
@@ -156,7 +166,7 @@ groups:
         qualifiers: [owner, item, technology]
 
   cost_effectiveness:
-    weight: 0.14
+    weight: 0.10
     describe: cost-effectiveness results, scenarios and severity
     roles: [company_submission, eag_report, clarification]
     sections: ['base[- ]case results', 'cost[- ]effectiveness results', 'sensitivity', 'scenario', 'uncertainty', 'severity', 'additional analyses', 'preferred', 'impact on the ICER', 'model outcomes', 'corrected base case', '(?:^|\| )results\b']
@@ -182,7 +192,7 @@ groups:
         qualifiers: [owner]
 
   key_issues:
-    weight: 0.14
+    weight: 0.10
     describe: issues on which the company and the External Assessment Group disagree
     roles: [eag_report, factual_accuracy, clarification]
     sections: ['key issue', '\bissue \d', 'summary of the EAG', 'preferred assumptions', 'conclusions', 'EAG comment', 'company response']

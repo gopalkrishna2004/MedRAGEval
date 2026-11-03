@@ -60,6 +60,7 @@ class Run:
         self.stats: dict[str, dict] = defaultdict(lambda: {"attempted": 0, "accepted": 0, "rejected": Counter(), "subtypes": Counter(),
                                                            "rewrites": 0, "rewrites_accepted": 0, "first_reasons": Counter()})
         self.speakers = Counter()
+        self.taken: Counter = Counter()   # accepted answerable items per schema group; each type's selector continues the group rotation from it
         self.failures = 0
         self.dataset = (out_dir / "dataset.jsonl").open("w")
         self.rejects = (out_dir / "rejects.jsonl").open("w")
@@ -202,7 +203,7 @@ class Run:
     def run_type(self, selector: str, type_: str, target: int, candidates: Iterator[Candidate] | None = None) -> None:
         cfg = self.cfg
         st = self.stats[type_]
-        it = candidates if candidates is not None else SELECTORS[selector](self.corpus, self.sheet, cfg, Random(f"{self.seed}:{selector}"))
+        it = candidates if candidates is not None else SELECTORS[selector](self.corpus, self.sheet, cfg, Random(f"{self.seed}:{selector}"), taken=self.taken)
         budget = target * attempts_per_item(cfg, type_)
         accepted_here, attempts = 0, 0
         quota = math.ceil(cfg["attribution"]["max_share_per_speaker"] * target) if type_ == "attribution" else None
@@ -249,6 +250,8 @@ class Run:
                         st["subtypes"][res["cand"].subtype or "-"] += 1
                         self.accepted.append(rec)
                         self.questions.append(rec["question"])
+                        if type_ != "unanswerable":
+                            self.taken[rec["group"]] += 1
                         if type_ == "attribution":
                             self.speakers[res["cand"].hint.get("speaker")] += 1
                         self.dataset.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -363,6 +366,12 @@ def build_report(run: Run, targets: dict, types: list[str], elapsed: float, erro
                     "rewrites": {"tried": run.stats[t]["rewrites"], "accepted": run.stats[t]["rewrites_accepted"],
                                  "first_reasons": dict(run.stats[t]["first_reasons"])}} for t in types}
     warnings = [f"{t}: {s['accepted']}/{s['target']} accepted" for t, s in per_type.items() if s["accepted"] < s["target"]]
+    # the topic mix against the schema's weights: answerable items per group, and the share the weights ask for
+    answerable = sum(targets[t] for t in types if t != "unanswerable")
+    weights = run.sheet.schema.weights()
+    scale = answerable / max(sum(weights.values()), 1e-9)
+    group_mix = {g: {"target": round(w * scale, 1), "answerable": run.taken.get(g, 0), "items": sum(1 for r in run.accepted if r.get("group") == g)}
+                 for g, w in sorted(weights.items()) if w > 0}
     if error:
         warnings.append(f"aborted: {error}")
     return {
@@ -373,6 +382,7 @@ def build_report(run: Run, targets: dict, types: list[str], elapsed: float, erro
         "per_type": per_type,
         "items_per_document": dict(Counter(e["doc_id"] for r in run.accepted for e in (r["evidence"] or (r.get("withheld") or {}).get("evidence") or []))),
         "items_per_group": dict(Counter(r.get("group") or "-" for r in run.accepted)),
+        "group_mix": group_mix,
         "facts": run.sheet.stats(),
         "speakers": dict(run.speakers),
         "corpus": run.corpus.stats(),
@@ -389,6 +399,8 @@ def print_report(report: dict) -> None:
         rw = s["rewrites"]
         print(f"  {t:12s} {s['accepted']:3d}/{s['target']:<3d} of {s['attempted']:3d} tried  {dict(s['subtypes'])}  "
               f"rewrites {rw['accepted']}/{rw['tried']} accepted  rejected: {rej}")
+    if mix := report.get("group_mix"):
+        print("  groups, answerable items/target: " + ", ".join(f"{g} {m['answerable']}/{m['target']}" for g, m in mix.items()))
     g, j = report["llm"]["generator"], report["llm"]["judge"]
     print(f"  LLM calls: {g.get('calls', 0) + j.get('calls', 0)} ({g.get('cache_hits', 0) + j.get('cache_hits', 0)} cached), "
           f"tokens in/out: {g.get('prompt_tokens', 0) + j.get('prompt_tokens', 0)}/{g.get('completion_tokens', 0) + j.get('completion_tokens', 0)}")

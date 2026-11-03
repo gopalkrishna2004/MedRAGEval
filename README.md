@@ -126,7 +126,11 @@ dataset; `--no-cache` disables that.
 
 Seven item types, each built from facts. Selectors draw across schema groups
 in proportion to their weights, so the topic mix follows what matters rather
-than page count.
+than page count. The weights hold over the whole dataset: each type continues
+the group rotation from what earlier types accepted, so a group one type
+cannot supply (multi-hop links mostly reach cost-effectiveness results) is
+made up by the others. The report's `group_mix` lists answerable items per
+group against the weights' targets.
 
 | Type | Built from | Checks before the LLM judge |
 |---|---|---|
