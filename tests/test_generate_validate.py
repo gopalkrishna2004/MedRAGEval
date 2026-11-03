@@ -161,6 +161,30 @@ def test_crossdoc_needs_both_documents():
     assert "quotes_from_one_document" in validate({**it, "quotes": it["quotes"][:1]}, c, CORPUS, CFG, []).reasons
 
 
+def test_crossdoc_figures_must_differ_enough():
+    c = selected("crossdoc", "d02-cost_effectiveness.icer-001")
+    quotes = [("d02-e0008", "The company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane was £24,567 per QALY gained"),
+              ("d03-e0030", "The EAG's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane is £31,200 per QALY gained")]
+    it = item("How does the EAG's base-case cost-effectiveness estimate against everolimus plus exemestane differ from the one in the company submission?",
+              "The company estimated £24,567 per QALY gained; the EAG £24,900.", ["£24,567", "£24,900"], quotes)
+    assert any(r.startswith("crossdoc_difference_trivial") for r in validate(it, c, CORPUS, CFG, []).reasons)
+
+
+def test_answer_in_the_question_is_caught_in_any_word_form():
+    c = cand("factual", "d02-trial_design.design-001", must_mention=[["Exclusion of subsequent treatment costs"]])
+    it = item("What does the company's \"Exclusion of subsequent treatment costs\" scenario change from the base case for capivasertib?",
+              "It excludes subsequent treatment costs.", ["Exclude subsequent treatment costs"], [DESIGN_QUOTE])
+    assert any(r.startswith("answer_key_in_question") for r in validate(it, c, CORPUS, CFG, []).reasons)
+    assert "answer_key_in_question:double-blind" not in validate(GOOD_FACTUAL, c, CORPUS, CFG, []).reasons   # "blind" alone is not the key
+
+
+def test_spelled_out_shorthand_names_the_discriminator():
+    c = cand("factual", "d02-trial_design.design-001", must_mention=[["EAG base-case (Post-FAC)"]])
+    spelled = {**GOOD_FACTUAL, "question": "In the EAG base case after the factual accuracy check, how was the pivotal CAPItello-291 study of capivasertib designed?"}
+    assert validate(spelled, c, CORPUS, CFG, []).ok
+    assert "question_lacks_discriminator:EAG base-case (Post-FAC)" in validate(GOOD_FACTUAL, c, CORPUS, CFG, []).reasons
+
+
 def test_attribution_answer_is_the_named_respondent():
     c = selected("attribution", "d04-stakeholder_views.view-001")
     quote = "capivasertib plus fulvestrant would be used after an aromatase inhibitor in patients whose disease has a PI3K/AKT pathway alteration"

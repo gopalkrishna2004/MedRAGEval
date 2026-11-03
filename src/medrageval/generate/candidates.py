@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from itertools import combinations
 from random import Random
 
-from medrageval.facts.factsheet import NUMBER, Fact, FactSheet, content_tokens, jaccard_tokens
+from medrageval.facts.factsheet import NUMBER, Fact, FactSheet, content_tokens, jaccard_tokens, roots
 from medrageval.generate.corpus import REDACTED, Corpus, Unit, tokenize
 from medrageval.text import normalize
 
@@ -242,8 +242,15 @@ def _order(sheet: FactSheet, items: list, cfg: dict, rng: Random, fact_of: Calla
 
 
 # ----- selectors -----
+def restates_qualifiers(f: Fact) -> bool:
+    """The value only repeats the fact's qualifiers: the "Exclusion of subsequent treatment costs" scenario "excludes subsequent
+    treatment costs". A question has to name the qualifiers, so it would carry its own answer (v17's factual-001)."""
+    value = roots(f.value)
+    return bool(value) and len(value & roots(" ".join(f.qualifiers.values()))) / len(value) >= 0.8
+
+
 def select_factual(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
-    facts = [f for f in sheet.facts.values() if f.kind == "text" and not f.redacted and usable(f, sheet, cfg)]
+    facts = [f for f in sheet.facts.values() if f.kind == "text" and not f.redacted and usable(f, sheet, cfg) and not restates_qualifiers(f)]
     for f in _order(sheet, facts, cfg, rng):
         yield Candidate("factual", f.group, sheet.units(f), _hint(sheet, f), [f])
 
@@ -252,7 +259,11 @@ def select_numerical(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -
     items = []
     for f in sorted(sheet.facts.values(), key=lambda f: f.fact_id):
         if f.kind == "number" and not f.redacted and usable(f, sheet, cfg) and f.numeric_values():
-            label, value = rng.choice(f.numeric_values())
+            # not a count of one or two events (v17 asked for the rate of non-cardiac chest pain SAEs: 1 (1%))
+            values = [(l, v) for l, v in f.numeric_values() if not small_count(v, cfg["comparative"]["min_count"])]
+            if not values:
+                continue
+            label, value = rng.choice(values)
             items.append((f, label, value))
     for f, label, value in _order(sheet, items, cfg, rng, lambda x: x[0]):
         numbers = sorted({n.replace(",", "") for n in NUMBER.findall(value)})
@@ -462,13 +473,34 @@ def select_crossdoc(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) ->
                 seen.add(pair)
                 if f.kind == "number" and not (f.numbers() - g.numbers() and g.numbers() - f.numbers()):
                     continue   # one document only adds figures to the other's: they agree on what both report
-                if f.values and g.values and not any(same_arm(a, b) for a in f.values for b in g.values):
-                    continue   # different arms: alpelisib's diarrhoea count against capivasertib's is no disagreement
+                if f.kind == "number" and not differ_enough(f, g, cfg):
+                    continue   # 1.78 against 1.79 QALYs (v17's crossdoc-001) is no disagreement either
                 docs = [mention.get(f.role, sheet.doc_label(f)), mention.get(g.role, sheet.doc_label(g))]
                 sets = without((sheet.must_mention(f) or []) + (sheet.must_mention(g) or []), *docs)
                 items.append((f, g, {"docs": docs, "must_mention": sets}))
+    used_facts, used_topics = set(), []
     for f, g, hint in _order(sheet, items, cfg, rng, lambda x: x[0]):
+        # one item per fact and per issue: v17 asked twice about alpelisib's QALYs and twice about the proportional hazards assumption
+        topic = f.qualifiers.get("topic", "") if f.kind == "stance" else ""
+        if {f.fact_id, g.fact_id} & used_facts or any(jaccard_tokens(topic, t) >= 0.4 for t in used_topics if topic):
+            continue
+        used_facts |= {f.fact_id, g.fact_id}
+        if topic:
+            used_topics.append(topic)
         yield Candidate("crossdoc", f.group, _units(sheet, f, g), {"group": f.group, "slot": f.slot, **hint}, [f, g])
+
+
+def differ_enough(f: Fact, g: Fact, cfg: dict) -> bool:
+    """Two documents' figures for the same arm differ by the comparative threshold and are not both small counts.
+    Different arms (alpelisib's diarrhoea count against capivasertib's) are no disagreement at all."""
+    threshold = cfg["crossdoc"]["min_relative_difference"]
+    if f.values and g.values:
+        pairs = [(va, vb) for a, va in f.values.items() for b, vb in g.values.items() if same_arm(a, b)]
+    elif not f.values and not g.values:
+        pairs = [(f.value or "", g.value or "")]
+    else:
+        pairs = []
+    return any(meaningful(first_number(va), first_number(vb), threshold) and not too_small(va, vb, cfg) for va, vb in pairs)
 
 
 def speaker_for(party: str, cfg: dict) -> str | None:

@@ -44,6 +44,16 @@ def _stem(t: str) -> str:
     return t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith("ss") else t
 
 
+def root(t: str) -> str:
+    """A word's first five letters once its plural is stripped: "exclusion" and "excludes" are one root, as are "modelled" and "modelling"."""
+    t = _stem(t)
+    return t[:5] if len(t) > 5 and t.isalpha() else t
+
+
+def roots(text: str | None) -> set[str]:
+    return {root(t) for t in content_tokens(text)}
+
+
 def spells_acronym(acronym: str, text: str) -> bool:
     """"OS" is named by "overall survival", "PFS" by "progression-free survival": consecutive words' initials."""
     a = acronym.lower()

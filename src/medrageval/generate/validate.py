@@ -17,7 +17,7 @@ rewrite, back to the generator.
 import re
 from dataclasses import dataclass, field
 
-from medrageval.facts.factsheet import NUMBER, content_tokens, numbers_in, spells_acronym, term_mentioned
+from medrageval.facts.factsheet import NUMBER, content_tokens, numbers_in, roots, spells_acronym, term_mentioned
 from medrageval.generate.candidates import CONNECTORS, Candidate, first_number, garbled, meaningful, too_small
 from medrageval.generate.corpus import REDACTED, Corpus, tokenize
 from medrageval.text import contains_quote, normalize
@@ -76,6 +76,22 @@ def _mentions(label: str, text: str) -> bool:
     words = [t for t in tokenize(label) if len(t) >= 4 or t.replace(".", "").isdigit()]
     tt = token_set(text)
     return any(w in tt for w in words) if words else contains_quote(label, text)
+
+
+def key_in_question(key: str, question: str) -> bool:
+    """The question carries the key, verbatim or in other word forms: "Exclusion of subsequent treatment costs" gives away
+    "Exclude subsequent treatment costs". A single-word key counts only verbatim ("costs" is in many questions)."""
+    if contains_quote(key, question):
+        return True
+    k = roots(key)
+    return len(k) >= 2 and k <= roots(question)
+
+
+def expand(term: str, cfg: dict) -> str:
+    """Document shorthand spelled out as the writer is asked to: "(Post-FAC)" is "after the factual accuracy check"."""
+    for short, long in cfg["validate"].get("shorthand", {}).items():
+        term = re.sub(rf"\(?\b{re.escape(short)}\b\)?", long, term, flags=re.I)
+    return term
 
 
 def _aliases(speaker: str, cfg: dict) -> list[str]:
@@ -153,7 +169,8 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
     support = joined + "\n" + "\n".join(f.value_text() for f in cand.facts)
 
     for terms in cand.hint.get("must_mention") or []:
-        v.check("question_disambiguates", any(term_mentioned(term, q) for term in terms), f"question_lacks_discriminator:{terms[0][:60]}")
+        v.check("question_disambiguates", any(term_mentioned(term, q) or term_mentioned(expand(term, cfg), q) for term in terms),
+                f"question_lacks_discriminator:{terms[0][:60]}")
 
     if t == "unanswerable":
         v.check("answer_null", not item.get("answer"), "unanswerable_has_answer")
@@ -181,7 +198,7 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
             v.check("answer_key_specific", not re.fullmatch(r"[<>≤≥]?\d{1,2}", k) and normalize(k) not in generic, f"answer_key_generic:{k[:40]}")
             v.check("answer_key_unlabelled", not re.match(r"^[A-Za-z][^:]{2,60}:\s*\S", k), f"answer_key_has_label:{k[:40]}")
         if not any(normalize(k) in lb or lb in normalize(k) for lb in labels if lb):   # a comparative question has to name both compared things
-            v.check("answer_key_not_in_question", not contains_quote(k, q), f"answer_key_in_question:{k[:40]}")
+            v.check("answer_key_not_in_question", not key_in_question(k, q), f"answer_key_in_question:{k[:40]}")
     v.check("keys_clean", not any(garbled(k) or REDACTED in k for k in keys), "answer_key_garbled")
     for k in keys:   # words, not tokens: "NHS reference costs 2021-22" is four
         v.check("key_length", len(k.split()) <= vc["max_key_tokens"], f"answer_key_too_long:{k[:40]}")
@@ -210,6 +227,10 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
         v.check("two_docs_quoted", len({u.doc_id for u in quoted_units}) >= 2, "quotes_from_one_document")
         if len(found) >= 2:
             v.check("quotes_not_copies", jaccard(found[0], found[1]) < cfg["cross_doc_max_overlap"], "quotes_are_copies")
+        nums = [first_number(k) for k in keys]
+        if len(keys) == 2 and all(n is not None for n in nums):   # two figures: the documents must disagree by a margin worth asking about
+            v.check("difference_meaningful", meaningful(nums[0], nums[1], cfg["crossdoc"]["min_relative_difference"]) and not too_small(keys[0], keys[1], cfg),
+                    f"crossdoc_difference_trivial:{keys[0]} vs {keys[1]}")
 
     elif t == "attribution":
         speaker = cand.hint.get("speaker", "")

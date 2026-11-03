@@ -145,6 +145,28 @@ def test_identifiers_must_agree_across_a_bridge():
     assert not link_match("investigator-assessed progression-free survival (PFS)", "PFS2 (second progression-free survival)")
 
 
+def test_trivial_facts_and_values_are_not_asked(sheet):
+    import copy
+
+    from medrageval.facts.factsheet import FactSheet
+    from synthetic import facts_config, fact_list, schema
+    corpus, _ = sheet
+    facts = fact_list(corpus)
+    rate = copy.deepcopy(next(f for f in facts if f.fact_id == "d02-efficacy.endpoint_result-002"))
+    rate.fact_id, rate.values = "d02-efficacy.endpoint_result-009", {"capivasertib plus fulvestrant": "1 (1%)", "placebo plus fulvestrant": "2 (3%)"}
+    rate.qualifiers = {**rate.qualifiers, "measure": "pleural effusion events"}
+    named = copy.deepcopy(next(f for f in facts if f.fact_id == "d02-trial_design.design-001"))
+    named.fact_id, named.qualifiers, named.value = "d02-cost_effectiveness.scenario_definition-001", {"owner": "company", "scenario": "Exclusion of subsequent treatment costs"}, "Excludes subsequent treatment costs."
+    named.slot = "cost_effectiveness.scenario_definition"
+    eag = copy.deepcopy(next(f for f in facts if f.fact_id == "d03-cost_effectiveness.icer-001"))
+    eag.values = {"everolimus plus exemestane": "£24,900 per QALY gained"}   # 1.4% from the company's £24,567
+    s = FactSheet(facts + [rate, named], schema(), corpus, CFG, facts_config())
+    assert "d02-efficacy.endpoint_result-009" not in {c.facts[0].fact_id for c in SELECTORS["numerical"](corpus, s, CFG, Random(1))}   # counts of 1 and 2
+    assert "d02-cost_effectiveness.scenario_definition-001" not in {c.facts[0].fact_id for c in SELECTORS["factual"](corpus, s, CFG, Random(1))}   # its name is its value
+    s2 = FactSheet([eag if f.fact_id == eag.fact_id else f for f in facts], schema(), corpus, CFG, facts_config())
+    assert list(SELECTORS["crossdoc"](corpus, s2, CFG, Random(1))) == []   # £24,567 against £24,900 is no disagreement
+
+
 def test_comparisons_only_across_comparable_qualifiers(sheet):
     import copy
 

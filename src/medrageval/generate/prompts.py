@@ -15,6 +15,7 @@ bundle.
 """
 
 import json
+import re
 
 from medrageval.facts.factsheet import Fact, FactSheet
 from medrageval.generate.candidates import Candidate
@@ -116,13 +117,15 @@ def fact_lines(f: Fact, sheet: FactSheet) -> str:
     return "\n".join(lines)
 
 
-def must_mention_text(sets: list[list[str]]) -> str:
+def must_mention_text(sets: list[list[str]], cfg: dict) -> str:
     if not sets:
         return ""
+    shorthand = {k: v for k, v in cfg["validate"].get("shorthand", {}).items() if any(re.search(rf"\b{re.escape(k)}\b", t, re.I) for s in sets for t in s)}
+    spell = ("; spell out document shorthand: " + ", ".join(f"\"{k}\" is \"{v}\"" for k, v in shorthand.items())) if shorthand else ""
     return ("\nThe bundle reports this for other cases too, so the question must name "
             + " and ".join("(" + " or ".join(f"\"{t}\"" for t in s) + ")" for s in sets)
             + ", in these or equivalent words. Work them into the sentence as a reader would say them: expand table shorthand "
-            "(\"Capi + ful\" is capivasertib plus fulvestrant) and never open with a bare label (\"For Female sex, ...\").")
+            f"(\"Capi + ful\" is capivasertib plus fulvestrant){spell}, and never open with a bare label (\"For Female sex, ...\").")
 
 
 def _context(u: Unit, corpus: Corpus, cfg: dict) -> str:
@@ -168,7 +171,7 @@ def build_generation(cand: Candidate, corpus: Corpus, cfg: dict, sheet: FactShee
         labels=" / ".join(h.get("labels", [])),
         reported="; ".join(f"{k}: {', '.join(v[:8])}" for k, v in (h.get("reported") or {}).items()) or "the cases shown",
     )
-    task = TYPE_INSTRUCTIONS[key].format(**fmt) + must_mention_text(h.get("must_mention") or [])
+    task = TYPE_INSTRUCTIONS[key].format(**fmt) + must_mention_text(h.get("must_mention") or [], cfg)
     fact_block = "\n".join(fact_lines(f, sheet) for f in facts)
     body = f"Facts:\n{fact_block}\n\n{_excerpts(cand, corpus, cfg)}"
     if cand.subtype == "not_covered":
@@ -186,7 +189,8 @@ JUDGE_CRITERIA = {
     "multihop": "The question identifies what it asks about through a description (hop A) and asks for a value (hop B). Pass when the description is resolved in one excerpt and the value is in the other, "
                 "and the value excerpt alone would not settle it: it does not state what the description states, and it holds other values the question could mean until the description is resolved. "
                 "Fail if one excerpt holds both the description's answer and the value, if the question names the bridged thing outright, or if it identifies it only by its position in a list.",
-    "crossdoc": "The quotes come from two different documents, and the answer reports what each says about the same figure, assumption or claim. Fail if one document alone gives everything the answer needs, "
+    "crossdoc": "The quotes come from two different documents, and the answer reports what each says about the same figure, assumption or claim, and the two differ: a different figure, or positions that disagree. "
+                "Fail if the two accounts agree in substance (\"both documents report that ...\"), if one document alone gives everything the answer needs, "
                 "or if the question does not say which documents and subject it is about.",
     "attribution": "The quoted claim is made by the party given as the answer, the question identifies that claim unambiguously, and the question does not name or hint at the party.",
     "summary": "The question is open but specific (names the drug and the document or respondent) and asks about one theme that every keypoint belongs to; "
@@ -267,6 +271,7 @@ FEEDBACK = {
     "comparative_values_not_in_facts": "value_a and value_b must be the two values the task names, as the facts give them.",
     "comparative_values_not_numeric": "value_a and value_b must be numbers.",
     "comparison_not_meaningful": "The two values differ too little to be worth comparing ({d}).",
+    "crossdoc_difference_trivial": "The two documents' figures differ too little to be a disagreement ({d}): skip unless they differ on something else.",
     "compound_question": "The question asks two things at once (\"{d}\"): ask for one fact only.",
     "deictic_question": "The question points at the excerpt (\"this table\", \"above\", a document id): name what it is about instead.",
     "table_language": "The question mentions a table, figure, column header, row or column (\"{d}\"): ask about the subject itself.",

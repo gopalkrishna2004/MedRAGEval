@@ -202,6 +202,12 @@ generate:
   # Two quotes from different documents with more token overlap than this are
   # copies, not two accounts (the EAG quotes the company verbatim).
   cross_doc_max_overlap: 0.8
+  crossdoc:
+    # Two documents' figures for one arm are a disagreement only when they
+    # differ by this share of the larger (v17 set 1.78 QALYs against 1.79) and
+    # are not both small counts (comparative.min_count). Each fact and each
+    # issue topic makes at most one cross-document item.
+    min_relative_difference: 0.10
 
   comparative:
     # Values that differ by less than this share of the larger are not worth
@@ -209,6 +215,7 @@ generate:
     min_relative_difference: 0.10
     # Two counts both below this (integers, not percentages, medians or costs)
     # are no finding: the fresh smoke run compared 1 pleural-effusion SAE with 0.
+    # Numerical items skip such counts too (v17 asked for 1 (1%) chest-pain SAEs).
     min_count: 5
     # Two facts of one slot are compared only when they differ in one of these: the same measure in two arms,
     # data cuts, populations or scenarios. Not item, event or measure: two different things.
@@ -356,6 +363,19 @@ generate:
     # Keys that a wrong answer contains as easily as a right one (v14 had
     # '0', 'Weak' and 'plausible'). Bare one- or two-digit numbers are
     # rejected too. Attribution keys (the speaker) are exempt.
+    # Document shorthand that qualifiers carry into questions ("Company
+    # base-case (post-clarification)", "EAG base-case (Post-FAC)"). The
+    # writer is asked to spell it out, and the discriminator check accepts
+    # the spelled-out form.
+    shorthand:
+      Post-FAC: after the factual accuracy check
+      post-clarification: after the clarification stage
+      pre-clarification: before the clarification stage
+      PSA: probabilistic sensitivity analysis
+      RDI: relative dose intensity
+      CEM: cost-effectiveness model
+      TTD: time to treatment discontinuation
+      FAS: full analysis set
     generic_keys: ['yes', 'no', 'none', 'weak', 'strong', 'moderate', 'high', 'low', 'plausible', 'appropriate', 'inappropriate', 'unclear', 'reasonable', 'increased', 'decreased', 'similar']   # quoted: YAML reads bare yes/no as booleans
 
 # Fact sheet (`medrageval extract`): the verified facts that question
