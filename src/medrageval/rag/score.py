@@ -11,7 +11,7 @@ Three views of each answer:
   thousands separators or trailing zeros: "£52,681" is "52681", "0.50" is
   "0.5"), the party for attribution, a decline for unanswerable items.
 - judge: the frontier judge's verdict, keypoint coverage for summaries
-  (RAGEval's completeness / hallucination / irrelevance) and groundedness.
+  (completeness / hallucination / irrelevance) and groundedness.
 
 The judge's verdict is the score when there is one; the keys are the score
 otherwise, and their agreement with the judge is reported as a check on both.
@@ -122,7 +122,7 @@ def judge_score(item: dict, judge: dict | None) -> float | None:
 
 
 def keypoint_stats(item: dict, judge: dict | None) -> dict | None:
-    """RAGEval's keypoint metrics: shares of keypoints covered, contradicted and missing. A keypoint the judge skipped is missing."""
+    """Keypoint metrics: shares of keypoints covered, contradicted and missing. A keypoint the judge skipped is missing."""
     kps = item.get("keypoints") or []
     if not kps or not judge:
         return None

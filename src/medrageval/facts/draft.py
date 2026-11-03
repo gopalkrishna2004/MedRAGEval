@@ -1,9 +1,8 @@
 """Draft a fact-sheet schema for a new document family with an LLM.
 
-RAGEval's first step summarises a schema from seed documents. This does the
-same from one or more parsed bundles: per document role, the section outline
-and a few sample passages go to the LLM, which proposes groups, slots,
-qualifiers and links in the schema format. The draft is checked with
+The schema is summarised from one or more parsed bundles: per document
+role, the section outline and a few sample passages go to the LLM, which
+proposes groups, slots, qualifiers and links in the schema format. The draft is checked with
 `parse_schema` and written as YAML with a header saying it needs review.
 A person reviews it before it is used, as `configs/schema/nice_sta.yaml` was.
 """

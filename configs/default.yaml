@@ -61,20 +61,21 @@ generate:
   # accepted about half of the single-excerpt candidates, but one in four
   # multi-hop ones (the judge rejects questions the value table answers alone;
   # since the third smoke run the selector keeps only pairs whose value
-  # passage holds a rival) and one in five "not covered" questions (the
-  # bundle usually does answer).
+  # passage holds a rival). An unanswerable attempt is one accepted item
+  # screened (one judge call); it fails only when too few clean distractors
+  # are found.
   attempts_per_item:
     default: 4
     multihop: 8
     crossdoc: 6
-    unanswerable: 8
+    unanswerable: 3
   # A rejected item goes back to the generator once, in the same conversation,
   # with each failed check, the judge's issues and what a single excerpt
   # answered, and the rewrite is checked again in full. Most rejections are
   # wording, not evidence: the first smoke run lost 10 of 24 generations to
   # long keys, quotes not found, an echoed quote and a key in the question,
   # discarding evidence that could carry an item (multi-hop pairs are scarce:
-  # 23 trial bridges in TA1063). TRIAD does the same with its reviewer's reason.
+  # 23 trial bridges in TA1063).
   # Not rewritten: a skip, bad JSON, an attribution claim that is too
   # generic or restated by another party, or a pair of excerpts one of which
   # answers alone (the evidence's fault: no multi-hop rewrite ever fixed it).
@@ -99,7 +100,7 @@ generate:
     crossdoc: 4
     attribution: 20
     summary: 18          # open questions scored on keypoints, one per fact
-    unanswerable: 26     # half redacted values, half near misses the documents do not cover
+    unanswerable: 26     # accepted answerable items asked again with their evidence withheld (see `unanswerable`)
 
   limits:
     # Tables above this are split into row groups (table p90 is ~4300 chars;
@@ -260,28 +261,24 @@ generate:
     min_rare_tokens: 2
     restated_containment: 0.7
 
+  # Unanswerable items: an accepted answerable item is asked again with its
+  # evidence withheld, and the RAG reads hard negatives instead. The pool is
+  # the units BM25 ranks closest to each withheld excerpt and to the question,
+  # minus the evidence and its copies in other documents; the judge screens
+  # the whole pool in one call, and only passages it finds do not answer are
+  # kept (a passage holding every answer key is dropped regardless). No fact
+  # of the bundle has to be "not reported" or redacted, so this works on a
+  # bundle without redactions. At evaluation the stored distractors are the
+  # context, not live retrieval: the evidence is certainly absent, and the
+  # item measures whether the reader declines.
   unanswerable:
-    top_k: 6                     # BM25 hits per question shown to the coverage check (one call per anchor)
-    neighbours: 4                # same-section units shown to the generator as off limits and to the check
-    questions_per_anchor: 3
-    # A redacted value may be printed elsewhere (TA1063 Table 14 redacts body
-    # surface area; Table 42 gives 1.82 / 1.70). A redacted line is not used
-    # when its rare words (in at most stated_rare_df_max of units: "surface",
-    # "male", not "capivasertib") all reappear with a number on a short line
-    # (a table row or one sentence) of a top BM25 hit. Matching any words on
-    # a whole paragraph skipped 32 candidates in TA1063, nearly all wrongly.
-    stated_top_k: 5
-    stated_rare_df_max: 0.03
-    stated_max_tokens: 40
-    # "partly" = a passage gives a closely related fact but not the one asked:
-    # exactly the near miss a good unanswerable question is (the bundle gives
-    # DCO1, the question asks for DCO2). An answer that follows from the
-    # passages is "yes" in the check's own definition, which is what the FAKTION
-    # "which country" question of the first smoke run was. Rejecting "partly"
-    # left only questions unrelated to anything in the bundle: the 31 Oct run
-    # rejected "which spreadsheet version" and kept "which operating system
-    # ran the model". The verdict is stored in the item's `search` field.
-    accept_partly: true
+    # Types whose accepted items are reused. Not summary: an open question is
+    # answered by any passage on its theme, so no distractor set is clean.
+    source_types: [factual, numerical, comparative, multihop, crossdoc, attribution]
+    candidates: 12               # passages screened per item, by BM25 similarity to the withheld excerpts and to the question
+    distractors: 8               # passages kept; at least rag.retrieval.top_k, since chunks that also hold the evidence are dropped at evaluation
+    min_distractors: 4           # fewer clean passages than this rejects the item (reason too_few_distractors)
+    max_chars_per_passage: 1500  # shown to the screening judge
 
   judge:
     max_chars_per_unit: 2500
@@ -305,10 +302,8 @@ generate:
   # holds every answer key. The judge sees both excerpts at once and has to
   # imagine one away: in the 31 Oct smoke run and in v11 it called the value
   # excerpt insufficient for items that excerpt answered (FAKTION as Table 15's
-  # only UK row; a >=5% threshold that held for every trial). TRIAD's data
-  # shows the same gap: of the multi-hop items its all-chunks review accepted,
-  # 15% (HotPot, 86 of 568) and 11% (MuSiQue, 59 of 537) were answerable from
-  # one chunk by its per-chunk check. Two short calls per item that gets this far.
+  # only UK row; a >=5% threshold that held for every trial). Two short calls
+  # per item that gets this far.
   # Cross-document items too: in v14 the judge said one excerpt answered
   # crossdoc-004 alone and it was kept, because only multi-hop was checked.
   # The alone check also asks by which words of the passage the model told
@@ -357,7 +352,7 @@ generate:
     # smoke run's "what tool and estimate", "what assumption ..., and how did
     # it affect"): two lookups, not one fact. Comparative, cross-document and
     # summary items combine facts by design and are exempt.
-    single_ask_types: [factual, numerical, multihop, attribution, unanswerable]
+    single_ask_types: [factual, numerical, multihop, attribution]
     compound_patterns: ['\b(and|or) (what|which|how|who|when|why|where|whether)\b', ',\s*and (did|does|do|was|were|is|are|has|had)\b']
     banned_patterns: ['\b(table|figure|fig\.)\s*\d', '\(N\s*=\s*\d', '\brows?\b', '\bcolumns?\b']
     # Keys that a wrong answer contains as easily as a right one (v14 had
@@ -379,8 +374,8 @@ generate:
     generic_keys: ['yes', 'no', 'none', 'weak', 'strong', 'moderate', 'high', 'low', 'plausible', 'appropriate', 'inappropriate', 'unclear', 'reasonable', 'increased', 'decreased', 'similar']   # quoted: YAML reads bare yes/no as booleans
 
 # Fact sheet (`medrageval extract`): the verified facts that question
-# generation is built on, as RAGEval builds its questions from a config of key
-# facts. The schema says which facts matter for the document family. The LLM
+# generation is built on: questions are written from a config of key facts,
+# not raw passages. The schema says which facts matter for the document family. The LLM
 # reads them out of batches of passages, and every fact is checked against a
 # verbatim quote before it is kept.
 facts:

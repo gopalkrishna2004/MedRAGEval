@@ -2,7 +2,9 @@
 
 Two passes. First the small model on vLLM answers every question (the first
 one alone, so a server that is down or a model that is not served stops the
-run before the rest are sent). Then the judge on OpenRouter grades each
+run before the rest are sent). An unanswerable item that carries distractors
+is read with those passages instead of a search; an unanswerable item without
+them (an older dataset) goes through retrieval like the rest. Then the judge on OpenRouter grades each
 answer against the item and the passages the model was shown. Both are
 cached, so rescoring after a judge-prompt change makes no RAG calls, and a
 rerun of the same config makes none at all.
@@ -24,7 +26,7 @@ from medrageval.config import load_config
 from medrageval.generate.generate import TYPES
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llm, make_local_llm
 from medrageval.rag.index import MODES, load_index
-from medrageval.rag.pipeline import RAG
+from medrageval.rag.pipeline import RAG, distractor_chunks
 from medrageval.rag.prompts import PROMPT_VERSION, build_judge
 from medrageval.rag.score import agreement, score_item, summarize
 
@@ -83,8 +85,9 @@ def evaluate(items: list[dict], rag: RAG, judge, full: dict, out_dir: Path, inde
     out_dir.mkdir(parents=True, exist_ok=True)
 
     def answer(it: dict) -> dict:
+        fixed = distractor_chunks(it, rag.index) if it.get("distractors") and not it.get("answerable", True) else None
         try:
-            return rag.answer(it["question"], tag=f"rag:{it['uid']}")
+            return rag.answer(it["question"], tag=f"rag:{it['uid']}", passages=fixed)
         except LLMError as e:
             if it is items[0]:
                 raise
@@ -132,7 +135,7 @@ def make_row(it: dict, a: dict, judge: dict | None, patterns: list[str], speaker
     if a.get("error"):
         return {**row, "error": a["error"], "score": 0.0, "category": "error"}
     scored = score_item(it, a["answer"], a["passages"], judge, patterns, speakers)
-    return {**row, "response": a["answer"], **scored, "judge": judge,
+    return {**row, "response": a["answer"], "context": a.get("context", "retrieved"), **scored, "judge": judge,
             "retrieved": [{k: h[k] for k in ("chunk_id", "rank", "score", "ranks", "in_context", "doc_id", "pages")} for h in a["retrieved"]],
             "context_chars": a["context_chars"], "usage": a["usage"], "latency_s": a["latency_s"]}
 
@@ -153,6 +156,9 @@ def build_report(rows: list[dict], items: list[dict], rag: RAG, judge, full: dic
     window = rcfg["llm"]["context_window"] - rcfg["llm"]["max_tokens"]
     if prompt_tokens and max(prompt_tokens) > window:
         warnings.append(f"a prompt of {max(prompt_tokens)} tokens leaves less than max_tokens in a {rcfg['llm']['context_window']}-token window")
+    fixed = [r for r in rows if r.get("context") == "fixed"]
+    if empty := sum(1 for r in fixed if not r.get("retrieved")):
+        warnings.append(f"{empty} unanswerable items had no distractor chunk left after dropping those holding the evidence")
     return {
         "datasets": sorted({it["dataset"] for it in items}),
         "items": len(rows),
@@ -161,6 +167,7 @@ def build_report(rows: list[dict], items: list[dict], rag: RAG, judge, full: dic
                 "retrieval": rcfg["retrieval"], "chunking": rcfg["chunking"], "prompt_version": PROMPT_VERSION},
         "judge_model": judge.model if judge is not None else None,
         "index": index_stats,
+        "fixed_context_items": len(fixed),   # unanswerable items read with their stored distractors, not a search
         "overall": summarize(rows, n_boot, seed),
         "answerable": summarize([r for r in rows if r["answerable"]], n_boot, seed),
         "unanswerable": summarize([r for r in rows if not r["answerable"]], n_boot, seed),

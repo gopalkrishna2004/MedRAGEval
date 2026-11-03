@@ -14,7 +14,7 @@ from medrageval.config import load_config
 from medrageval.facts.extract import plan_batches
 from medrageval.facts.factsheet import FactSheet
 from medrageval.facts.schema import known_roles, load_schema
-from medrageval.generate.candidates import SELECTORS, stated_elsewhere
+from medrageval.generate.candidates import SELECTORS
 from medrageval.generate.corpus import load_corpus
 
 pytestmark = pytest.mark.regression
@@ -28,7 +28,6 @@ EXPECTED = {
         "roles": {"d01": "cover", "d02": "company_submission", "d03": "patient_summary", "d04": "clarification", "d05": "patient_org",
                   "d08": "clinical_expert", "d09": "patient_expert", "d12": "eag_report", "d13": "factual_accuracy"},
         "topic": "Capivasertib with fulvestrant",
-        "redacted_but_stated": {"d02-e0231": "d02-e0412#r00"},   # Table 14 redacts body surface area; Table 42 prints 1.82 / 1.70
         "figure_as_table": "d02-e0149",                           # Figure 10 (forest plot) came out of OCR as a table with "<65 yéárs"
         # units the extraction must read for a group (checked by hand against the PDF)
         "reads": {"efficacy": ["d02-e0109"],                      # CS Table 7: median PFS 7.3 vs 3.1 months (p. 42)
@@ -38,7 +37,6 @@ EXPECTED = {
         "roles": {"d01": "cover", "d02": "company_submission", "d03": "patient_summary", "d04": "clarification", "d06": "professional_org",
                   "d08": "eag_report", "d09": "factual_accuracy", "d10": "clinical_expert", "d12": "patient_expert"},
         "topic": "Sparsentan for treating primary IgA nephropathy",
-        "redacted_but_stated": {"d05-e0009": "d10-e0014"},       # a redacted job title on one form, printed on another
         "reads": {},
     },
 }
@@ -103,12 +101,6 @@ def test_every_group_is_read_from_its_roles(bundle):
         assert set(uids) <= read, (group, set(uids) - read)
 
 
-def test_redacted_values_printed_elsewhere_are_found(bundle):
-    name, c = bundle
-    for uid, where in EXPECTED[name]["redacted_but_stated"].items():
-        assert stated_elsewhere(c, c.units[uid], CFG) == where
-
-
 def test_verified_facts_were_extracted(sheet):
     name, c, s = sheet
     for slot, doc, numbers, words in VERIFIED[name]:
@@ -140,6 +132,6 @@ def test_every_type_has_candidates_and_selection_is_reproducible(sheet):
 
 def test_candidates_never_use_an_indistinguishable_fact(sheet):
     name, c, s = sheet
-    for sel in ("factual", "numerical", "comparative", "multihop", "crossdoc", "summary", "unanswerable_not_covered"):
+    for sel in ("factual", "numerical", "comparative", "multihop", "crossdoc", "summary"):
         for x in SELECTORS[sel](c, s, CFG, Random(CFG["seed"])):
             assert not any(s.ambiguous(f) for f in x.facts), (sel, x.candidate_id)

@@ -590,56 +590,6 @@ def select_summary(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> 
         yield Candidate("summary", f.group, _units(sheet, *facts), hint, facts)
 
 
-def stated_elsewhere(corpus: Corpus, u: Unit, cfg: dict) -> str | None:
-    """A unit that gives a value for something this unit redacts: a line with the redacted line's words and a number.
-
-    TA1063's Table 14 redacts body surface area by sex, but Table 42 (model
-    inputs) prints both values. A question built on the redaction would mark
-    a correct answer wrong.
-    """
-    uc = cfg["unanswerable"]
-    own = set(corpus.by_element.get(u.element_id, ())) | {u.unit_id}
-    limit = uc["stated_rare_df_max"] * len(corpus.units)
-    for line in u.plain.splitlines():
-        if REDACTED not in line:
-            continue
-        # the label's distinctive words ("surface", "male"), not the drug and trial names on every line
-        rare = {t for t in tokenize(line.replace(REDACTED, " ")) if len(t) >= 3 and not t.isdigit() and corpus.df.get(t, 0) <= limit}
-        if len(rare) < 2:
-            continue
-        for hit, _ in corpus.bm25.search(sorted(rare), k=uc["stated_top_k"], exclude=own):
-            for hl in corpus.units[hit].plain.splitlines():
-                toks = tokenize(hl)
-                if REDACTED not in hl and len(toks) <= uc["stated_max_tokens"] and re.search(r"\d", hl) and rare <= set(toks):
-                    return hit
-    return None
-
-
-def select_unanswerable_redacted(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
-    """A value the bundle redacts and prints nowhere else: the right response is that it is not disclosed."""
-    items = []
-    for f in sorted(sheet.facts.values(), key=lambda f: f.fact_id):
-        if not f.redacted or not sheet.askable(f) or not all(native(u, cfg) for u in sheet.units(f)):
-            continue
-        quals = {k: normalize(v) for k, v in f.qualifiers.items()}
-        if any(not g.redacted and {k: normalize(v) for k, v in g.qualifiers.items()} == quals for g in sheet.by_slot[f.slot]):
-            continue   # the same fact, disclosed in another table
-        if any(stated_elsewhere(corpus, u, cfg) for u in sheet.units(f)):
-            continue
-        label = sheet.describe(f) + (" (" + "; ".join(f"{k}: {v}" for k, v in f.qualifiers.items()) + ")" if f.qualifiers else "")
-        items.append((f, label))
-    for f, label in _order(sheet, items, cfg, rng, lambda x: x[0]):
-        yield Candidate("unanswerable", "redacted", sheet.units(f), {"group": f.group, "slot": f.slot, "labels": [label]}, [f])
-
-
-def select_unanswerable_not_covered(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
-    """A fact as anchor: near misses ask for the same measure for a version of it the bundle does not report."""
-    facts = [f for f in sheet.facts.values() if f.kind == "number" and not f.redacted and f.qualifiers and usable(f, sheet, cfg)]
-    for f in _order(sheet, sorted(facts, key=lambda f: f.fact_id), cfg, rng):
-        yield Candidate("unanswerable", "not_covered", sheet.units(f)[:1],
-                        {"group": f.group, "slot": f.slot, "topic": corpus.topic, "reported": sheet.reported(f)}, [f])
-
-
 SELECTORS: dict[str, Callable[[Corpus, FactSheet, dict, Random], Iterator[Candidate]]] = {
     "factual": select_factual,
     "numerical": select_numerical,
@@ -648,8 +598,6 @@ SELECTORS: dict[str, Callable[[Corpus, FactSheet, dict, Random], Iterator[Candid
     "crossdoc": select_crossdoc,
     "attribution": select_attribution,
     "summary": select_summary,
-    "unanswerable_redacted": select_unanswerable_redacted,
-    "unanswerable_not_covered": select_unanswerable_not_covered,
 }
 
 

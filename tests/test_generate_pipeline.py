@@ -31,6 +31,10 @@ def excerpts(user: str) -> list[tuple[str, str]]:
     return re.findall(r"^\[([^\]]+)\] Document[^\n]*\n(.*?)(?=\n\n(?:Context|Excerpt|Nearby)|\Z)", user, re.M | re.S)
 
 
+def screened(user: str) -> list[str]:
+    return re.findall(r"^\[([^\]]+)\] Document", user, re.M)
+
+
 def subject(fact: dict, user: str) -> str:
     quals = [q.split(": ", 1)[1] for q in fact["qualifiers"].split("; ") if ": " in q]
     return ", ".join(dict.fromkeys(must_terms(user) + quals)) or "capivasertib"
@@ -44,19 +48,10 @@ def scripted(messages, tag):
                 "answerable_from_single_excerpt": {}, "issues": []}
     if tag.startswith("alone:"):
         return {"answer": None, "reason": "the passage alone does not say"}
-    if tag.startswith("check:"):
-        n = len(re.findall(r"^\d+\. ", user, re.M))
-        return {"results": [{"n": i + 1, "answered": "no", "passage_ids": [], "answer_if_any": None} for i in range(n)]}
-    if "UNANSWERABLE questions" in user:
-        return {"questions": [{"question": "What was the median follow-up for overall survival in the CAPItello-291 capivasertib arm at a third data cut?", "missing_fact": "follow-up"},
-                              {"question": "Tell me about this excerpt above?", "missing_fact": "-"}]}
+    if tag.startswith("withhold:"):   # the screening judge: no candidate distractor answers
+        return {"results": [{"unit_id": uid, "answers": "no", "answer_if_any": None} for uid in screened(user)]}
     facts, exs = facts_in(user), excerpts(user)
     quotes = [{"unit_id": uid, "quote": " ".join(body.split()[:12])} for uid, body in exs]
-    if "UNANSWERABLE question" in user:
-        uid, body = next((u, b) for u, b in exs if "[REDACTED]" in b)
-        line = next(line for line in body.splitlines() if "[REDACTED]" in line)
-        return {"question": "What is the list price per pack of capivasertib tablets that the company submission gives?", "answer": None, "answer_keys": [],
-                "quotes": [{"unit_id": uid, "quote": " ".join(line.split()[:12])}]}
     f = facts[0]
     if "SUMMARY question" in user:
         return {"question": f"What did the {f['doc']} report about the efficacy of capivasertib plus fulvestrant in its trial?",
@@ -79,19 +74,29 @@ def test_end_to_end_writes_dataset_rejects_and_report(tmp_path):
     assert f["answerable"] and f["facts"] and f["group"] in ("trial_design", "economic_model", "stakeholder_views")
     assert f["provenance"]["prompt_version"] == PROMPT_VERSION and f["provenance"]["model"] == "fake"
     assert f["validation"]["programmatic"]["quote_found"] and f["validation"]["judge"]["realistic"]   # every answerable type is judged
+    # Unanswerable items: the accepted factual items asked again, their evidence withheld and screened distractors stored
     u = [i for i in items if i["type"] == "unanswerable"]
-    assert {i["subtype"] for i in u} == {"redacted", "not_covered"} and all(i["answer"] is None for i in u)
-    nc = next(i for i in u if i["subtype"] == "not_covered")
-    assert nc["search"]["verdict"] == "no" and nc["anchor"][0]["unit_id"] and nc["facts"]
+    by_id = {i["item_id"]: i for i in items}
+    assert len(u) == 2 and all(i["subtype"] == "withheld" and i["answer"] is None and i["answer_keys"] == [] and not i["answerable"] for i in u)
+    for w in u:
+        src = by_id[w["source_item_id"]]
+        assert src["type"] == "factual" and w["question"] == src["question"] and w["facts"] == src["facts"] and w["group"] == src["group"]
+        assert w["withheld"] == {"answer": src["answer"], "answer_keys": src["answer_keys"], "evidence": src["evidence"]} and w["evidence"] == []
+        withheld_units = {e["unit_id"] for e in src["evidence"]}
+        assert len(w["distractors"]) >= config()["unanswerable"]["min_distractors"] and not withheld_units & {d["unit_id"] for d in w["distractors"]}
+        assert all(d["doc_label"] and d["pages"] for d in w["distractors"])
+        clean = [x["unit_id"] for x in w["screening"] if x["answers"] == "no"]   # the judge cleared every passage; only the key rule can flag one
+        assert clean[:config()["unanswerable"]["distractors"]] == [d["unit_id"] for d in w["distractors"]]
+        assert all(x["answers"] == "no" or (x["answers"] == "yes" and x["keys_present"]) for x in w["screening"])
+    assert {w["source_item_id"] for w in u} == {"factual-001", "factual-002"}
 
     rejects = [json.loads(l) for l in (out / "rejects.jsonl").open()]
-    assert any("deictic_question" in r["reasons"] for r in rejects)     # the second not-covered question
     assert all(r["item_id"] is None and r["stage"] for r in rejects)
 
     assert report["items"] == 4 and report["per_type"]["factual"]["accepted"] == 2
-    assert report["per_type"]["unanswerable"]["subtypes"] == {"redacted": 1, "not_covered": 1}
-    assert report["facts"]["facts"] == 20 and report["items_per_group"]
-    assert sum(1 for m, t in llm.calls if t.startswith("check:")) == 1      # one coverage call per anchor, not per question
+    assert report["per_type"]["unanswerable"]["subtypes"] == {"withheld": 2}
+    assert report["facts"]["facts"] == 20 and report["items_per_group"] and set(report["items_per_document"]) >= {"d02"}
+    assert sum(1 for m, t in llm.calls if t.startswith("withhold:")) == 2      # one screening call per item, every candidate passage in it
 
 
 def test_summary_items_carry_keypoints_and_the_facts_quotes(tmp_path):
@@ -117,28 +122,57 @@ def test_model_may_skip_facts_and_the_reason_is_recorded(tmp_path):
     assert report["per_type"]["factual"]["accepted"] == 2 and report["per_type"]["factual"]["rejected_by_reason"]["skip"] == 1
 
 
-@pytest.mark.parametrize("accept", [True, False])
-def test_partly_answered_questions_follow_accept_partly(tmp_path, accept):
-    def hedging(messages, tag):
+def test_passages_that_answer_are_never_distractors(tmp_path):
+    def leaky(messages, tag):
         out = scripted(messages, tag)
-        if tag.startswith("check:"):
-            out["results"][0]["answered"] = "partly"
-            out["results"][0]["answer_if_any"] = "the DCO1 value is given, not the third data cut"
+        if tag.startswith("withhold:"):   # the judge finds the first passage states the answer and the second part of it
+            out["results"][0].update(answers="yes", answer_if_any="states it")
+            out["results"][1]["answers"] = "partly"
         return out
     interim = write_factsheet(tmp_path / "interim")
-    llm = FakeLLM(hedging)
-    cfg = config()
-    cfg["unanswerable"]["questions_per_anchor"] = 1
-    cfg["unanswerable"]["accept_partly"] = accept
-    cfg["rewrite_rejected"] = False
-    report = generate_dataset(interim, tmp_path / "out", cfg, llm, llm, targets={"unanswerable": 2}, types=["unanswerable"]) if accept else None
-    if accept:    # a near miss: the bundle has a related fact, not the one asked
-        assert report["per_type"]["unanswerable"]["subtypes"] == {"redacted": 1, "not_covered": 1}
-    else:
-        with pytest.raises(RuntimeError, match="short of target"):
-            generate_dataset(interim, tmp_path / "out", cfg, llm, llm, targets={"unanswerable": 4}, types=["unanswerable"])
-        rejects = [json.loads(l) for l in (tmp_path / "out" / "rejects.jsonl").open()]
-        assert any(r["stage"] == "unanswerable_check" and r["reasons"] == ["answered:partly"] for r in rejects)
+    llm = FakeLLM(leaky)
+    generate_dataset(interim, tmp_path / "out", config(), llm, llm, targets={"factual": 1, "unanswerable": 1}, types=["factual", "unanswerable"])
+    w = next(json.loads(l) for l in (tmp_path / "out" / "dataset.jsonl").open() if '"unanswerable"' in l)
+    first, second = w["screening"][:2]
+    assert (first["answers"], first["answer_if_any"], second["answers"]) == ("yes", "states it", "partly")
+    flagged = {x["unit_id"] for x in w["screening"] if x["answers"] != "no"}   # the judge's two, plus any the key rule caught
+    assert {first["unit_id"], second["unit_id"]} <= flagged and not flagged & {d["unit_id"] for d in w["distractors"]}
+    assert w["validation"]["judge"]["results"][0]["answers"] == "yes"   # the screening call is kept for audit
+
+
+def test_withhold_drops_the_evidence_its_copies_and_passages_holding_the_keys(tmp_path):
+    corpus, sheet = build_sheet()
+    llm = FakeLLM(scripted)   # the judge clears every passage: the key rule has to catch the copy on its own
+    run = Run(corpus, sheet, config(), llm, llm, tmp_path, 1)
+    pfs = corpus.units["d02-e0003"]
+    hint = {"question": "What was the median PFS with capivasertib plus fulvestrant in CAPItello-291?", "answer": "7.3 months", "answer_keys": ["7.3"]}
+    res = run._withhold(Candidate("unanswerable", "withheld", [pfs], hint, []))
+    kept = [d.unit_id for d in res["item"]["distractors"]]
+    assert res["stage"] == "accepted" and "d02-e0003" not in kept and "d03-e0004" not in kept    # the EAG's copy of the table prints 7.3
+    copy = next(x for x in res["item"]["screening"] if x["unit_id"] == "d03-e0004")
+    assert copy["keys_present"] and copy["answers"] == "yes"
+    res = run._withhold(Candidate("unanswerable", "withheld", [pfs], {**hint, "also_in": ["d03-e0004"]}, []))
+    assert not any(x["unit_id"] == "d03-e0004" for x in res["item"]["screening"])   # a known copy never enters the pool
+    run.close()
+
+
+def test_unanswerable_needs_clean_distractors_and_answerable_sources(tmp_path):
+    def everything_answers(messages, tag):
+        out = scripted(messages, tag)
+        if tag.startswith("withhold:"):
+            for r in out["results"]:
+                r["answers"] = "yes"
+        return out
+    interim = write_factsheet(tmp_path / "interim")
+    llm = FakeLLM(everything_answers)
+    with pytest.raises(RuntimeError, match="short of target"):
+        generate_dataset(interim, tmp_path / "out", config(), llm, llm, targets={"factual": 1, "unanswerable": 1}, types=["factual", "unanswerable"])
+    rejects = [json.loads(l) for l in (tmp_path / "out" / "rejects.jsonl").open()]
+    assert any(r["stage"] == "withhold" and r["reasons"] == ["too_few_distractors:0"] and r["distractors"] == [] for r in rejects)
+    assert not any(t.endswith(":rewrite") for _, t in llm.calls)   # nothing to reword
+    llm = FakeLLM(scripted)
+    with pytest.raises(RuntimeError, match="derived from accepted items"):   # without answerable items in the run there is nothing to withhold
+        generate_dataset(interim, tmp_path / "out2", config(), llm, llm, targets={"unanswerable": 1}, types=["unanswerable"])
 
 
 def test_shortfall_raises_after_writing(tmp_path):
@@ -243,7 +277,7 @@ def test_only_failures_the_wording_can_fix_are_rewritten(tmp_path):
     assert not run._rewritable([{"stage": "programmatic", "reasons": ["claim_restated_in:d02-e0001"]}])   # the evidence's fault
     assert not run._rewritable([{"stage": "skipped", "reasons": ["skip:generic"]}])
     assert not run._rewritable([{"stage": "generation", "reasons": ["bad_json:x"]}])
-    assert not run._rewritable([{"stage": "accepted", "reasons": []}, {"stage": "unanswerable_check", "reasons": ["answered:yes"]}])
+    assert not run._rewritable([{"stage": "withhold", "reasons": ["too_few_distractors:2"]}])   # no wording to fix: the pool was dirty
     run.cfg["rewrite_rejected"] = False
     assert not run._rewritable(fixable)
     run.close()

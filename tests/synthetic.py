@@ -187,7 +187,6 @@ DOCUMENTS = [
 def config() -> dict:
     cfg = copy.deepcopy(load_config()["generate"])
     cfg["attribution"]["rare_df_max"] = 0.3   # 20 units: "rare" must still allow a token in a handful of them
-    cfg["unanswerable"]["stated_rare_df_max"] = 0.3
     cfg["max_workers"] = 2
     return cfg
 

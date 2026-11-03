@@ -1,4 +1,4 @@
-"""Prompts for item generation, the judge pass and the unanswerable check.
+"""Prompts for item generation, the judge pass and the screening of distractor passages.
 
 Generation is written from facts, not from excerpts. The writer sees each
 fact of the fact sheet (what it is, its qualifiers, its value, its document)
@@ -21,7 +21,7 @@ from medrageval.facts.factsheet import Fact, FactSheet
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.corpus import Corpus, Unit
 
-PROMPT_VERSION = "18"
+PROMPT_VERSION = "19"
 
 SCHEMA = ('{"question": str, "answer": str, "answer_keys": [str, ...], '
           '"quotes": [{"unit_id": str, "quote": str}, ...]}')
@@ -33,7 +33,7 @@ RULES = """Rules for every item:
 4. Ask as a clinician, health economist or appraisal committee member would. Never mention table or figure numbers, column headers such as "(N=155)", rows, columns, or how a document is laid out. Spell out abbreviations a reader may not know ("the company's cost-effectiveness model", not "the company's CEM"); common ones (PFS, OS, ICER, QALY, EAG, NHS) are fine. Put the question in your own words: reuse the excerpt's wording only for names, numbers and technical terms.
 5. Name each drug, arm or regimen once, in plain words, even when the documents spell it differently ("everolimus plus exemestane", not "Everolimus + exemestane (Everolimus with exemestane)").
 6. Claim no more than the excerpts say. Put a qualifier (data cut, timepoint, population, scenario, whose analysis) in the question only if the excerpts or their Context state it: a fact may carry qualifiers its excerpt does not show, so leave those out. Describe a position in the excerpt's own terms ("suggested" is not "preferred", "considered" is not "concluded").
-7. Do not put the answer in the question, and do not use knowledge from outside the facts and excerpts. Never ask for a value shown as [REDACTED] unless the task is about a redacted value.
+7. Do not put the answer in the question, and do not use knowledge from outside the facts and excerpts. Never ask for a value shown as [REDACTED].
 8. "answer": one sentence, specific. "answer_keys": 1 to 4 strings a correct answer must contain, each a number with its unit, a name, or a phrase of at most four words, never a clause, written as in the fact's value or the quotes. A key is the value itself, never "label: value". An estimate with its interval is two keys ("0.50" and "0.38 to 0.65"), never one ("0.50 (95% CI 0.38 to 0.65)"). Each key answers the question as asked.
 9. "quotes": entries of {"unit_id": the excerpt id shown in brackets, "quote": a contiguous span copied verbatim from that excerpt, 5 to 80 words}. The quote must contain the fact the answer rests on. From a table, quote one row per entry; never join rows or cells from different lines.
 10. Text headed "Context" is the passage before an excerpt in its section, shown so you know what the excerpt is about. Never quote it or ask about its facts.
@@ -79,14 +79,6 @@ TYPE_INSTRUCTIONS = {
                "\"answer\": one sentence per keypoint, in order, and nothing beyond them. "
                "\"keypoints\": [{{\"point\": one sentence stating one fact, \"fact_id\": that fact's id}}, ...], one per fact. "
                "\"answer_keys\": []. \"quotes\": [] (the system attaches each fact's quote).",
-    "unanswerable_redacted": "Write an UNANSWERABLE question asking for a value the bundle redacts: {labels}. "
-                             "Ask for it exactly as a reader who expects it to be there would (\"What was the ...?\"), naming the subject. The correct response of a QA system is that the value is not disclosed. "
-                             "Set \"answer\" to null and \"answer_keys\" to []. Quote the row or sentence holding the [REDACTED] marker, marker included.",
-    "unanswerable_not_covered": "Write 3 UNANSWERABLE questions anchored in fact {f0}: {describe}. Across the whole bundle this measure is reported only for: {reported}. "
-                                "Each question asks for the same measure for a version the bundle does NOT report (another data cut, timepoint, subgroup, population, dose, scenario or comparator), "
-                                "phrased as if the answer existed, naming the drug and the version it asks for. A system that answers with the nearest figure it finds is wrong. "
-                                "The fact must not follow from what the documents do say. Never ask about software, files, finances, manufacturing or personnel. "
-                                "Return {{\"questions\": [{{\"question\": str, \"missing_fact\": str}}, ...]}} and nothing else.",
 }
 
 
@@ -142,14 +134,14 @@ def _excerpts(cand: Candidate, corpus: Corpus, cfg: dict, max_chars: int = 3500)
     max_chars = 1500 if len(cand.units) > 3 else max_chars
     parts = []
     for u in cand.units:
-        context = _context(u, corpus, cfg) if cand.subtype != "not_covered" and len(cand.units) <= 3 else ""
+        context = _context(u, corpus, cfg) if len(cand.units) <= 3 else ""
         parts.append((f"Context before excerpt [{u.unit_id}] (not quotable):\n{context}\n\n" if context else "") + f"Excerpt:\n{corpus.render(u, max_chars)}")
     return "\n\n".join(parts)
 
 
 def build_generation(cand: Candidate, corpus: Corpus, cfg: dict, sheet: FactSheet) -> list[dict]:
     h, facts = cand.hint, cand.facts
-    key = f"{cand.type}_{cand.subtype}" if cand.type in ("unanswerable", "multihop") else cand.type
+    key = f"{cand.type}_{cand.subtype}" if cand.type == "multihop" else cand.type
     f0 = facts[0] if facts else None
     labels = list(h.get("labels") or []) + ["", ""]
     values = list(h.get("values") or []) + ["", ""]
@@ -168,16 +160,10 @@ def build_generation(cand: Candidate, corpus: Corpus, cfg: dict, sheet: FactShee
         group_describe=h.get("group_describe", ""), doc=h.get("doc", ""), theme=h.get("theme") or "-",
         respondent=f", submitted by {speaker_name}" if speaker_name else "", or_respondent=" or the respondent" if speaker_name else "",
         max_sentences=max(3, len(facts) + 1),
-        labels=" / ".join(h.get("labels", [])),
-        reported="; ".join(f"{k}: {', '.join(v[:8])}" for k, v in (h.get("reported") or {}).items()) or "the cases shown",
     )
     task = TYPE_INSTRUCTIONS[key].format(**fmt) + must_mention_text(h.get("must_mention") or [], cfg)
     fact_block = "\n".join(fact_lines(f, sheet) for f in facts)
     body = f"Facts:\n{fact_block}\n\n{_excerpts(cand, corpus, cfg)}"
-    if cand.subtype == "not_covered":
-        near = corpus.neighbours(cand.units[0], cfg["unanswerable"]["neighbours"])
-        if near:
-            body += "\n\nNearby passages (their facts are also off limits):\n" + "\n\n".join(corpus.render(u, 800) for u in near)
     return [{"role": "system", "content": system_message(corpus)},
             {"role": "user", "content": f"{task}\n\n{body}"}]
 
@@ -195,7 +181,6 @@ JUDGE_CRITERIA = {
     "attribution": "The quoted claim is made by the party given as the answer, the question identifies that claim unambiguously, and the question does not name or hint at the party.",
     "summary": "The question is open but specific (names the drug and the document or respondent) and asks about one theme that every keypoint belongs to; "
                "every keypoint is supported by the quotes; the answer covers all keypoints and adds nothing unsupported. Fail if the keypoints are a grab-bag no single question would call for.",
-    "unanswerable": "The question asks for a value that is redacted in the quote, as a reader who expected it to be present would ask.",
 }
 
 
@@ -288,7 +273,6 @@ FEEDBACK = {
     "question_lacks_discriminator": "The question must name \"{d}\" (or equivalent words), so it means only this fact.",
     "question_length": "The question has {d} words: keep it within the word limit.",
     "question_off_topic": "The question is not about the fact's subject.",
-    "quote_lacks_redacted_marker": "Quote the row or sentence that holds the [REDACTED] marker, marker included.",
     "quote_lacks_speaker": "Quote the sentence that names the party making the claim.",
     "quote_length": "A quote has {d} words: quotes are 5 to 80 words (a table row may be shorter).",
     "quote_not_found": "A quote from {d} is not a verbatim span of that excerpt: copy it exactly, one table row per entry, never joining rows or cells.",
@@ -298,7 +282,6 @@ FEEDBACK = {
     "quotes_from_one_unit": "Quote from both excerpts.",
     "speaker_named_in_question": "The question names or hints at the speaker: state the claim without it.",
     "summary_answer_too_long": "The summary answer is too long: cover each fact in about one sentence.",
-    "unanswerable_has_answer": "An unanswerable item has \"answer\": null and no answer keys.",
     "judge_failed": "A reviewer rejected the item (reasons below, if given).",
     "judge:answer_supported": "A reviewer found the answer is not supported by the quotes.",
     "judge:self_contained": "A reviewer could not tell what is asked without the excerpts: name the drug, trial, population, comparator or document.",
@@ -306,7 +289,6 @@ FEEDBACK = {
     "judge:realistic": "A reviewer found the question is not one a clinician, health economist or committee member would ask: ask about what matters in the appraisal, not about the document's layout.",
     "judge:answerable_from_single_excerpt": "A reviewer found that one excerpt answers the question alone: it must need both.",
     "answerable_from": "Given only excerpt {d}, a reader answered \"{answer}\", identifying the subject by \"{span}\": describe the subject only through the other fact, or ask for something only the two together give.",
-    "answered": "The documents answer it ({answer}): ask for a near miss they do not report.",
 }
 
 
@@ -314,19 +296,16 @@ def rewrite_feedback(results: list[dict], cand: Candidate) -> list[str]:
     """Why the item failed, one instruction per failed check, plus the reviewer's issues and what one excerpt alone answered."""
     lines = []
     for r in results:
-        if r["stage"] not in ("programmatic", "judge", "unanswerable_check"):
+        if r["stage"] not in ("programmatic", "judge"):
             continue
-        prefix = f"Question \"{r['item'].get('question', '')}\": " if cand.subtype == "not_covered" else ""
         for reason in r["reasons"]:
             code, _, detail = reason.partition(":")
             if code == "answerable_from":
                 alone = (r.get("alone") or {}).get(detail) or {}
-                lines.append(prefix + FEEDBACK[code].format(d=detail, answer=alone.get("answer"), span=alone.get("identified_by")))
-            elif code == "answered":
-                lines.append(prefix + FEEDBACK[code].format(answer=(r.get("judge") or {}).get("answer_if_any") or "a passage covers it"))
+                lines.append(FEEDBACK[code].format(d=detail, answer=alone.get("answer"), span=alone.get("identified_by")))
             else:
                 text = FEEDBACK.get(reason) or FEEDBACK.get(code)
-                lines.append(prefix + (text.format(d=detail) if text else reason))
+                lines.append(text.format(d=detail) if text else reason)
         if r["stage"] == "judge":
             lines += [f"Reviewer: {i}" for i in (r.get("judge") or {}).get("issues") or [] if isinstance(i, str)]
     return list(dict.fromkeys(lines))
@@ -343,15 +322,18 @@ def build_rewrite(messages: list[dict], raw: dict, feedback: list[str]) -> list[
     ]
 
 
-def build_unanswerable_check(questions: list[str], passages: list[Unit], corpus: Corpus, max_chars: int = 1200) -> list[dict]:
+def build_withhold_check(question: str, answer: str, passages: list[Unit], corpus: Corpus, max_chars: int = 1500) -> list[dict]:
+    """Every candidate distractor against the question and the answer it must not give, all in one call."""
     shown = "\n\n".join(corpus.render(u, max_chars) for u in passages)
-    qs = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
     return [
         {"role": "system", "content":
-            f"You check whether questions about one health technology appraisal (\"{corpus.topic}\") are answered by passages retrieved from its documents. "
-            'Return only a JSON object: {"results": [{"n": int, "answered": "yes" | "partly" | "no", "passage_ids": [str, ...], "answer_if_any": str | null}, ...]} with one entry per question, in order. '
-            "\"yes\" means a passage states the answer, the answer follows directly from what a passage states (a trial described as UK-based answers which country enrolled its patients), or the question is open enough that a passage on its topic answers it; "
-            "\"partly\" means a passage gives a closely related fact but not the fact asked for; \"no\" means nothing here bears on it. "
+            f"You screen passages retrieved from the documents of one health technology appraisal (\"{corpus.topic}\"). "
+            "A question and its correct answer are given; the evidence that answer rests on has been removed. For each passage, decide whether a reader holding it could answer the question. "
+            'Return only a JSON object: {"results": [{"unit_id": str, "answers": "yes" | "partly" | "no", "answer_if_any": str | null}, ...]} with one entry per passage, in order, using the id shown in brackets. '
+            "\"yes\" means the passage states the answer, or the answer follows directly from what it states; "
+            "\"partly\" means it gives part of the answer (one of several values asked for), or a value a reader might take for the answer without being able to tell; "
+            "\"no\" means a reader holding it would not get the answer: it says nothing about the question, or gives a related fact (another arm, data cut, population, scenario, document or measure) that is clearly not what is asked. "
+            "Judge from the passages' own words, never from what you know. "
             f"(prompt version {PROMPT_VERSION})"},
-        {"role": "user", "content": f"Questions:\n{qs}\n\nPassages:\n{shown}"},
+        {"role": "user", "content": f"Question: {question}\nCorrect answer (withheld from the system under test): {answer}\n\nPassages:\n{shown}"},
     ]

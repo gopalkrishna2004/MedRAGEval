@@ -7,8 +7,8 @@ not one bundle. It has groups of slots, and for each group:
 - a weight that sets the group's share of the dataset;
 - links between slots, for multi-hop items.
 
-RAGEval summarises a schema from seed documents and then generates documents
-from it. Here the documents are real, so the schema drives extraction instead.
+The documents are real, so the schema drives extraction rather than
+document generation.
 `draft_schema` asks an LLM for a first version for a new document family,
 which a person reviews before use.
 """

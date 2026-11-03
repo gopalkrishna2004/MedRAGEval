@@ -8,7 +8,8 @@ Every check is cheap and deterministic:
 - per type: both values and a meaningful difference for comparative, the
   bridge unnamed for multi-hop, two documents for cross-document, the speaker
   and the claim's exclusivity for attribution, one supported keypoint per
-  fact for summary, the [REDACTED] marker for unanswerable.
+  fact for summary. Unanswerable items are not generated, so they are not
+  checked here: see `Run._withhold`.
 
 A failed check names its reason, which goes to rejects.jsonl and, for a
 rewrite, back to the generator.
@@ -171,14 +172,6 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
     for terms in cand.hint.get("must_mention") or []:
         v.check("question_disambiguates", any(term_mentioned(term, q) or term_mentioned(expand(term, cfg), q) for term in terms),
                 f"question_lacks_discriminator:{terms[0][:60]}")
-
-    if t == "unanswerable":
-        v.check("answer_null", not item.get("answer"), "unanswerable_has_answer")
-        if cand.subtype == "redacted":
-            v.check("quote_redacted", any(REDACTED in qt.get("quote", "") for qt in quotes), "quote_lacks_redacted_marker")
-            context = " ".join(cand.hint.get("labels", [])) + " " + (cand.units[0].caption or "") + " " + cand.units[0].plain[:300]
-            v.check("in_domain", len(token_set(q) & token_set(context)) >= 2, "question_off_topic")
-        return v
 
     answer = str(item.get("answer") or "").strip()
     v.check("answer_present", bool(answer), "no_answer")

@@ -3,7 +3,9 @@
 For each question type the selector proposes facts, the generator LLM
 writes an item about them, the programmatic checks and then the judge LLM
 decide whether to keep it, until the type's target is met or the attempt
-budget is spent. Accepted items are appended to dataset.jsonl as they come
+budget is spent. Unanswerable items come last and need no generator: an
+accepted answerable item is asked again with its evidence withheld (see
+`Run._withhold`). Accepted items are appended to dataset.jsonl as they come
 (a crash loses nothing), rejected ones to rejects.jsonl with their reasons,
 and generate_report.json summarises the run. If a type ends far short of its
 target the run fails after writing, because a dataset with a hole in it
@@ -13,30 +15,31 @@ should not pass silently.
 import argparse
 import json
 import math
-import re
 import time
 from collections import Counter, defaultdict
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from itertools import islice
 from pathlib import Path
 from random import Random
 
 from medrageval.config import load_config
 from medrageval.facts.factsheet import FactSheet
 from medrageval.facts.schema import known_roles, load_schema
-from medrageval.generate.candidates import SELECTORS, Candidate, candidate_counts, idents
+from medrageval.generate.candidates import SELECTORS, Candidate, candidate_counts, idents, interleave, spread
 from medrageval.generate.corpus import Corpus, Unit, load_corpus
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llms
-from medrageval.generate.prompts import (PROMPT_VERSION, build_alone_check, build_generation, build_judge, build_rewrite, build_unanswerable_check,
+from medrageval.generate.prompts import (PROMPT_VERSION, build_alone_check, build_generation, build_judge, build_rewrite, build_withhold_check,
                                          rewrite_feedback)
-from medrageval.generate.validate import Verdict, is_duplicate, token_set, validate
+from medrageval.generate.validate import is_duplicate, token_set, validate
 from medrageval.text import contains_quote
 
 TYPES = ["factual", "numerical", "comparative", "multihop", "crossdoc", "attribution", "summary", "unanswerable"]
 NEEDS_SINGLE_EXCERPT_CHECK = {"multihop", "crossdoc"}   # both need two excerpts: one alone must not answer
-# Failures a rewrite can fix: the checks, the judge, the coverage check. Not a skip (the model declined the evidence) or bad JSON.
-REWRITABLE_STAGES = {"programmatic", "judge", "unanswerable_check"}
+# Failures a rewrite can fix: the checks and the judge. Not a skip (the model declined the evidence) or bad JSON.
+REWRITABLE_STAGES = {"programmatic", "judge"}
+# Hint fields that `record` copies into fields of their own, or that are too large to keep.
+HINT_SKIP = {"rows", "question", "answer", "answer_keys", "also_in", "withheld_evidence"}
 # The evidence's fault, not the wording's: an attribution claim that is too generic or restated by another party, or a
 # pair of excerpts one of which answers alone (12 of 12 multi-hop rewrites failed on that in the third smoke run).
 UNFIXABLE = {"claim_too_generic", "claim_restated_in", "judge:answerable_from_single_excerpt", "answerable_from"}
@@ -68,6 +71,8 @@ class Run:
     # ----- per candidate work, runs in a worker thread -----
     def process(self, cand: Candidate) -> list[dict]:
         """Generate and check an item; when it fails on something the wording can fix, send it back once with the reasons."""
+        if cand.type == "unanswerable":
+            return [self._withhold(cand)]
         messages = build_generation(cand, self.corpus, self.cfg, self.sheet)
         raw, results = self._attempt(cand, messages, cand.candidate_id)
         if not self._rewritable(results):
@@ -94,8 +99,6 @@ class Run:
             return {}, [{"cand": cand, "item": {}, "stage": "generation", "reasons": [f"bad_json:{e}"[:200]]}]
         if raw.get("skip"):   # the model may decline evidence it cannot write a sound item on; the reason goes to rejects.jsonl
             return raw, [{"cand": cand, "item": raw, "stage": "skipped", "reasons": [f"skip:{str(raw['skip'])[:120]}"]}]
-        if cand.subtype == "not_covered":
-            return raw, self._check_not_covered(cand, [q for q in (raw.get("questions") or [])[:self.cfg["unanswerable"]["questions_per_anchor"]] if isinstance(q, dict)])
         if cand.type == "summary":   # the facts' own quotes are the evidence; the writer only cites fact ids
             raw["quotes"] = [{"unit_id": e["unit_id"], "quote": e["quote"]} for f in cand.facts for e in f.evidence]
         verdict = validate(raw, cand, self.corpus, self.cfg, [])
@@ -146,55 +149,60 @@ class Run:
             out[u.unit_id] = {"answer": answer or None, "identified_by": span or None, "grounded": grounded, "matches": matches and grounded}
         return out
 
-    def _check_not_covered(self, cand: Candidate, qds: list[dict]) -> list[dict]:
-        """Programmatic checks on each proposed question, then one coverage call for the anchor's surviving questions."""
+    # ----- unanswerable items: an answerable one with its evidence withheld -----
+    def _withhold(self, cand: Candidate) -> dict:
+        """An accepted answerable item asked again without its evidence; the passages that stand in for it must not answer.
+
+        The stand-ins are the units BM25 ranks closest to
+        each withheld excerpt and to the question itself, minus the evidence
+        and its copies in other documents (`also_in`). The judge screens them
+        all against the question and the withheld answer in one call, and only
+        passages it finds do not answer are kept; a passage holding every
+        answer key is dropped whatever it says. The kept passages are stored on
+        the item: at evaluation they are the context the RAG reads, so the
+        evidence is certainly absent.
+        """
+        h, uc = cand.hint, self.cfg["unanswerable"]
+        question, answer, keys = h["question"], str(h.get("answer") or ""), [str(k) for k in h.get("answer_keys") or []]
+        excluded = {u.unit_id for u in cand.units} | set(h.get("also_in") or [])
+        queries = [u.tokens for u in cand.units] + [sorted(token_set(question))]
+        ranked = [[uid for uid, _ in self.corpus.bm25.search(q, k=uc["candidates"], exclude=excluded)] for q in queries]
+        pool = [self.corpus.units[uid] for uid in dict.fromkeys(interleave(ranked))][:uc["candidates"]]
+        item = {"question": question, "answer": None, "answer_keys": [], "quotes": [], "distractors": [], "screening": []}
+        if len(pool) < uc["min_distractors"]:
+            return {"cand": cand, "item": item, "stage": "withhold", "reasons": [f"too_few_distractors:{len(pool)}"]}
+        check = self.judge.complete_json(build_withhold_check(question, answer, pool, self.corpus, uc["max_chars_per_passage"]), f"withhold:{cand.candidate_id}")
+        verdicts = {str(r.get("unit_id")): r for r in (check.get("results") or []) if isinstance(r, dict)}
+        kept = []
+        for u in pool:
+            r = verdicts.get(u.unit_id, {})
+            leaks = bool(keys) and all(contains_quote(k, u.plain) for k in keys)
+            verdict = "yes" if leaks else str(r.get("answers") or "unscreened")
+            item["screening"].append({"unit_id": u.unit_id, "answers": verdict, "answer_if_any": r.get("answer_if_any"), "keys_present": leaks})
+            if verdict == "no":
+                kept.append(u)
+        item["distractors"] = kept[:uc["distractors"]]
+        reasons = [] if len(item["distractors"]) >= uc["min_distractors"] else [f"too_few_distractors:{len(item['distractors'])}"]
+        return {"cand": cand, "item": item, "stage": "withhold" if reasons else "accepted", "reasons": reasons, "judge": check}
+
+    def unanswerable_candidates(self) -> Iterator[Candidate]:
+        """Accepted items of the source types, shuffled by the seed and spread across types, each as a candidate for withholding."""
         uc = self.cfg["unanswerable"]
-        lim = self.cfg["limits"]["question_words"]
-        out, pending = [], []
-        context = set(cand.units[0].tokens).union(*(set(n.tokens) for n in self.corpus.neighbours(cand.units[0], uc["neighbours"])))
-        for qd in qds:
-            q = str(qd.get("question") or "").strip()
-            item = {"question": q, "answer": None, "answer_keys": [], "quotes": [], "missing_fact": qd.get("missing_fact")}
-            v = Verdict()
-            v.check("question_present", bool(q), "no_question")
-            v.check("question_length", lim[0] <= len(q.split()) <= lim[1], "question_length")
-            v.check("no_deictic", not any(re.search(p, q, re.I) for p in self.cfg["validate"]["deictic_patterns"]), "deictic_question")
-            v.check("in_domain", len(token_set(q) & context) >= 2, "question_off_topic")
-            if v.ok:
-                pending.append((item, v))
-            else:
-                out.append({"cand": cand, "item": item, "stage": "programmatic", "reasons": v.reasons, "verdict": v})
-        if not pending:
-            return out
-        passages, seen = [], set()
-        for item, _ in pending:
-            for h, _ in self.corpus.bm25.search(sorted(token_set(item["question"])), k=uc["top_k"]):
-                if h not in seen:
-                    seen.add(h); passages.append(self.corpus.units[h])
-        for n in self.corpus.neighbours(cand.units[0], uc["neighbours"]) + [cand.units[0]]:
-            if n.unit_id not in seen:
-                seen.add(n.unit_id); passages.append(n)
-        check = self.judge.complete_json(build_unanswerable_check([i["question"] for i, _ in pending], passages, self.corpus), f"check:{cand.candidate_id}")
-        results = {int(r.get("n", 0)): r for r in (check.get("results") or []) if isinstance(r, dict)}
-        ok_verdicts = {"no", "partly"} if uc["accept_partly"] else {"no"}
-        for n, (item, v) in enumerate(pending, start=1):
-            r = results.get(n, {})
-            item["search"] = {"hits": [p.unit_id for p in passages], "verdict": r.get("answered"), "answer_if_any": r.get("answer_if_any"),
-                              "passage_ids": r.get("passage_ids")}
-            reasons = [] if r.get("answered") in ok_verdicts else [f"answered:{r.get('answered')}"]
-            out.append({"cand": cand, "item": item, "stage": "unanswerable_check" if reasons else "accepted", "reasons": reasons, "verdict": v, "judge": r})
-        # one item per anchor: three near misses on one paragraph would crowd out the rest of the bundle
-        accepted = [res for res in out if res["stage"] == "accepted"]
-        for res in accepted[1:]:
-            res["stage"], res["reasons"] = "spare", ["anchor_has_item"]
-        return out
+        sources = [r for r in self.accepted if r["type"] in uc["source_types"]]
+        if not sources:
+            raise RuntimeError(f"unanswerable items are derived from accepted items of types {uc['source_types']}: run those types in the same run")
+        for src in spread(sources, lambda r: r["type"], Random(f"{self.seed}:unanswerable")):
+            units = list({e["unit_id"]: self.corpus.units[e["unit_id"]] for e in src["evidence"] if e["unit_id"] in self.corpus.units}.values())
+            facts = [self.sheet.facts[f] for f in src["facts"] if f in self.sheet.facts]
+            hint = {"source_item_id": src["item_id"], "source_type": src["type"], "group": src["group"], "question": src["question"],
+                    "answer": src["answer"], "answer_keys": src["answer_keys"], "also_in": src["also_in"], "withheld_evidence": src["evidence"]}
+            yield Candidate("unanswerable", "withheld", units, hint, facts)
 
     # ----- main thread -----
-    def run_type(self, selector: str, type_: str, target: int) -> None:
+    def run_type(self, selector: str, type_: str, target: int, candidates: Iterator[Candidate] | None = None) -> None:
         cfg = self.cfg
         st = self.stats[type_]
-        rng = Random(f"{self.seed}:{selector}")
-        it = SELECTORS[selector](self.corpus, self.sheet, cfg, rng)
+        it = candidates if candidates is not None else SELECTORS[selector](self.corpus, self.sheet, cfg, Random(f"{self.seed}:{selector}"))
         budget = target * attempts_per_item(cfg, type_)
         accepted_here, attempts = 0, 0
         quota = math.ceil(cfg["attribution"]["max_share_per_speaker"] * target) if type_ == "attribution" else None
@@ -225,11 +233,11 @@ class Run:
                 for res in (r for group in results for r in group):
                     if accepted_here >= target:
                         break
-                    if res.get("first") and id(res["first"]) not in rewritten:   # one count per candidate, though "not covered" has three results
+                    if res.get("first") and id(res["first"]) not in rewritten:   # one count per candidate
                         rewritten.add(id(res["first"]))
                         st["rewrites"] += 1
                         st["first_reasons"].update({r.split(":")[0] for r in res["first"]["reasons"]})
-                    if res["stage"] == "accepted" and is_duplicate(res["item"].get("question", ""), self.questions, cfg["dedupe_jaccard"]):
+                    if res["stage"] == "accepted" and type_ != "unanswerable" and is_duplicate(res["item"].get("question", ""), self.questions, cfg["dedupe_jaccard"]):
                         res["stage"], res["reasons"] = "duplicate", ["duplicate_question"]
                     if res["stage"] == "accepted" and quota and self.speakers[res["cand"].hint.get("speaker")] >= quota:
                         res["stage"], res["reasons"] = "speaker_quota", ["speaker_quota"]
@@ -259,8 +267,6 @@ class Run:
             u = units.get(qt.get("unit_id")) if isinstance(qt, dict) else None
             if u:
                 evidence.append(self._evidence(u, qt.get("quote")))
-        if not evidence and cand.subtype == "not_covered":
-            evidence = []
         rec = {
             "item_id": f"{cand.type}-{self.stats[cand.type]['accepted'] + 1:03d}" if res["stage"] == "accepted" else None,
             "type": cand.type,
@@ -273,8 +279,7 @@ class Run:
             "facts": [f.fact_id for f in cand.facts],
             "group": cand.hint.get("group"),
             "also_in": sorted({uid for f in cand.facts for uid in f.also_in if uid in self.corpus.units}),
-            "anchor": [self._evidence(u, None) for u in cand.units] if cand.type == "unanswerable" and cand.subtype == "not_covered" else None,
-            "hint": {k: v for k, v in cand.hint.items() if k != "rows"},
+            "hint": {k: v for k, v in cand.hint.items() if k not in HINT_SKIP},
             "provenance": {"candidate_id": cand.candidate_id, "model": self.gen.model, "judge_model": self.judge.model,
                            "prompt_version": PROMPT_VERSION, "seed": self.seed, "interim_dir": str(self.corpus.interim_dir),
                            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")},
@@ -292,8 +297,11 @@ class Run:
                            "mode": cand.hint.get("mode"), "rival": cand.hint.get("rival")}
         if cand.type == "summary":
             rec["keypoints"] = item.get("keypoints")
-        if "search" in item:
-            rec["search"] = item["search"]
+        if cand.type == "unanswerable":   # the same question as its source, without the source's evidence; what the RAG reads instead
+            rec["source_item_id"] = cand.hint.get("source_item_id")
+            rec["withheld"] = {"answer": cand.hint.get("answer"), "answer_keys": cand.hint.get("answer_keys"), "evidence": cand.hint.get("withheld_evidence")}
+            rec["distractors"] = [self._evidence(u, None) for u in item.get("distractors") or []]
+            rec["screening"] = item.get("screening")
         if res.get("first"):   # the rejected first version and why, so a rewrite can be audited
             rec["first_attempt"] = res["first"]
         if res["stage"] != "accepted":
@@ -331,10 +339,8 @@ def generate_dataset(interim_dir: Path, out_dir: Path, cfg: dict, gen, judge, ta
     error = None
     try:
         for t in types:
-            if t == "unanswerable":
-                half = math.ceil(targets[t] / 2)
-                run.run_type("unanswerable_redacted", t, half)
-                run.run_type("unanswerable_not_covered", t, targets[t] - half)
+            if t == "unanswerable":   # last in TYPES: built from what the run accepted
+                run.run_type(t, t, targets[t], run.unanswerable_candidates())
             else:
                 run.run_type(t, t, targets[t])
     except RuntimeError as e:
@@ -365,7 +371,7 @@ def build_report(run: Run, targets: dict, types: list[str], elapsed: float, erro
         "model": run.gen.model, "judge_model": run.judge.model, "prompt_version": PROMPT_VERSION, "seed": run.seed,
         "items": len(run.accepted),
         "per_type": per_type,
-        "items_per_document": dict(Counter(e["doc_id"] for r in run.accepted for e in (r["evidence"] or r.get("anchor") or []))),
+        "items_per_document": dict(Counter(e["doc_id"] for r in run.accepted for e in (r["evidence"] or (r.get("withheld") or {}).get("evidence") or []))),
         "items_per_group": dict(Counter(r.get("group") or "-" for r in run.accepted)),
         "facts": run.sheet.stats(),
         "speakers": dict(run.speakers),
@@ -404,6 +410,7 @@ def dry_run(interim_dir: Path, cfg: dict, fcfg: dict, seed: int | None = None, f
         print(f"  {sel:26s} {info['total']:5d} candidates {info['by_group']}")
         for e in info["examples"][:1]:
             print(f"      e.g. {e['facts']}")
+    print(f"  {'unanswerable':26s} derived from accepted items of types {', '.join(cfg['unanswerable']['source_types'])}, evidence withheld")
     return {"corpus": s, "facts": fs, "candidates": counts}
 
 

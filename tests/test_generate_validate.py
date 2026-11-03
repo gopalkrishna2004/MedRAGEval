@@ -212,16 +212,6 @@ def test_summary_keypoints_cite_and_state_their_facts():
     assert f"keypoint_unsupported:{facts[1].fact_id}" in reasons and "keypoint_unknown_fact:d99-nothing-001" in reasons
 
 
-def test_unanswerable_redacted_requires_marker_and_no_answer():
-    c = selected("unanswerable_redacted", "d02-economic_model.cost_input-001")
-    good = item("What is the list price per pack of capivasertib tablets?", None, [],
-                [("d02-e0004", "The list price of capivasertib is £[REDACTED] per pack of 64 tablets")])
-    assert validate(good, c, CORPUS, CFG, []).ok
-    assert "unanswerable_has_answer" in validate({**good, "answer": "£5,000"}, c, CORPUS, CFG, []).reasons
-    no_marker = {**good, "quotes": [{"unit_id": "d02-e0004", "quote": "per pack of 64 tablets (excluding VAT), and the company estimates"}]}
-    assert "quote_lacks_redacted_marker" in validate(no_marker, c, CORPUS, CFG, []).reasons
-
-
 @pytest.mark.parametrize("question, rejected", [
     ("What assumption did the EAG make about treatment waning in CAPItello-291, and how did it affect the ICER?", True),
     ("Which tool did the company use for the severity modifier and what estimate did it give for capivasertib?", True),

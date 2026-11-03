@@ -14,7 +14,15 @@ PFS = {"item_id": "numerical-001", "type": "numerical", "subtype": "efficacy", "
        "question": "What was the median PFS by investigator assessment with capivasertib plus fulvestrant, in months?",
        "answer": "Median PFS was 7.3 months.", "answer_keys": ["7.3 months"], "also_in": [],
        "evidence": [{"unit_id": "d02-e0003", "element_id": "d02-e0003", "doc_id": "d02", "pages": [21, 21], "quote": "Median PFS (months) | 7.3 | 3.1"}]}
-PRICE = {"item_id": "unanswerable-001", "type": "unanswerable", "subtype": "redacted", "answerable": False,
+# Unanswerable: the PFS question again, its evidence withheld; the stored distractors are the context. The evidence unit itself is listed
+# among them to check it is dropped.
+WITHHELD = {"item_id": "unanswerable-001", "type": "unanswerable", "subtype": "withheld", "answerable": False, "source_item_id": "numerical-001",
+            "question": PFS["question"], "answer": None, "answer_keys": [], "also_in": [], "evidence": [],
+            "withheld": {"answer": PFS["answer"], "answer_keys": PFS["answer_keys"], "evidence": PFS["evidence"]},
+            "distractors": [{"unit_id": "d02-e0004", "doc_id": "d02", "pages": [40, 40]}, {"unit_id": "d02-e0001", "doc_id": "d02", "pages": [10, 10]},
+                            {"unit_id": "d02-e0003", "doc_id": "d02", "pages": [21, 21]}]}
+# An unanswerable item from an older dataset, without distractors: answered over live retrieval like the rest.
+PRICE = {"item_id": "unanswerable-002", "type": "unanswerable", "subtype": "redacted", "answerable": False,
          "question": "What is the list price of a pack of 64 capivasertib tablets?", "answer": None, "answer_keys": [], "also_in": [],
          "evidence": [{"unit_id": "d02-e0004", "element_id": "d02-e0004", "doc_id": "d02", "pages": [40, 40], "quote": "£[REDACTED] per pack"}]}
 
@@ -41,7 +49,9 @@ def question(messages):
 
 
 def small_model(messages, tag):
-    return "Median PFS was 7.3 months [1]." if "median" in question(messages) else "Not found in the documents."
+    """Reads what it is shown: the PFS figure when a passage holds it, a decline otherwise."""
+    passages = messages[-1]["content"].rsplit("Question: ", 1)[0]
+    return "Median PFS was 7.3 months [1]." if "median" in question(messages) and "7.3" in passages else "Not found in the documents."
 
 
 def passing_judge(messages, tag):
@@ -56,23 +66,29 @@ def make_rag(full, llm):
 def test_eval_end_to_end(tmp_path):
     full = full_config(tmp_path)
     interim = write_interim(tmp_path / "interim")
-    items = load_items([write_dataset(tmp_path / "ds", [PFS, PRICE], interim)])
+    items = load_items([write_dataset(tmp_path / "ds", [PFS, WITHHELD, PRICE], interim)])
     assert resolve_interim(items, None) == interim
     judge = FakeLLM(passing_judge)
-    report = evaluate(items, make_rag(full, FakeLLM(small_model)), judge, full, tmp_path / "run")
+    rag = make_rag(full, FakeLLM(small_model))
+    report = evaluate(items, rag, judge, full, tmp_path / "run")
 
     rows = [json.loads(line) for line in (tmp_path / "run" / "responses.jsonl").open()]
-    assert [r["uid"] for r in rows] == ["numerical-001", "unanswerable-001"]
-    pfs, price = rows
-    assert pfs["score"] == 1.0 and pfs["category"] == "correct" and pfs["keys"]["correct"]
+    assert [r["uid"] for r in rows] == ["numerical-001", "unanswerable-001", "unanswerable-002"]
+    pfs, withheld, price = rows
+    assert pfs["score"] == 1.0 and pfs["category"] == "correct" and pfs["keys"]["correct"] and pfs["context"] == "retrieved"
     assert pfs["retrieval"]["hit"] and pfs["retrieval"]["first_rank"] == 1
-    assert price["category"] == "correct_abstention" and price["retrieval"] is None
     assert "Median PFS (months) | 7.3 | 3.1" in judge.calls[0][0][1]["content"]   # the judge sees the passages the model saw
+    # the same question read over the stored distractors: the chunk holding the withheld evidence is dropped, so the model declines
+    assert withheld["context"] == "fixed" and withheld["category"] == "correct_abstention" and withheld["retrieval"] is None
+    shown = [rag.index.by_id[h["chunk_id"]] for h in withheld["retrieved"]]
+    assert [c.unit_ids[0] for c in shown] == ["d02-e0004", "d02-e0001"] and all(h["in_context"] and h["score"] is None for h in withheld["retrieved"])
+    assert "7.3" not in judge.calls[1][0][1]["content"].split("Passages shown")[1]
+    assert price["context"] == "retrieved" and price["category"] == "correct_abstention" and price["retrieved"][0]["score"]
 
-    assert report["items"] == 2 and set(report["per_type"]) == {"numerical", "unanswerable"}
-    assert report["overall"]["score"] == 1.0 and report["agreement"] == {"items": 2, "agree": 1.0, "keys_only": [], "judge_only": []}
+    assert report["items"] == 3 and set(report["per_type"]) == {"numerical", "unanswerable"} and report["fixed_context_items"] == 1
+    assert report["overall"]["score"] == 1.0 and report["agreement"] == {"items": 3, "agree": 1.0, "keys_only": [], "judge_only": []}
     assert report["judge_model"] == "fake" and report["rag"]["retrieval"]["mode"] == "bm25" and not report["warnings"]
-    assert json.loads((tmp_path / "run" / "eval_report.json").read_text())["items"] == 2
+    assert json.loads((tmp_path / "run" / "eval_report.json").read_text())["items"] == 3
 
 
 def test_without_a_judge_items_are_scored_on_keys(tmp_path):

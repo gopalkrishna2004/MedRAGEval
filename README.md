@@ -72,11 +72,9 @@ empty columns are dropped. See `src/medrageval/parse/tables.py`.
 
 ### Build the fact sheet
 
-Questions are written from facts, not from raw passages, following RAGEval
-(schema → config → questions → references → keypoints). RAGEval generates
-its documents from a config of key facts, so the config is true by
-construction. Here the documents are real, so the config is **extracted from
-them and verified**:
+Questions are written from facts, not from raw passages (schema → config →
+questions → references → keypoints). The documents are real, so the config of
+key facts is **extracted from them and verified**:
 
 1. **Schema** (once per document family). [configs/schema/nice_sta.yaml](configs/schema/nice_sta.yaml)
    lists the facts that matter in a NICE single technology appraisal: trial
@@ -118,7 +116,7 @@ uv run medrageval generate data/interim/ta1063               # full run: 150 ite
 ```
 
 Outputs:
-- `dataset.jsonl`: one item per line, with the facts it was written from, its group, its evidence and `also_in`.
+- `dataset.jsonl`: one item per line, with the facts it was written from, its group, its evidence and `also_in`. An unanswerable item also carries `source_item_id`, `withheld` (the answer, keys and evidence taken away) and `distractors` (the passages it is read with), plus the screening verdict on every candidate passage.
 - `rejects.jsonl`: every rejected candidate, with the reason.
 - `generate_report.json`: counts per type, group and reason, fact-sheet stats and LLM usage.
 
@@ -139,7 +137,7 @@ than page count.
 | Cross-document | two documents of different roles giving different values for one subject (the company's ICER against the EAG's), differing by at least 10%; one item per fact and per disputed topic | quotes from both documents, not copies; the figures differ by at least 10%; the judge fails accounts that agree; neither excerpt alone answers it |
 | Attribution | one party's side of a disputed point, or a stakeholder's view in its own document | the answer is the party, or the organisation by name; not named in the question; the claim not restated elsewhere |
 | Summary | 3–6 facts of one group in one section of one document, the section heading being the theme (the company's scenario analyses, the EAG's comparators critique) | one keypoint per fact, each stating its fact; scored on keypoints |
-| Unanswerable | a redacted fact with no disclosed sibling, or a near miss on a fact (a data cut, population or scenario the bundle does not report) | the quote holds the marker; or BM25 hits plus an LLM check find no answer |
+| Unanswerable | an accepted item of another type, asked again with its evidence withheld; the passages that stand in for it are the units BM25 ranks closest to the evidence and to the question, minus the evidence and its copies | the judge screens every candidate passage against the withheld answer in one call and only those that do not answer are kept; a passage holding every answer key is dropped regardless; at least `min_distractors` must remain |
 
 Every question is checked for layout talk: table or figure numbers, column
 headers such as "(N=155)", rows and columns are rejected. Keys must be
@@ -196,7 +194,9 @@ uv run medrageval eval data/datasets/ta1063_smoke_v17 data/datasets/ta1063_smoke
 ```
 
 `eval` reads the parse directory from the items' provenance. With several
-datasets, item ids are prefixed by the dataset directory. Options: `--mode
+datasets, item ids are prefixed by the dataset directory. An unanswerable item
+is read over its stored distractors rather than a search, so the withheld
+evidence is certainly absent; `context` in `responses.jsonl` says which path an item took. Options: `--mode
 bm25|dense|hybrid`, `--top-k`, `--model` (the vLLM model), `--judge-model` (an
 OpenRouter id), `--no-judge` (keys only, no OpenRouter calls), `--limit N`.
 Answers and verdicts are cached like generation calls, so a rerun makes no
@@ -212,6 +212,6 @@ Outputs in the run directory:
 | `keys` | Deterministic: every answer key in the reply (numbers compared as numbers: "£52,681" = "52681", "0.50" = "0.5"), the party for attribution, a decline for unanswerable items. |
 | `score` | The judge's verdict (correct 1, partial 0.5, incorrect or declined 0; for unanswerable items a decline is correct). Keys when run with `--no-judge`. |
 | `grounded` | The judge: every claim of the reply is supported by the passages shown. |
-| keypoints | Summaries: share of keypoints covered and contradicted (RAGEval's completeness and hallucination). |
+| keypoints | Summaries: share of keypoints covered and contradicted (completeness and hallucination). |
 | outcome | `correct`; `retrieval_miss` (wrong, evidence not shown); `reader_error` (wrong, evidence shown); `false_abstention` (declined, evidence shown); `correct_abstention` / `hallucinated_answer` for unanswerable items. |
 | judge vs keys | Agreement on items both can decide, with the disagreeing ids: a check on the scorer, and a pointer to keys or items worth a look. |

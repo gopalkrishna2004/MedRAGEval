@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Protocol
 
@@ -79,8 +80,11 @@ class Index:
     def __init__(self, chunks: list[Chunk], cfg: dict, topic: str, vectors: np.ndarray | None = None, embedder: Embedder | None = None):
         self.chunks, self.cfg, self.topic = chunks, cfg, topic
         self.by_id = {c.chunk_id: c for c in chunks}
+        self.by_unit: dict[str, list[Chunk]] = defaultdict(list)   # a unit's chunks in corpus order (several when it was split)
         for c in chunks:
             c.tokens = tokenize(c.text)
+            for uid in c.unit_ids:
+                self.by_unit[uid].append(c)
         self.bm25 = BM25({c.chunk_id: c.tokens for c in chunks})
         self.vectors, self.embedder = vectors, embedder
 

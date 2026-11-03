@@ -113,16 +113,6 @@ def test_summary_groups_facts_of_one_section(sheet):
         assert heading(Unit("x", "x", "d02", "paragraph", "", "", None, None, [title], 1, 1, 0)) == want, title
 
 
-def test_unanswerable_selectors(sheet):
-    red = cands(sheet, "unanswerable_redacted")
-    assert ids(red) == [("d02-economic_model.cost_input-001",)] and "list price" in red[0].hint["labels"][0]
-    nc = cands(sheet, "unanswerable_not_covered")
-    assert nc and all(c.facts[0].kind == "number" and len(c.units) == 1 for c in nc)
-    assert len({c.units[0].section_id for c in nc if c.units[0].section_id == "d02-s002"}) <= CFG["limits"]["max_per_section"]
-    pfs = next(c for c in nc if c.facts[0].slot == "efficacy.endpoint_result")   # what the bundle reports, for the near miss to avoid
-    assert pfs.hint["reported"]["data_cut"] == ["DCO1", "DCO2"] and set(pfs.hint["reported"]["endpoint"]) == {"PFS", "OS"}
-
-
 def test_weighted_order_follows_group_weights():
     items = [("a", i) for i in range(30)] + [("b", i) for i in range(30)] + [("c", i) for i in range(2)]
     order = list(weighted(items, lambda x: x[0], {"a": 0.6, "b": 0.3, "c": 0.1, }, Random(0), lambda x: x, None))
