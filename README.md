@@ -112,7 +112,7 @@ is never used.
 ```bash
 uv run medrageval generate data/interim/ta1063 --dry-run     # facts per group and candidates per type; no LLM calls
 uv run medrageval generate data/interim/ta1063 --per-type 2  # smoke run: 2 items per type
-uv run medrageval generate data/interim/ta1063               # full run: 150 items into data/datasets/ta1063/
+uv run medrageval generate data/interim/ta1063               # full run: 146 items into data/datasets/ta1063/
 ```
 
 Outputs:
@@ -124,7 +124,7 @@ Responses are cached in `data/cache/llm/` by model, temperature and prompt, so
 rerunning the same configuration makes no calls and writes an identical
 dataset; `--no-cache` disables that.
 
-Eight item types, each built from facts. Selectors draw across schema groups
+Seven item types, each built from facts. Selectors draw across schema groups
 in proportion to their weights, so the topic mix follows what matters rather
 than page count.
 
@@ -134,7 +134,6 @@ than page count.
 | Numerical | one value of a number fact, not a count below 5 | the key is the fact's number with its unit (`78.1%` is accepted where the table prints `121 (78.1)`) |
 | Comparative | two arms of one fact, or two facts of a slot in one document that differ in one qualifier | both values from the facts, a difference of at least 10% (no 3.25 vs 3.26), direction consistent, answer names the winner |
 | Multi-hop | a schema link: fact A identifies what fact B is about, by its value ("the primary endpoint of CAPItello-291" → its median) or by describing it ("the comparator the company ruled out because of TA239" → its cost); B's passage must hold a rival the description rules out | the bridged thing is not named or spelled out; quotes from both; after the judge, neither excerpt alone answers it by its own words (an answer the model reaches from what it knows of the drug does not count) |
-| Cross-document | two documents of different roles giving different values for one subject (the company's ICER against the EAG's), differing by at least 10%; one item per fact and per disputed topic | quotes from both documents, not copies; the figures differ by at least 10%; the judge fails accounts that agree; neither excerpt alone answers it |
 | Attribution | one party's side of a disputed point, or a stakeholder's view in its own document | the answer is the party, or the organisation by name; not named in the question; the claim not restated elsewhere |
 | Summary | 3–6 facts of one group in one section of one document, the section heading being the theme (the company's scenario analyses, the EAG's comparators critique) | one keypoint per fact, each stating its fact; scored on keypoints |
 | Unanswerable | an accepted item of another type, asked again with its evidence withheld; the passages that stand in for it are the units BM25 ranks closest to the evidence and to the question, minus the evidence and its copies | the judge screens every candidate passage against the withheld answer in one call and only those that do not answer are kept; a passage holding every answer key is dropped regardless; at least `min_distractors` must remain |
@@ -208,7 +207,7 @@ Outputs in the run directory:
 
 | Metric | What it measures |
 |---|---|
-| `hit`, `all_evidence`, `evidence_recall`, `MRR` | Retrieval: was the item's gold evidence among the passages shown? `hit` also accepts a copy of the fact in another document (`also_in`); multi-hop, cross-document and summary items need `all_evidence`. |
+| `hit`, `all_evidence`, `evidence_recall`, `MRR` | Retrieval: was the item's gold evidence among the passages shown? `hit` also accepts a copy of the fact in another document (`also_in`); multi-hop and summary items need `all_evidence`. |
 | `keys` | Deterministic: every answer key in the reply (numbers compared as numbers: "£52,681" = "52681", "0.50" = "0.5"), the party for attribution, a decline for unanswerable items. |
 | `score` | The judge's verdict (correct 1, partial 0.5, incorrect or declined 0; for unanswerable items a decline is correct). Keys when run with `--no-judge`. |
 | `grounded` | The judge: every claim of the reply is supported by the passages shown. |

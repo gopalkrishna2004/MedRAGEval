@@ -34,8 +34,8 @@ from medrageval.generate.prompts import (PROMPT_VERSION, build_alone_check, buil
 from medrageval.generate.validate import is_duplicate, token_set, validate
 from medrageval.text import contains_quote
 
-TYPES = ["factual", "numerical", "comparative", "multihop", "crossdoc", "attribution", "summary", "unanswerable"]
-NEEDS_SINGLE_EXCERPT_CHECK = {"multihop", "crossdoc"}   # both need two excerpts: one alone must not answer
+TYPES = ["factual", "numerical", "comparative", "multihop", "attribution", "summary", "unanswerable"]
+NEEDS_SINGLE_EXCERPT_CHECK = {"multihop"}   # needs two excerpts: one alone must not answer
 # Failures a rewrite can fix: the checks and the judge. Not a skip (the model declined the evidence) or bad JSON.
 REWRITABLE_STAGES = {"programmatic", "judge"}
 # Hint fields that `record` copies into fields of their own, or that are too large to keep.

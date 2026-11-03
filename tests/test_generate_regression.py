@@ -132,6 +132,6 @@ def test_every_type_has_candidates_and_selection_is_reproducible(sheet):
 
 def test_candidates_never_use_an_indistinguishable_fact(sheet):
     name, c, s = sheet
-    for sel in ("factual", "numerical", "comparative", "multihop", "crossdoc", "summary"):
+    for sel in ("factual", "numerical", "comparative", "multihop", "summary"):
         for x in SELECTORS[sel](c, s, CFG, Random(CFG["seed"])):
             assert not any(s.ambiguous(f) for f in x.facts), (sel, x.candidate_id)

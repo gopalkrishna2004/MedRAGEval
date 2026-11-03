@@ -63,7 +63,7 @@ def test_unanswerable_is_correct_when_declined():
     assert not key_scores(item, "The list price is £5,000 per pack.", PATTERNS, SPEAKERS)["correct"]
 
 
-TWO_EVIDENCE = {"type": "crossdoc", "answerable": True, "also_in": ["d05-e0009"],
+TWO_EVIDENCE = {"type": "multihop", "answerable": True, "also_in": ["d05-e0009"],
                 "evidence": [{"unit_id": "d02-e0008", "element_id": "d02-e0008", "quote": "£24,567 per QALY gained"},
                              {"unit_id": "d03-e0030", "element_id": "d03-e0030", "quote": "£31,200 per QALY gained"}]}
 

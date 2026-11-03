@@ -67,7 +67,6 @@ generate:
   attempts_per_item:
     default: 4
     multihop: 8
-    crossdoc: 6
     unanswerable: 3
   # A rejected item goes back to the generator once, in the same conversation,
   # with each failed check, the judge's issues and what a single excerpt
@@ -85,19 +84,20 @@ generate:
   min_share_of_target: 0.5
   abort_after_consecutive_failures: 5   # five bad calls in a row means a wrong key or model
 
-  # Items per type; the sum is the dataset size (150). Every item is built
+  # Items per type; the sum is the dataset size (146). Every item is built
   # from facts of the fact sheet (`medrageval extract`), drawn across schema
   # groups in proportion to their weights.
-  # Paired types are set by what a bundle offers. TA1063 has 20 schema bridges,
-  # and only a handful of unredacted figures on which two documents disagree
-  # about the same arm and subject: 4,749 same-subject cross-document pairs
-  # are redacted, and the rest are copies. document2 has 12.
+  # Multi-hop is set by what a bundle offers: TA1063 has 20 schema bridges,
+  # document2 has 12.
+  # No cross-document type: in TA1063 the EAG's figures differ from the
+  # company's by a few per cent or are redacted, and two documents' stance
+  # facts on one issue mostly agree. The v19 smoke run found one candidate
+  # pair, and both documents said the same thing.
   targets:
     factual: 26
     numerical: 26
     comparative: 20
     multihop: 10
-    crossdoc: 4
     attribution: 20
     summary: 18          # open questions scored on keypoints, one per fact
     unanswerable: 26     # accepted answerable items asked again with their evidence withheld (see `unanswerable`)
@@ -112,7 +112,7 @@ generate:
     max_per_section: 2           # items drawn from one section, for coverage
     quote_tokens: [3, 80]        # a short table row ("CAPItello-291 | Strong | Weak") is 4 tokens
     question_words: [8, 45]       # multi-hop questions carry two descriptions; 40 cut good ones in the smoke run
-    answer_max_chars: 400        # cross-document answers report two documents' positions; summaries have their own limit
+    answer_max_chars: 400        # summaries have their own limit
     # OCR text carries glyph errors that end up in questions and answer keys
     # ("<65 yéárs", "Capivas ertib" in TA1063's Figure 10, 11 of 256 tables
     # and 14 of 1432 paragraphs are OCR). OCR units stay searchable.
@@ -200,16 +200,6 @@ generate:
       factual_accuracy: factual accuracy check
       guidance: committee
 
-  # Two quotes from different documents with more token overlap than this are
-  # copies, not two accounts (the EAG quotes the company verbatim).
-  cross_doc_max_overlap: 0.8
-  crossdoc:
-    # Two documents' figures for one arm are a disagreement only when they
-    # differ by this share of the larger (v17 set 1.78 QALYs against 1.79) and
-    # are not both small counts (comparative.min_count). Each fact and each
-    # issue topic makes at most one cross-document item.
-    min_relative_difference: 0.10
-
   comparative:
     # Values that differ by less than this share of the larger are not worth
     # comparing: v14 asked which of 3.25 and 3.26 life years was higher.
@@ -274,7 +264,7 @@ generate:
   unanswerable:
     # Types whose accepted items are reused. Not summary: an open question is
     # answered by any passage on its theme, so no distractor set is clean.
-    source_types: [factual, numerical, comparative, multihop, crossdoc, attribution]
+    source_types: [factual, numerical, comparative, multihop, attribution]
     candidates: 12               # passages screened per item, by BM25 similarity to the withheld excerpts and to the question
     distractors: 8               # passages kept; at least rag.retrieval.top_k, since chunks that also hold the evidence are dropped at evaluation
     min_distractors: 4           # fewer clean passages than this rejects the item (reason too_few_distractors)
@@ -296,7 +286,7 @@ generate:
     rare_df_max: 0.03
     min_description_tokens: 2
 
-  judge_types: [factual, numerical, comparative, multihop, crossdoc, attribution, summary]
+  judge_types: [factual, numerical, comparative, multihop, attribution, summary]
   # After the judge passes them, these items go back to the judge model once
   # per excerpt, with that excerpt alone, and are rejected when its answer
   # holds every answer key. The judge sees both excerpts at once and has to
@@ -304,14 +294,12 @@ generate:
   # excerpt insufficient for items that excerpt answered (FAKTION as Table 15's
   # only UK row; a >=5% threshold that held for every trial). Two short calls
   # per item that gets this far.
-  # Cross-document items too: in v14 the judge said one excerpt answered
-  # crossdoc-004 alone and it was kept, because only multi-hop was checked.
   # The alone check also asks by which words of the passage the model told
   # the items apart; for a multi-hop item its answer counts only when those
   # words are in the passage and belong to the bridge's description. A model
   # that picks alpelisib's row because it knows alpelisib is the PIK3CA drug
   # has not answered from the passage.
-  alone_check_types: [multihop, crossdoc]
+  alone_check_types: [multihop]
 
   # A summary draws its facts from one section of one document: the section
   # heading is the theme the question asks about. Drawn from a whole document
@@ -348,10 +336,10 @@ generate:
     # Questions about the layout instead of the subject: v14 asked about
     # "Table 37", "Capivasertib + fulvestrant (N=155)" and "the Capivasertib +
     # fulvestrant row". Users do not know table numbers.
-    # Two questions glued with "and" (v14's crossdoc-001; the first fact-sheet
+    # Two questions glued with "and" (v14's cross-document item; the first fact-sheet
     # smoke run's "what tool and estimate", "what assumption ..., and how did
-    # it affect"): two lookups, not one fact. Comparative, cross-document and
-    # summary items combine facts by design and are exempt.
+    # it affect"): two lookups, not one fact. Comparative and summary items
+    # combine facts by design and are exempt.
     single_ask_types: [factual, numerical, multihop, attribution]
     compound_patterns: ['\b(and|or) (what|which|how|who|when|why|where|whether)\b', ',\s*and (did|does|do|was|were|is|are|has|had)\b']
     banned_patterns: ['\b(table|figure|fig\.)\s*\d', '\(N\s*=\s*\d', '\brows?\b', '\bcolumns?\b']

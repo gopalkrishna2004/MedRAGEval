@@ -29,7 +29,7 @@ SCHEMA = ('{"question": str, "answer": str, "answer_keys": [str, ...], '
 RULES = """Rules for every item:
 1. The question must be answerable from the facts and excerpts given, and must stand on its own for a reader who has not seen them: name the drug, trial, population, comparator, outcome, analysis or document involved. Never write "this table", "the excerpt", "above", "the following", or a document id ("d04"): the reader does not see ids. Keep it under 35 words.
 2. The system answering will search all the documents listed above. Similar figures exist elsewhere in the bundle, so the question must say what sets this one apart; when the task lists terms the question must name, name them.
-3. Ask for one thing. Never join two questions ("what was X, and how did it affect Y?", "which tool and which estimate"); only the comparative, cross-document and summary tasks combine facts, as they say.
+3. Ask for one thing. Never join two questions ("what was X, and how did it affect Y?", "which tool and which estimate"); only the comparative and summary tasks combine facts, as they say.
 4. Ask as a clinician, health economist or appraisal committee member would. Never mention table or figure numbers, column headers such as "(N=155)", rows, columns, or how a document is laid out. Spell out abbreviations a reader may not know ("the company's cost-effectiveness model", not "the company's CEM"); common ones (PFS, OS, ICER, QALY, EAG, NHS) are fine. Put the question in your own words: reuse the excerpt's wording only for names, numbers and technical terms.
 5. Name each drug, arm or regimen once, in plain words, even when the documents spell it differently ("everolimus plus exemestane", not "Everolimus + exemestane (Everolimus with exemestane)").
 6. Claim no more than the excerpts say. Put a qualifier (data cut, timepoint, population, scenario, whose analysis) in the question only if the excerpts or their Context state it: a fact may carry qualifiers its excerpt does not show, so leave those out. Describe a position in the excerpt's own terms ("suggested" is not "preferred", "considered" is not "concluded").
@@ -64,9 +64,6 @@ TYPE_INSTRUCTIONS = {
                 "That the second excerpt names the {via} is expected: without the first fact a reader cannot tell which of its named things the description means, so do not skip for that. "
                 "The answer is the second fact's value; answer_keys hold it. "
                 "Add \"hop_a\" and \"hop_b\": one short sentence each on what each fact contributes. Quote from both excerpts.",
-    "crossdoc": "Write a CROSS-DOCUMENT question: facts {f0} ({doc_a}) and {f1} ({doc_b}) give different accounts of {describe}. "
-                "Ask how the two documents differ on it, naming the subject and both documents, and naming each arm or regimen once in plain words. The answer gives both values or positions, each with its document; "
-                "answer_keys hold the two values, or the key term of each position. Quote from both excerpts.",
     "attribution": "Write an ATTRIBUTION question: fact {f0} records a position held by {speaker_label}: \"{claim}\". Ask WHO took it (\"Who argued that ...?\", \"Which party considered that ...?\"), "
                    "stating the position precisely enough to identify it, but do NOT name or hint at the speaker in the question. "
                    "Keep the part of the claim that is this party's own (its argument, judgement, survey or experience), not background any party could state. "
@@ -154,7 +151,6 @@ def build_generation(cand: Candidate, corpus: Corpus, cfg: dict, sheet: FactShee
         measure=h.get("measure", ""), label_a=labels[0], label_b=labels[1], value_a=values[0], value_b=values[1],
         bridge=h.get("bridge", ""), bridge_value=h.get("bridge_value", ""), via=str(h.get("via", "")).replace("_", " "), via_value=h.get("via_value", ""),
         rival=f"a value for {str(h.get('via', '')).replace('_', ' ')} \"{(h.get('rival') or {}).get('label', '')}\"",
-        doc_a=(h.get("docs") or ["", ""])[0], doc_b=(h.get("docs") or ["", ""])[1],
         speaker_label=(f"{speaker_name} ({h.get('speaker', '')})" if speaker_name else h.get("speaker", "")), claim=str(h.get("claim", ""))[:400],
         answer=answer, answer_key=answer.removeprefix("the ").strip(),
         group_describe=h.get("group_describe", ""), doc=h.get("doc", ""), theme=h.get("theme") or "-",
@@ -175,9 +171,6 @@ JUDGE_CRITERIA = {
     "multihop": "The question identifies what it asks about through a description (hop A) and asks for a value (hop B). Pass when the description is resolved in one excerpt and the value is in the other, "
                 "and the value excerpt alone would not settle it: it does not state what the description states, and it holds other values the question could mean until the description is resolved. "
                 "Fail if one excerpt holds both the description's answer and the value, if the question names the bridged thing outright, or if it identifies it only by its position in a list.",
-    "crossdoc": "The quotes come from two different documents, and the answer reports what each says about the same figure, assumption or claim, and the two differ: a different figure, or positions that disagree. "
-                "Fail if the two accounts agree in substance (\"both documents report that ...\"), if one document alone gives everything the answer needs, "
-                "or if the question does not say which documents and subject it is about.",
     "attribution": "The quoted claim is made by the party given as the answer, the question identifies that claim unambiguously, and the question does not name or hint at the party.",
     "summary": "The question is open but specific (names the drug and the document or respondent) and asks about one theme that every keypoint belongs to; "
                "every keypoint is supported by the quotes; the answer covers all keypoints and adds nothing unsupported. Fail if the keypoints are a grab-bag no single question would call for.",
@@ -256,7 +249,6 @@ FEEDBACK = {
     "comparative_values_not_in_facts": "value_a and value_b must be the two values the task names, as the facts give them.",
     "comparative_values_not_numeric": "value_a and value_b must be numbers.",
     "comparison_not_meaningful": "The two values differ too little to be worth comparing ({d}).",
-    "crossdoc_difference_trivial": "The two documents' figures differ too little to be a disagreement ({d}): skip unless they differ on something else.",
     "compound_question": "The question asks two things at once (\"{d}\"): ask for one fact only.",
     "deictic_question": "The question points at the excerpt (\"this table\", \"above\", a document id): name what it is about instead.",
     "table_language": "The question mentions a table, figure, column header, row or column (\"{d}\"): ask about the subject itself.",

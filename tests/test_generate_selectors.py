@@ -83,14 +83,6 @@ def test_multihop_describes_a_thing_through_a_qualifier_link(sheet):
     assert not any(c.facts[1].slot == "cost_effectiveness.icer" for c in cs)
 
 
-def test_crossdoc_pairs_two_parties_on_one_subject(sheet):
-    cs = cands(sheet, "crossdoc")
-    assert ids(cs) == [("d02-cost_effectiveness.icer-001", "d03-cost_effectiveness.icer-001")] or \
-        ids(cs) == [("d03-cost_effectiveness.icer-001", "d02-cost_effectiveness.icer-001")]
-    assert set(cs[0].hint["docs"]) == {"company submission", "EAG"}
-    # the DCO1 and DCO2 medians are in two documents too, but they are two data cuts, not two accounts
-
-
 def test_attribution_names_the_respondent(sheet):
     cs = cands(sheet, "attribution")
     by_fact = {c.facts[0].fact_id: c for c in cs}
@@ -127,7 +119,7 @@ def test_selection_is_reproducible_and_counted(sheet):
     corpus, s = sheet
     assert ids(cands(sheet, "factual")) == ids(cands(sheet, "factual"))
     counts = candidate_counts(corpus, s, CFG, 1)
-    assert set(counts) == set(SELECTORS) and counts["crossdoc"]["total"] == 1
+    assert set(counts) == set(SELECTORS) and "crossdoc" not in counts
 
 
 def test_identifiers_must_agree_across_a_bridge():
@@ -148,13 +140,9 @@ def test_trivial_facts_and_values_are_not_asked(sheet):
     named = copy.deepcopy(next(f for f in facts if f.fact_id == "d02-trial_design.design-001"))
     named.fact_id, named.qualifiers, named.value = "d02-cost_effectiveness.scenario_definition-001", {"owner": "company", "scenario": "Exclusion of subsequent treatment costs"}, "Excludes subsequent treatment costs."
     named.slot = "cost_effectiveness.scenario_definition"
-    eag = copy.deepcopy(next(f for f in facts if f.fact_id == "d03-cost_effectiveness.icer-001"))
-    eag.values = {"everolimus plus exemestane": "£24,900 per QALY gained"}   # 1.4% from the company's £24,567
     s = FactSheet(facts + [rate, named], schema(), corpus, CFG, facts_config())
     assert "d02-efficacy.endpoint_result-009" not in {c.facts[0].fact_id for c in SELECTORS["numerical"](corpus, s, CFG, Random(1))}   # counts of 1 and 2
     assert "d02-cost_effectiveness.scenario_definition-001" not in {c.facts[0].fact_id for c in SELECTORS["factual"](corpus, s, CFG, Random(1))}   # its name is its value
-    s2 = FactSheet([eag if f.fact_id == eag.fact_id else f for f in facts], schema(), corpus, CFG, facts_config())
-    assert list(SELECTORS["crossdoc"](corpus, s2, CFG, Random(1))) == []   # £24,567 against £24,900 is no disagreement
 
 
 def test_comparisons_only_across_comparable_qualifiers(sheet):

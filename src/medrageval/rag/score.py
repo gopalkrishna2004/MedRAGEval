@@ -5,8 +5,7 @@ Three views of each answer:
   evidence? An evidence entry is found when a passage holds its unit (or,
   for a piece of a split unit or another row group of its table, holds its
   quote). `hit` also accepts a copy of the fact in another document
-  (`also_in`); `all_evidence` is what multi-hop, cross-document and summary
-  items need.
+  (`also_in`); `all_evidence` is what multi-hop and summary items need.
 - keys: deterministic. Every answer key in the reply (a number may differ in
   thousands separators or trailing zeros: "£52,681" is "52681", "0.50" is
   "0.5"), the party for attribution, a decline for unanswerable items.

@@ -151,25 +151,6 @@ def test_described_multihop_must_not_name_the_comparator():
     assert validate(ful, c, CORPUS, CFG, []).ok
 
 
-def test_crossdoc_needs_both_documents():
-    c = selected("crossdoc", "d02-cost_effectiveness.icer-001")
-    quotes = [("d02-e0008", "The company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane was £24,567 per QALY gained"),
-              ("d03-e0030", "The EAG's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane is £31,200 per QALY gained")]
-    it = item("How does the EAG's base-case cost-effectiveness estimate against everolimus plus exemestane differ from the one in the company submission?",
-              "The company estimated £24,567 per QALY gained; the EAG estimated £31,200 per QALY gained.", ["£24,567", "£31,200"], quotes)
-    assert validate(it, c, CORPUS, CFG, []).ok
-    assert "quotes_from_one_document" in validate({**it, "quotes": it["quotes"][:1]}, c, CORPUS, CFG, []).reasons
-
-
-def test_crossdoc_figures_must_differ_enough():
-    c = selected("crossdoc", "d02-cost_effectiveness.icer-001")
-    quotes = [("d02-e0008", "The company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane was £24,567 per QALY gained"),
-              ("d03-e0030", "The EAG's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane is £31,200 per QALY gained")]
-    it = item("How does the EAG's base-case cost-effectiveness estimate against everolimus plus exemestane differ from the one in the company submission?",
-              "The company estimated £24,567 per QALY gained; the EAG £24,900.", ["£24,567", "£24,900"], quotes)
-    assert any(r.startswith("crossdoc_difference_trivial") for r in validate(it, c, CORPUS, CFG, []).reasons)
-
-
 def test_answer_in_the_question_is_caught_in_any_word_form():
     c = cand("factual", "d02-trial_design.design-001", must_mention=[["Exclusion of subsequent treatment costs"]])
     it = item("What does the company's \"Exclusion of subsequent treatment costs\" scenario change from the base case for capivasertib?",

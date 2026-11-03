@@ -152,7 +152,7 @@ def too_small(a: str, b: str, cfg: dict) -> bool:
 
 def labels_match(a: str, b: str) -> bool:
     """One label's words contain the other's ("PFS" in "investigator-assessed progression-free survival (PFS)").
-    Identifiers must agree: "PFS" does not match "PFS2" (a second smoke-run cross-document item set the two side by side)."""
+    Identifiers must agree: "PFS" does not match "PFS2" (a second smoke run set the two side by side)."""
     if _codes(a) != _codes(b) and (_codes(a) or _codes(b)):
         return False
     ta, tb = content_tokens(a), content_tokens(b)
@@ -168,12 +168,6 @@ def same_arm(a: str, b: str) -> bool:
     """Two arm or technology labels for the same regimen: "Everolimus + exemestane", "everolimus with exemestane"."""
     ta, tb = content_tokens(a) - CONNECTORS, content_tokens(b) - CONNECTORS
     return bool(ta and tb) and (ta <= tb or tb <= ta) and _codes(a) == _codes(b)
-
-
-def same_topic(a: Fact, b: Fact) -> bool:
-    """Two stance facts about one issue: their topics share most words (each document phrases the issue its own way)."""
-    ta, tb = a.qualifiers.get("topic", ""), b.qualifiers.get("topic", "")
-    return bool(ta and tb) and jaccard_tokens(ta, tb) >= 0.4
 
 
 def link_match(value: str, label: str) -> bool:
@@ -196,14 +190,6 @@ def compatible(a: Fact, b: Fact, skip: set[str] = frozenset()) -> bool:
         if normalize(va) != normalize(vb) and not labels_match(va, vb):
             return False
     return True
-
-
-def shares_subject(a: Fact, b: Fact) -> bool:
-    """At least one qualifier both give, and it agrees; or neither has any."""
-    common = set(a.qualifiers) & set(b.qualifiers)
-    if not (a.qualifiers or b.qualifiers):
-        return True
-    return any(normalize(a.qualifiers[k]) == normalize(b.qualifiers[k]) or labels_match(a.qualifiers[k], b.qualifiers[k]) for k in common)
 
 
 def without(sets: list[list[str]] | None, *terms: str) -> list[list[str]]:
@@ -450,59 +436,6 @@ def select_multihop(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) ->
             yield Candidate("multihop", "bridge" if link.match == "value" else "described", _units(sheet, a, b), hint, [a, b])
 
 
-def select_crossdoc(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random) -> Iterator[Candidate]:
-    """Two documents of different roles giving different values for the same subject: the company's figure against the EAG's."""
-    mention = cfg["roles"].get("mention", {})
-    items, seen = [], set()
-    for slot in sorted(sheet.by_slot):
-        # figures and positions, which can disagree; two documents' free-text descriptions of a topic only differ in
-        # wording, and the first smoke run turned them into "how do X and Y characterise ..." items
-        ok = [f for f in sheet.by_slot[slot] if f.kind in ("number", "stance") and not f.redacted and usable(f, sheet, cfg)]
-        for f in ok:
-            conflicts = {g.fact_id for g in sheet.conflicts(f)}
-            for g in ok:
-                pair = tuple(sorted((f.fact_id, g.fact_id)))
-                # whose analysis it is differs by design: that is the comparison
-                if g.doc_id == f.doc_id or g.role == f.role or pair in seen or g.fact_id not in conflicts:
-                    continue
-                if f.kind == "stance":
-                    if not same_topic(f, g):
-                        continue
-                elif not compatible(f, g, {"owner"}) or not shares_subject(f, g):
-                    continue
-                seen.add(pair)
-                if f.kind == "number" and not (f.numbers() - g.numbers() and g.numbers() - f.numbers()):
-                    continue   # one document only adds figures to the other's: they agree on what both report
-                if f.kind == "number" and not differ_enough(f, g, cfg):
-                    continue   # 1.78 against 1.79 QALYs (v17's crossdoc-001) is no disagreement either
-                docs = [mention.get(f.role, sheet.doc_label(f)), mention.get(g.role, sheet.doc_label(g))]
-                sets = without((sheet.must_mention(f) or []) + (sheet.must_mention(g) or []), *docs)
-                items.append((f, g, {"docs": docs, "must_mention": sets}))
-    used_facts, used_topics = set(), []
-    for f, g, hint in _order(sheet, items, cfg, rng, lambda x: x[0]):
-        # one item per fact and per issue: v17 asked twice about alpelisib's QALYs and twice about the proportional hazards assumption
-        topic = f.qualifiers.get("topic", "") if f.kind == "stance" else ""
-        if {f.fact_id, g.fact_id} & used_facts or any(jaccard_tokens(topic, t) >= 0.4 for t in used_topics if topic):
-            continue
-        used_facts |= {f.fact_id, g.fact_id}
-        if topic:
-            used_topics.append(topic)
-        yield Candidate("crossdoc", f.group, _units(sheet, f, g), {"group": f.group, "slot": f.slot, **hint}, [f, g])
-
-
-def differ_enough(f: Fact, g: Fact, cfg: dict) -> bool:
-    """Two documents' figures for the same arm differ by the comparative threshold and are not both small counts.
-    Different arms (alpelisib's diarrhoea count against capivasertib's) are no disagreement at all."""
-    threshold = cfg["crossdoc"]["min_relative_difference"]
-    if f.values and g.values:
-        pairs = [(va, vb) for a, va in f.values.items() for b, vb in g.values.items() if same_arm(a, b)]
-    elif not f.values and not g.values:
-        pairs = [(f.value or "", g.value or "")]
-    else:
-        pairs = []
-    return any(meaningful(first_number(va), first_number(vb), threshold) and not too_small(va, vb, cfg) for va, vb in pairs)
-
-
 def speaker_for(party: str, cfg: dict) -> str | None:
     """The canonical speaker label ("the EAG") for a party name or alias."""
     p = party.strip().lower()
@@ -595,7 +528,6 @@ SELECTORS: dict[str, Callable[[Corpus, FactSheet, dict, Random], Iterator[Candid
     "numerical": select_numerical,
     "comparative": select_comparative,
     "multihop": select_multihop,
-    "crossdoc": select_crossdoc,
     "attribution": select_attribution,
     "summary": select_summary,
 }

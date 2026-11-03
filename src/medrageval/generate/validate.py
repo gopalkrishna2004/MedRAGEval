@@ -6,8 +6,7 @@ Every check is cheap and deterministic:
 - the question must name every term the fact sheet says sets the fact apart from its siblings;
 - the question must not mention tables, figures, column headers, rows or columns;
 - per type: both values and a meaningful difference for comparative, the
-  bridge unnamed for multi-hop, two documents for cross-document, the speaker
-  and the claim's exclusivity for attribution, one supported keypoint per
+  bridge unnamed for multi-hop, the speaker and the claim's exclusivity for attribution, one supported keypoint per
   fact for summary. Unanswerable items are not generated, so they are not
   checked here: see `Run._withhold`.
 
@@ -215,15 +214,6 @@ def validate(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, accepted_qu
         v.check("two_units_quoted", len({u.unit_id for u in quoted_units}) >= 2, "quotes_from_one_unit")
         named = bridge_named(q, cand, corpus)
         v.check("bridge_not_named", named is None, f"bridge_named_in_question:{str(cand.hint.get('via', 'value')).replace('_', ' ')}")
-
-    elif t == "crossdoc":
-        v.check("two_docs_quoted", len({u.doc_id for u in quoted_units}) >= 2, "quotes_from_one_document")
-        if len(found) >= 2:
-            v.check("quotes_not_copies", jaccard(found[0], found[1]) < cfg["cross_doc_max_overlap"], "quotes_are_copies")
-        nums = [first_number(k) for k in keys]
-        if len(keys) == 2 and all(n is not None for n in nums):   # two figures: the documents must disagree by a margin worth asking about
-            v.check("difference_meaningful", meaningful(nums[0], nums[1], cfg["crossdoc"]["min_relative_difference"]) and not too_small(keys[0], keys[1], cfg),
-                    f"crossdoc_difference_trivial:{keys[0]} vs {keys[1]}")
 
     elif t == "attribution":
         speaker = cand.hint.get("speaker", "")
