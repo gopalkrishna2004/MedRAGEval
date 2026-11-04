@@ -1,0 +1,64 @@
+# The RAG application under evaluation (Part 2). Independent of the benchmark
+# pipeline: it parses the PDF itself, chunks its own way, and keeps its chunks
+# and vectors in Postgres. The benchmark only shares the PDF with it.
+
+pdf: data/raw/source_document.pdf
+# One phrase naming what the documents are about, used in the answer prompt.
+topic: the NICE single technology appraisal of capivasertib with fulvestrant for advanced breast cancer
+cache_dir: data/rag/cache            # Docling output (JSON, keyed on PDF hash), chunk dumps
+
+docling:
+  ocr: true                          # RapidOCR on bitmap regions (the scanned patient and expert statements)
+  table_structure: true              # cell-level table structure, so tables can be kept intact and split by row
+  cell_matching: true
+
+chunking:
+  # Prose: elements under one heading are packed to target_tokens and never
+  # past max_tokens; a long paragraph is cut at sentence ends. One sentence of
+  # the previous chunk is repeated at the start of the next (overlap).
+  # Tables: one chunk per table with its caption and the notes under it; past
+  # max_table_tokens the rows are split with the header row repeated.
+  # Every chunk starts with "document title | heading path | pages".
+  target_tokens: 400
+  max_tokens: 512
+  overlap_sentences: 1
+  max_table_tokens: 1500
+  min_body_chars: 15                 # drop stray fragments (a lone page number, an empty cell)
+  tokenizer: BAAI/bge-m3             # token counts follow the embedding model; null: ~4 chars per token
+
+embedding:
+  provider: local                    # local (sentence-transformers) | openai (any /v1/embeddings server)
+  model: BAAI/bge-m3                 # 1024 dims, 8k tokens: a long table chunk is embedded whole
+  device: auto                       # auto | mps | cuda | cpu
+  batch_size: 16
+  query_prefix: ""                   # bge-m3 needs none; e5-style models want "query: "
+  base_url: http://localhost:8001/v1 # openai provider only
+  api_key_env: EMBED_API_KEY
+  dim: 1024
+
+store:
+  backend: postgres                  # postgres | memory (numpy, for tests and machines without Postgres)
+  dsn: postgresql://localhost:5433/medrag
+  dsn_env: MEDRAG_DSN                # overrides dsn when set
+
+retrieval:
+  mode: hybrid                       # bm25 | dense | hybrid
+  top_k: 6                           # passages shown to the model
+  candidates: 30                     # per retriever before fusion
+  rrf_k: 60                          # reciprocal rank fusion constant
+  rerank: true                       # cross-encoder over the fused candidates
+  rerank_model: BAAI/bge-reranker-v2-m3
+  rerank_candidates: 30
+  max_context_chars: 12000           # ~3.5k tokens of passages
+
+llm:
+  # vLLM's OpenAI-compatible server: `vllm serve Qwen/Qwen2.5-7B-Instruct --port 8000 --max-model-len 8192`
+  model: Qwen/Qwen2.5-7B-Instruct
+  base_url: http://localhost:8000/v1
+  api_key_env: VLLM_API_KEY          # read when the server runs with --api-key; "EMPTY" otherwise
+  temperature: 0.0
+  max_tokens: 512
+  context_window: 8192
+  timeout: 300
+  max_workers: 4
+  cache_dir: data/cache/llm          # answers cached by (model, temperature, messages)

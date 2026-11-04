@@ -29,14 +29,11 @@ def main() -> None:
     g = sub.add_parser("generate", help="generate an evaluation dataset from a parse output directory and its fact sheet")
     generate_stage.add_arguments(g)
 
-    i = sub.add_parser("index", help="build the RAG's chunks and embeddings for a parse output directory")
-    rag_eval.add_index_arguments(i)
-
-    q = sub.add_parser("ask", help="answer one question with the RAG and show the passages it used")
-    rag_eval.add_ask_arguments(q)
-
-    v = sub.add_parser("eval", help="run the RAG over evaluation datasets and score its answers")
+    v = sub.add_parser("eval", help="run the RAG application (medrag) over evaluation datasets and score its answers")
     rag_eval.add_arguments(v)
+
+    ab = sub.add_parser("ablate", help="eval under every retrieval mode (and chunk size), with a summary table")
+    rag_eval.add_ablate_arguments(ab)
 
     args = ap.parse_args()
     if args.command == "parse":
@@ -49,10 +46,8 @@ def main() -> None:
         extract_stage.run_cli(args)
     elif args.command == "generate":
         generate_stage.run_cli(args)
-    elif args.command == "index":
-        rag_eval.run_index_cli(args)
-    elif args.command == "ask":
-        rag_eval.run_ask_cli(args)
+    elif args.command == "ablate":
+        rag_eval.run_ablate_cli(args)
     elif args.command == "eval":
         rag_eval.run_cli(args)
 

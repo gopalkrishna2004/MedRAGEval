@@ -6,4 +6,5 @@ data/interim/
 CLAUDE.md
 .env
 data/cache/
-data/
+data/rag/
+data/ 

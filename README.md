@@ -157,64 +157,121 @@ under `generate.roles`.
 Run the tests with `uv run pytest` (unit, synthetic) and `uv run pytest -m regression`
 (the real PDFs, including hand-verified facts when a fact sheet exists).
 
-## Part 2: evaluate a RAG with the dataset
+## Part 2: the RAG application, and evaluating it with the dataset
 
-The system under test is a RAG over the same parse output, answered by a small
-local model behind [vLLM](https://docs.vllm.ai)'s OpenAI-compatible server. A
-frontier model on OpenRouter grades its answers. Settings are under `rag:` in
-[configs/default.yaml](configs/default.yaml).
+The system under test is a separate application, the `medrag` package
+([src/medrag/](src/medrag/), config [configs/rag.yaml](configs/rag.yaml)). It
+shares nothing with the benchmark but the PDF: it parses the file itself, chunks
+its own way and keeps its chunks in its own database. The benchmark scores it
+from the outside, by page numbers and verbatim quotes.
 
-- **Chunks** ([rag/chunks.py](src/medrageval/rag/chunks.py)): the corpus question
-  generation used (same noise filter, roles and table row groups). Consecutive
-  passages of one section are packed up to 1,500 chars. A table, or a row group of
-  a long one, is a chunk of its own with its caption. Each chunk starts with its
-  document, section and pages ("EAG report | 6.3 EAG's preferred assumptions | p. 537"),
-  so the company's and the EAG's figures are told apart. TA1063: 1,036 chunks.
-- **Retrieval** ([rag/index.py](src/medrageval/rag/index.py)): BM25 for exact names,
-  trial ids and figures; dense vectors (`BAAI/bge-m3`) for paraphrase; the two
-  fused by reciprocal rank. With ~1,000 chunks the vector store is a numpy matrix.
-  Embeddings are cached in `data/rag/<parse dir>/` until the chunks or the model change.
-- **Answer** ([rag/pipeline.py](src/medrageval/rag/pipeline.py)): the top 6 chunks,
-  up to 12,000 chars, as numbered passages. One prompt for every question (a
-  deployed RAG does not know the item type): answer from the passages, cite them,
-  never guess a [REDACTED] value, and say "Not found in the documents." otherwise.
+### The application
 
-Start the servers (one for the chat model, one for embeddings). Any
-OpenAI-compatible server works; only `rag.llm` / `rag.embedding` change:
+- **Parsing** ([convert.py](src/medrag/convert.py)): [Docling](https://github.com/docling-project/docling)
+  with its table-structure model and RapidOCR for the scanned pages (the patient
+  and expert statements). The DoclingDocument is cached as JSON under
+  `data/rag/cache/docling/`, keyed on the PDF hash. TA1063's 578 pages convert in
+  about eight minutes on a laptop.
+- **Document boundaries** ([pdf.py](src/medrag/pdf.py)): a committee-papers bundle
+  is many documents in one file. The PDF's top-level bookmarks name them and give
+  their first pages, so every chunk says which document it comes from without any
+  content analysis ("Capivasertib for breast cancer - EAG Report ..."). No role
+  classification: the printed title only.
+- **Chunking** ([elements.py](src/medrag/elements.py), [chunk.py](src/medrag/chunk.py)):
+  structure-aware. Docling's reading-order items become elements with a heading
+  path; page furniture is dropped. Prose under one heading is packed to 400 tokens
+  (never past 512, counted with the embedding model's tokenizer), a long paragraph
+  is cut at sentence ends, and the last sentence of a chunk opens the next one.
+  A table is one chunk, Markdown with its caption (taken from the "Table N" line
+  printed above or below it) and the footnotes under it; a table that continues on
+  the next page with the same header row is merged; past 1,500 tokens the rows are
+  split with the caption and header repeated. Every chunk starts with
+  "document title | heading path | pages", which is what the model cites.
+- **Store** ([store.py](src/medrag/store.py)): Postgres with
+  [pgvector](https://github.com/pgvector/pgvector). One `collections` row per
+  (PDF, chunking settings, embedding model), so a chunk-size sweep ingests side by
+  side; chunks with metadata in jsonb and a `vector(1024)` column under an HNSW
+  cosine index. An in-memory store (`store.backend: memory`) serves tests and
+  machines without Postgres.
+- **Retrieval** ([lexical.py](src/medrag/lexical.py), [retrieve.py](src/medrag/retrieve.py),
+  [rerank.py](src/medrag/rerank.py)): BM25 for exact names, trial ids and figures
+  (in process: Postgres's `ts_rank` has no inverse document frequency, so a common
+  word would outrank a rare trial id); dense vectors from `BAAI/bge-m3` for
+  paraphrase, 30 candidates each, fused by reciprocal rank; then the
+  `BAAI/bge-reranker-v2-m3` cross-encoder reorders the fused top 30 and the top 6
+  are shown. Modes `bm25 | dense | hybrid`, reranking on or off.
+- **Answering** ([generate.py](src/medrag/generate.py), [llm.py](src/medrag/llm.py)):
+  the top 6 chunks, up to 12,000 chars, as numbered passages to the model on
+  [vLLM](https://docs.vllm.ai)'s OpenAI-compatible server, temperature 0. One
+  prompt for every question (a deployed RAG does not know the item type): answer
+  from the passages, cite them, never guess a [REDACTED] value, and say "Not found
+  in the documents." otherwise. Replies are cached by (model, temperature, messages).
 
 ```bash
-vllm serve Qwen/Qwen2.5-3B-Instruct --port 8000 --max-model-len 8192
-vllm serve BAAI/bge-m3 --port 8001 --runner pooling     # older vLLM: --task embed
+brew install postgresql@17 pgvector && brew services start postgresql@17   # or any Postgres 16+ with pgvector
+createdb medrag                                  # store.dsn in configs/rag.yaml (default port 5433 here)
+uv run medrag db init                            # tables and indexes
+uv run medrag ingest                             # Docling (cached) -> chunks -> bge-m3 embeddings -> Postgres; ~10 min
+uv run medrag search "EAG base-case ICER versus everolimus" --mode hybrid
+vllm serve Qwen/Qwen2.5-7B-Instruct --port 8000 --max-model-len 8192           # on a GPU machine; llm.base_url points at it
+uv run medrag ask "What was the company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane?"
 ```
 
-Then:
+The embedding and reranking models run locally through sentence-transformers
+(Apple MPS or CUDA when available). `embedding.provider: openai` points the
+embedder at any `/v1/embeddings` server instead.
+
+### Evaluating it
 
 ```bash
-uv run medrageval index data/interim/ta1063                  # chunks + embeddings (cached)
-uv run medrageval ask data/interim/ta1063 "What was the company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane?"
-uv run medrageval eval data/datasets/ta1063_smoke_v17 data/datasets/ta1063_smoke_v18_summary \
-    data/datasets/ta1063_smoke_v18b_multihop --out data/runs/smoke-hybrid
+uv run medrageval eval data/datasets/ta1063_smoke_v19b --out data/runs/smoke            # judge on OpenRouter
+uv run medrageval eval data/datasets/ta1063_smoke_v19b --no-judge --mode bm25           # keys only, no OpenRouter calls
+uv run medrageval ablate data/datasets/ta1063_smoke_v19b --chunk-tokens 256,400,512     # every mode x chunk size, summary table
 ```
 
-`eval` reads the parse directory from the items' provenance. With several
-datasets, item ids are prefixed by the dataset directory. An unanswerable item
-is read over its stored distractors rather than a search, so the withheld
-evidence is certainly absent; `context` in `responses.jsonl` says which path an item took. Options: `--mode
-bm25|dense|hybrid`, `--top-k`, `--model` (the vLLM model), `--judge-model` (an
-OpenRouter id), `--no-judge` (keys only, no OpenRouter calls), `--limit N`.
-Answers and verdicts are cached like generation calls, so a rerun makes no
-calls and a judge change makes no RAG calls.
+`eval` builds the application from `configs/rag.yaml` (`--rag-config`) and asks
+it each question through its Python interface. Options: `--mode`, `--top-k`,
+`--no-rerank`, `--model` and `--base-url` (the answering server), `--judge-model`
+(an OpenRouter id; the judge never runs on the answering server), `--no-judge`,
+`--limit N`. Answers and verdicts are cached, so a rerun makes no calls and a
+judge change makes no answering calls. `ablate` runs `bm25`, `dense`, `hybrid`
+and `hybrid+rerank` (and, with `--chunk-tokens`, ingests one collection per
+size) into `data/runs/ablation/<run>/` with a summary table in `ablation.json`.
+Whether hybrid beats BM25 is a result of that table, not a precondition of
+anything.
+
+**Gold evidence is matched by page and text**, since the application's chunks
+share no ids with the benchmark: a passage holds an evidence entry when its page
+span overlaps the evidence pages and the normalised quote (letters and digits
+only) is inside the passage text. A passage that merely overlaps the pages is
+counted as `page_only` and never credited; a quote found across two passages
+adjacent in the document is credited and counted as `quote_split`. Both counts
+are in the report under `evidence_matching`.
+
+**Unanswerable items are the one exception** to the application's independence.
+They are read over the benchmark's stored distractors, as the dataset was
+designed: each distractor is mapped to the application's chunks on its pages by
+shared text (from the benchmark's `elements.jsonl`, found through the items'
+provenance or `--interim`), else by its caption, else by page; any chunk that
+holds the withheld quote or every withheld answer key is dropped. `context` in
+`responses.jsonl` says which path an item took; `distractors_unmapped` counts the
+distractors with no chunk on their pages.
 
 Outputs in the run directory:
-- `responses.jsonl`: per item, the reply, the passages shown (with BM25 and dense ranks), and the scores below.
-- `eval_report.json`: config, per-type and overall metrics with 95% bootstrap intervals, outcomes and agreement.
+- `responses.jsonl`: per item, the reply, the passages shown (with BM25, dense, fused and rerank ranks), and the scores below.
+- `eval_report.json`: the application's config and collection, per-type and overall metrics with 95% bootstrap intervals, outcomes, agreement and evidence-matching counts.
 
 | Metric | What it measures |
 |---|---|
-| `hit`, `all_evidence`, `evidence_recall`, `MRR` | Retrieval: was the item's gold evidence among the passages shown? `hit` also accepts a copy of the fact in another document (`also_in`); multi-hop and summary items need `all_evidence`. |
+| `hit`, `all_evidence`, `evidence_recall`, `MRR` | Retrieval: was the item's gold evidence among the passages shown? Multi-hop and summary items need `all_evidence`. A copy of the fact in another document is not credited, so these are conservative. |
 | `keys` | Deterministic: every answer key in the reply (numbers compared as numbers: "£52,681" = "52681", "0.50" = "0.5"), the party for attribution, a decline for unanswerable items. |
 | `score` | The judge's verdict (correct 1, partial 0.5, incorrect or declined 0; for unanswerable items a decline is correct). Keys when run with `--no-judge`. |
 | `grounded` | The judge: every claim of the reply is supported by the passages shown. |
 | keypoints | Summaries: share of keypoints covered and contradicted (completeness and hallucination). |
 | outcome | `correct`; `retrieval_miss` (wrong, evidence not shown); `reader_error` (wrong, evidence shown); `false_abstention` (declined, evidence shown); `correct_abstention` / `hallucinated_answer` for unanswerable items. |
 | judge vs keys | Agreement on items both can decide, with the disagreeing ids: a check on the scorer, and a pointer to keys or items worth a look. |
+
+Tests: `uv run pytest` covers the chunker, caption and continuation handling,
+BM25, retrieval and fusion over the in-memory store, the Postgres store (skipped
+without a database; it uses its own schema), evidence matching, distractor
+mapping and the evaluator end to end with a fake reader and judge.

@@ -1,11 +1,15 @@
 """Scoring one RAG answer against its dataset item, and summarising a run.
 
+The RAG under test chunks the PDF its own way, so its passages share no ids
+with the benchmark. Gold evidence is matched by page and text: a passage holds
+an evidence entry when its page span overlaps the evidence pages and the
+normalised quote (letters and digits only) is inside the passage text. A
+passage that merely overlaps the pages is recorded as `page_only` and never
+counts as a hit; a quote found across two passages adjacent in the document
+counts, and is recorded as `quote_split`.
+
 Three views of each answer:
-- retrieval: did the passages the model was shown hold the item's gold
-  evidence? An evidence entry is found when a passage holds its unit (or,
-  for a piece of a split unit or another row group of its table, holds its
-  quote). `hit` also accepts a copy of the fact in another document
-  (`also_in`); `all_evidence` is what multi-hop and summary items need.
+- retrieval: `hit`, `all_evidence`, `evidence_recall`, MRR over the passages shown.
 - keys: deterministic. Every answer key in the reply (a number may differ in
   thousands separators or trailing zeros: "£52,681" is "52681", "0.50" is
   "0.5"), the party for attribution, a decline for unanswerable items.
@@ -22,38 +26,82 @@ import re
 from collections import Counter
 from random import Random
 
+from medrag.chunk import Chunk
+
 from medrageval.facts.factsheet import numbers_in
 from medrageval.generate.corpus import tokenize
-from medrageval.generate.validate import quote_in
-from medrageval.rag.chunks import Chunk
 from medrageval.text import contains_quote
 
 VERDICT_SCORE = {"correct": 1.0, "partial": 0.5, "incorrect": 0.0, "abstained": 0.0}
+_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+_DIGITS = re.compile(r"\D")
+# The benchmark prints a redacted value as [REDACTED]; the PDF (and so the application) prints the redactor's placeholder,
+# a run of x's or asterisks. Both vanish before matching, so a table row matches whichever way the gap is written.
+_REDACTION = re.compile(r"\[redacted\]|(?<![a-z0-9])[x*]{3,}(?![a-z0-9])")
 
 
-def _quoted(ev: dict, chunk: Chunk, default: bool) -> bool:
-    return quote_in(ev["quote"], chunk.text) if ev.get("quote") else default
+def norm_alnum(text: str) -> str:
+    return _NON_ALNUM.sub("", _REDACTION.sub(" ", (text or "").lower()))
 
 
-def evidence_in(ev: dict, chunk: Chunk) -> bool:
-    if ev.get("unit_id") in chunk.unit_ids:
-        return chunk.part is None or _quoted(ev, chunk, True)
-    if ev.get("element_id") in chunk.element_ids:   # another row group of the same table: only if the quoted row is in it
-        return _quoted(ev, chunk, False)
-    return False
+def pages_overlap(pages, chunk: Chunk) -> bool:
+    if not pages:
+        return True
+    p0, p1 = (pages[0], pages[-1]) if isinstance(pages, (list, tuple)) else (pages, pages)
+    return chunk.page_start <= p1 and chunk.page_end >= p0
+
+
+def quote_match(ev: dict, chunk: Chunk) -> str | None:
+    """'quote' when the passage is on the evidence pages and holds its quote; 'page' when only the pages overlap; None otherwise."""
+    if not pages_overlap(ev.get("pages"), chunk):
+        return None
+    q = norm_alnum(ev.get("quote") or "")
+    if q and q in norm_alnum(chunk.text):
+        return "quote"
+    return "page" if ev.get("pages") else None
+
+
+def _adjacent(a: Chunk, b: Chunk) -> bool:
+    try:
+        return int(_DIGITS.sub("", a.chunk_id)) + 1 == int(_DIGITS.sub("", b.chunk_id))
+    except ValueError:
+        return False
+
+
+def quote_split_rank(ev: dict, passages: list[Chunk]) -> int | None:
+    """Rank of the first passage of an adjacent pair whose joined text holds the quote, when neither does alone."""
+    q = norm_alnum(ev.get("quote") or "")
+    if not q:
+        return None
+    by_id = sorted(range(len(passages)), key=lambda i: passages[i].chunk_id)
+    for i, j in zip(by_id, by_id[1:]):
+        a, b = passages[i], passages[j]
+        if _adjacent(a, b) and (pages_overlap(ev.get("pages"), a) or pages_overlap(ev.get("pages"), b)) \
+                and q in norm_alnum(a.text) + norm_alnum(b.body):   # b's header line would sit between the two halves
+            return min(i, j) + 1
+    return None
 
 
 def retrieval_metrics(item: dict, passages: list[Chunk]) -> dict | None:
     """Gold evidence among the passages shown, in rank order. None for unanswerable items and items without evidence."""
-    ev = list({(e["unit_id"], e.get("quote")): e for e in item.get("evidence") or [] if e.get("unit_id")}.values())
+    ev = list({(e.get("unit_id"), e.get("quote")): e for e in item.get("evidence") or [] if e.get("quote") or e.get("pages")}.values())
     if not item.get("answerable", True) or not ev:
         return None
-    found = [any(evidence_in(e, c) for c in passages) for e in ev]
-    copies = set(item.get("also_in") or [])
-    first = next((rank for rank, c in enumerate(passages, start=1)
-                  if any(evidence_in(e, c) for e in ev) or copies & set(c.unit_ids)), None)
+    ranks: list[int | None] = []
+    page_only = split = 0
+    for e in ev:
+        rank = next((r for r, c in enumerate(passages, start=1) if quote_match(e, c) == "quote"), None)
+        if rank is None:
+            rank = quote_split_rank(e, passages)
+            split += rank is not None
+        if rank is None and any(quote_match(e, c) == "page" for c in passages):
+            page_only += 1
+        ranks.append(rank)
+    found = [r is not None for r in ranks]
+    first = min((r for r in ranks if r is not None), default=None)
     return {"evidence": len(ev), "evidence_found": sum(found), "evidence_recall": round(sum(found) / len(ev), 3),
-            "all_evidence": all(found), "hit": first is not None, "first_rank": first, "rr": round(1 / first, 3) if first else 0.0}
+            "all_evidence": all(found), "hit": first is not None, "first_rank": first, "rr": round(1 / first, 3) if first else 0.0,
+            "page_only": page_only, "quote_split": split}
 
 
 def _numbers(text: str) -> set[float]:
@@ -188,6 +236,8 @@ def summarize(rows: list[dict], n_boot: int, seed: int) -> dict:
         "all_evidence": _mean([float(x["all_evidence"]) for x in ret]),
         "evidence_recall": _mean([x["evidence_recall"] for x in ret]),
         "mrr": _mean([x["rr"] for x in ret]),
+        "evidence_page_only": sum(x.get("page_only", 0) for x in ret),     # evidence pages shown without the quote: not credited
+        "evidence_quote_split": sum(x.get("quote_split", 0) for x in ret),  # quote found across two adjacent passages: credited
         "key_recall": _mean([r["keys"]["key_recall"] for r in rows if r.get("keys") and r["keys"].get("key_recall") is not None]),
         "grounded": _mean([float(j["grounded"]) for j in judged if isinstance(j.get("grounded"), bool)]),
         "abstained": _mean([float(r["abstained"]) for r in rows if r.get("abstained") is not None]),

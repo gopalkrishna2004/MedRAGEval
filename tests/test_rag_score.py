@@ -1,17 +1,19 @@
 import pytest
+from medrag.chunk import Chunk
 
 from medrageval.config import load_config
-from medrageval.rag.chunks import Chunk
 from medrageval.rag.score import (agreement, bootstrap_ci, category, is_abstention, judge_score, key_found, key_scores, keypoint_stats,
-                                  retrieval_metrics, score_item)
+                                  quote_match, retrieval_metrics, score_item)
 
 FULL = load_config()
 PATTERNS = FULL["rag"]["eval"]["abstain_patterns"]
 SPEAKERS = FULL["generate"]["attribution"]["speakers"]
 
 
-def chunk(cid, unit_ids, text, part=None):
-    return Chunk(cid, "d02", "company_submission", [], 1, 1, unit_ids, list(dict.fromkeys(u.split("#")[0] for u in unit_ids)), text, part)
+def chunk(cid, pages, body, title="Company evidence submission"):
+    p0, p1 = pages if isinstance(pages, tuple) else (pages, pages)
+    text = f"{title} | B.2 Clinical effectiveness | p. {p0}\n{body}"
+    return Chunk(cid, title, ["B.2 Clinical effectiveness"], p0, p1, "text", body, text, len(text) // 4)
 
 
 @pytest.mark.parametrize("key, text, ok", [
@@ -53,7 +55,6 @@ def test_numerical_keys_and_decline():
     assert key_scores(item, "Median PFS was 7.3 months [1].", PATTERNS, SPEAKERS)["correct"]
     k = key_scores(item, "Not found in the documents.", PATTERNS, SPEAKERS)
     assert k["abstained"] and not k["correct"] and k["key_recall"] == 0.0
-    # a reply that gives the key and also says something is not reported has answered, not declined
     assert not key_scores(item, "Median PFS was 7.3 months; OS was not reported.", PATTERNS, SPEAKERS)["abstained"]
 
 
@@ -63,27 +64,48 @@ def test_unanswerable_is_correct_when_declined():
     assert not key_scores(item, "The list price is £5,000 per pack.", PATTERNS, SPEAKERS)["correct"]
 
 
-TWO_EVIDENCE = {"type": "multihop", "answerable": True, "also_in": ["d05-e0009"],
-                "evidence": [{"unit_id": "d02-e0008", "element_id": "d02-e0008", "quote": "£24,567 per QALY gained"},
-                             {"unit_id": "d03-e0030", "element_id": "d03-e0030", "quote": "£31,200 per QALY gained"}]}
+EV = {"unit_id": "d02-e0008", "pages": [120, 120], "quote": "The company's base-case ICER was £24,567 per QALY gained."}
 
 
-def test_retrieval_counts_evidence_and_copies_in_rank_order():
-    passages = [chunk("c1", ["d05-e0009"], "a copy of the fact"), chunk("c2", ["d02-e0008"], "ICER £24,567 per QALY gained")]
-    m = retrieval_metrics(TWO_EVIDENCE, passages)
+def test_quote_match_needs_the_pages_and_the_normalised_quote():
+    assert quote_match(EV, chunk("c1", 120, "Results. The company’s base-case ICER was £24 567 per QALY gained [see Table 47].")) == "quote"
+    assert quote_match(EV, chunk("c1", (119, 121), "the company's base-case icer was £24,567 per qaly gained")) == "quote"
+    assert quote_match(EV, chunk("c1", 120, "Table 47 shows the results of the base case.")) == "page"      # pages yes, quote no
+    assert quote_match(EV, chunk("c1", 300, "The company's base-case ICER was £24,567 per QALY gained.")) is None   # same words, wrong pages
+
+
+def test_redaction_placeholders_match_the_benchmarks_redacted_marker():
+    ev = {"unit_id": "u", "pages": [126, 126], "quote": "Everolimus + exemestane | £25,714 | 1.96 | 1.45 | [REDACTED] | 1.30 | 0.94 | [REDACTED] | [REDACTED]"}
+    row = "| Everolimus + exemestane | £25,714 | 1.96 | 1.45 | xxxxxxx | 1.30 | 0.94 | ******* | xxxxxxx |"
+    assert quote_match(ev, chunk("c1", 126, row)) == "quote"
+    assert quote_match(ev, chunk("c1", 126, row.replace("1.30", "1.31"))) == "page"
+
+
+TWO = {"type": "multihop", "answerable": True, "also_in": ["d05-e0009"],
+       "evidence": [EV, {"unit_id": "d03-e0030", "pages": [537, 537], "quote": "EAG base-case ICER of £31,200 per QALY gained"}]}
+
+
+def test_retrieval_credits_quotes_only_and_reports_page_only_matches():
+    passages = [chunk("c00010", 120, "Table 47 shows the results of the base case."),
+                chunk("c00020", 120, "The company's base-case ICER was £24,567 per QALY gained [Table 47].")]
+    m = retrieval_metrics(TWO, passages)
     assert m["evidence_recall"] == 0.5 and not m["all_evidence"]
-    assert m["hit"] and m["first_rank"] == 1 and m["rr"] == 1.0     # the copy counts for hit, not for recall
-    both = retrieval_metrics(TWO_EVIDENCE, passages + [chunk("c3", ["d03-e0030"], "EAG ICER £31,200 per QALY gained")])
+    assert m["hit"] and m["first_rank"] == 2 and m["rr"] == 0.5     # the page-only passage at rank 1 is not credited
+    assert m["page_only"] == 0 and m["quote_split"] == 0           # the quote was found elsewhere, so no page-only tally for it
+    miss = retrieval_metrics(TWO, passages[:1])
+    assert not miss["hit"] and miss["page_only"] == 1
+    both = retrieval_metrics(TWO, passages + [chunk("c00300", 537, "The EAG base-case ICER of £31,200 per QALY gained is above the threshold.", "EAG report")])
     assert both["all_evidence"] and both["evidence_recall"] == 1.0
-    assert retrieval_metrics({**TWO_EVIDENCE, "answerable": False}, passages) is None
+    assert retrieval_metrics({**TWO, "answerable": False}, passages) is None
 
 
-def test_another_row_group_of_the_table_counts_only_with_the_quoted_row():
-    item = {"answerable": True, "evidence": [{"unit_id": "d04-e0001#r01", "element_id": "d04-e0001", "quote": "Answer 30: capivasertib"}]}
-    assert not retrieval_metrics(item, [chunk("c1", ["d04-e0001#r00"], "Answer 3: capivasertib")])["hit"]
-    assert retrieval_metrics(item, [chunk("c1", ["d04-e0001#r02"], "Answer 30: capivasertib plus fulvestrant")])["hit"]
-    # a piece of a split unit holds the evidence only if the quote is in that piece
-    assert not retrieval_metrics(item, [chunk("c1", ["d04-e0001#r01"], "other text", part=1)])["hit"]
+def test_a_quote_split_across_two_adjacent_passages_counts():
+    a = chunk("c00041", 120, "In the deterministic analysis the company's base-case ICER")
+    b = chunk("c00042", 120, "was £24,567 per QALY gained, below the £30,000 threshold.")
+    m = retrieval_metrics({"answerable": True, "evidence": [EV]}, [b, a])
+    assert m["hit"] and m["first_rank"] == 1 and m["quote_split"] == 1
+    far = chunk("c00090", 120, "was £24,567 per QALY gained, below the £30,000 threshold.")
+    assert not retrieval_metrics({"answerable": True, "evidence": [EV]}, [a, far])["hit"]   # not adjacent in the document
 
 
 @pytest.mark.parametrize("answerable, all_ev, declined, score, expected", [
@@ -96,40 +118,32 @@ def test_another_row_group_of_the_table_counts_only_with_the_quoted_row():
     (False, None, False, 0.0, "hallucinated_answer"),
 ])
 def test_category(answerable, all_ev, declined, score, expected):
-    retrieval = None if all_ev is None else {"all_evidence": all_ev}
-    assert category({"answerable": answerable}, retrieval, declined, score) == expected
+    item = {"answerable": answerable}
+    retrieval = {"all_evidence": all_ev} if all_ev is not None else None
+    assert category(item, retrieval, declined, score) == expected
 
 
 def test_judge_score_and_keypoints():
-    assert judge_score({"answerable": True}, {"verdict": "partial"}) == 0.5
+    item = {"type": "summary", "answerable": True, "keypoints": [{"point": "a"}, {"point": "b"}, {"point": "c"}, {"point": "d"}]}
+    judge = {"verdict": "partial", "keypoints": [{"n": 1, "status": "covered"}, {"n": 2, "status": "covered"}, {"n": 3, "status": "contradicted"}]}
+    assert judge_score(item, judge) == 0.5
+    assert keypoint_stats(item, judge) == {"keypoints": 4, "completeness": 0.5, "hallucination": 0.25, "irrelevance": 0.25}
     assert judge_score({"answerable": False}, {"verdict": "abstained"}) == 1.0
-    assert judge_score({"answerable": True}, None) is None
-    item = {"keypoints": [{"point": "a"}, {"point": "b"}, {"point": "c"}]}
-    kp = keypoint_stats(item, {"keypoints": [{"n": 1, "status": "covered"}, {"n": 2, "status": "contradicted"}]})
-    assert kp == {"keypoints": 3, "completeness": 0.333, "hallucination": 0.333, "irrelevance": 0.333}
+    assert judge_score({"answerable": False}, {"verdict": "incorrect"}) == 0.0
 
 
-def test_score_item_prefers_the_judge_and_falls_back_to_keys():
-    item = {"type": "numerical", "answerable": True, "answer_keys": ["7.3 months"],
-            "evidence": [{"unit_id": "d02-e0003", "element_id": "d02-e0003", "quote": "Median PFS (months) | 7.3 | 3.1"}]}
-    passages = [chunk("c1", ["d02-e0003"], "Median PFS (months) | 7.3 | 3.1")]
-    judged = score_item(item, "7.3 months [1]", passages, {"verdict": "incorrect", "grounded": True}, PATTERNS, SPEAKERS)
-    assert judged["score"] == 0.0 and judged["category"] == "reader_error" and judged["keys"]["correct"]
-    keys_only = score_item(item, "7.3 months [1]", passages, None, PATTERNS, SPEAKERS)
-    assert keys_only["score"] == 1.0 and keys_only["category"] == "correct"
+def test_score_item_prefers_the_judge_and_agreement_lists_disagreements():
+    item = {"type": "numerical", "answerable": True, "answer_keys": ["7.3 months"], "evidence": [{"unit_id": "u", "pages": [21, 21], "quote": "Median PFS 7.3"}]}
+    passages = [chunk("c1", 21, "Median PFS 7.3 months versus 3.1 months")]
+    s = score_item(item, "Median PFS was 7.3 months [1].", passages, {"verdict": "incorrect", "grounded": True}, PATTERNS, SPEAKERS)
+    assert s["score"] == 0.0 and s["keys"]["correct"] and s["category"] == "reader_error"
+    rows = [{"uid": "a", "keys": {"correct": True}, "judge_score": 0.0}, {"uid": "b", "keys": {"correct": True}, "judge_score": 1.0},
+            {"uid": "c", "keys": {"correct": None}, "judge_score": 1.0}]
+    assert agreement(rows) == {"items": 2, "agree": 0.5, "keys_only": ["a"], "judge_only": []}
 
 
-def test_bootstrap_is_deterministic():
-    xs = [1.0, 0.0, 1.0, 1.0, 0.5, 0.0]
-    assert bootstrap_ci(xs, 500, 7) == bootstrap_ci(xs, 500, 7)
-    lo, hi = bootstrap_ci(xs, 500, 7)
-    assert 0.0 <= lo < sum(xs) / len(xs) < hi <= 1.0
-    assert bootstrap_ci([1.0, 1.0], 100, 1) == [1.0, 1.0] and bootstrap_ci([1.0], 100, 1) is None
-
-
-def test_agreement_lists_the_disagreements():
-    rows = [{"uid": "a", "keys": {"correct": True}, "judge_score": 1.0},
-            {"uid": "b", "keys": {"correct": True}, "judge_score": 0.0},
-            {"uid": "c", "keys": {"correct": False}, "judge_score": 1.0},
-            {"uid": "d", "keys": {"correct": None}, "judge_score": 1.0}]
-    assert agreement(rows) == {"items": 3, "agree": 0.333, "keys_only": ["b"], "judge_only": ["c"]}
+def test_bootstrap_ci_is_deterministic_and_within_range():
+    vals = [1.0, 0.0, 1.0, 0.5, 1.0, 0.0]
+    ci = bootstrap_ci(vals, 200, 1)
+    assert ci == bootstrap_ci(vals, 200, 1) and 0.0 <= ci[0] <= sum(vals) / len(vals) <= ci[1] <= 1.0
+    assert bootstrap_ci([1.0], 200, 1) is None

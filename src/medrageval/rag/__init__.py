@@ -1,1 +1,1 @@
-"""The RAG under evaluation (chunks, hybrid retrieval, a small local model) and the harness that scores it on a dataset."""
+"""Evaluate a RAG application (the `medrag` package) with a generated dataset: answers, judge, scores, report."""

@@ -20,10 +20,15 @@ dependencies = [
     "python-dotenv>=1.2.4",
     # The RAG's dense index: a normalised matrix and a dot product (about a thousand chunks per bundle).
     "numpy>=2.0",
+    "docling>=2.40",
+    "sentence-transformers>=3.3",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
 ]
 
 [project.scripts]
 medrageval = "medrageval.cli:main"
+medrag = "medrag.cli:main"
 
 [tool.pytest.ini_options]
 # Regression tests parse the real PDFs (minutes on first run): uv run pytest -m regression
@@ -37,7 +42,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/medrageval"]
+packages = ["src/medrageval", "src/medrag"]
 
 [dependency-groups]
 dev = [
