@@ -2,8 +2,8 @@ import pytest
 from medrag.chunk import Chunk
 
 from medrageval.config import load_config
-from medrageval.rag.score import (agreement, bootstrap_ci, category, is_abstention, judge_score, key_found, key_scores, keypoint_stats,
-                                  quote_match, retrieval_metrics, score_item)
+from medrageval.rag.score import (agreement, bootstrap_ci, category, faithfulness, is_abstention, judge_score, key_found, key_scores,
+                                  keypoint_stats, quote_match, retrieval_metrics, score_item, summarize)
 
 FULL = load_config()
 PATTERNS = FULL["rag"]["eval"]["abstain_patterns"]
@@ -106,6 +106,40 @@ def test_a_quote_split_across_two_adjacent_passages_counts():
     assert m["hit"] and m["first_rank"] == 1 and m["quote_split"] == 1
     far = chunk("c00090", 120, "was £24,567 per QALY gained, below the £30,000 threshold.")
     assert not retrieval_metrics({"answerable": True, "evidence": [EV]}, [a, far])["hit"]   # not adjacent in the document
+    assert m["relevant_shown"] == 2 and m["context_precision"] == 1.0                      # both halves hold the evidence
+
+
+def test_context_precision_counts_the_passages_that_hold_evidence():
+    gold = chunk("c00020", 120, "The company's base-case ICER was £24,567 per QALY gained [Table 47].")
+    noise = [chunk(f"c0010{i}", 120 + i, f"Filler passage {i} about the decision problem.") for i in range(5)]
+    m = retrieval_metrics(TWO, noise[:2] + [gold] + noise[2:])
+    assert m["shown"] == 6 and m["relevant_shown"] == 1 and m["context_precision"] == round(1 / 6, 3)
+    assert retrieval_metrics(TWO, noise)["context_precision"] == 0.0
+
+
+def test_candidate_recall_is_over_the_pool_before_reranking():
+    gold = chunk("c00020", 120, "The company's base-case ICER was £24,567 per QALY gained [Table 47].")
+    eag = chunk("c00300", 537, "The EAG base-case ICER of £31,200 per QALY gained is above the threshold.", "EAG report")
+    noise = chunk("c00101", 121, "Filler passage about the decision problem.")
+    m = retrieval_metrics(TWO, [noise], candidates=[noise, gold, eag])
+    assert not m["hit"] and m["evidence_recall"] == 0.0                                   # nothing shown to the model...
+    assert m["candidates"] == 3 and m["candidate_found"] == 2 and m["candidate_recall"] == 1.0 and m["candidate_all_evidence"]   # ...but the pool had it
+    assert "candidate_recall" not in retrieval_metrics(TWO, [gold])                        # a fixed context has no pool
+    half = retrieval_metrics(TWO, [gold], candidates=[gold, noise])
+    assert half["candidate_recall"] == 0.5 and not half["candidate_all_evidence"]
+
+
+def test_faithfulness_is_the_supported_share_of_claims():
+    assert faithfulness({"claims": [{"claim": "ICER £24,567", "supported": True}, {"claim": "below £30,000", "supported": True},
+                                    {"claim": "in 2023", "supported": False}]}) == round(2 / 3, 3)
+    assert faithfulness({"claims": []}) is None and faithfulness(None) is None
+    assert faithfulness({"grounded": True}) is None            # an older verdict without a claim list
+    rows = [{"faithfulness": 1.0, "retrieval": {"hit": True, "all_evidence": True, "evidence_recall": 1.0, "rr": 1.0, "context_precision": 0.5,
+                                                "candidate_recall": 1.0, "candidate_all_evidence": True}},
+            {"faithfulness": 0.5, "retrieval": {"hit": False, "all_evidence": False, "evidence_recall": 0.0, "rr": 0.0, "context_precision": 0.0}},
+            {"faithfulness": None, "retrieval": None}]
+    o = summarize(rows, 10, 1)
+    assert o["faithfulness"] == 0.75 and o["context_precision"] == 0.25 and o["candidate_recall"] == 1.0 and o["candidate_all_evidence"] == 1.0
 
 
 @pytest.mark.parametrize("answerable, all_ev, declined, score, expected", [
@@ -135,8 +169,10 @@ def test_judge_score_and_keypoints():
 def test_score_item_prefers_the_judge_and_agreement_lists_disagreements():
     item = {"type": "numerical", "answerable": True, "answer_keys": ["7.3 months"], "evidence": [{"unit_id": "u", "pages": [21, 21], "quote": "Median PFS 7.3"}]}
     passages = [chunk("c1", 21, "Median PFS 7.3 months versus 3.1 months")]
-    s = score_item(item, "Median PFS was 7.3 months [1].", passages, {"verdict": "incorrect", "grounded": True}, PATTERNS, SPEAKERS)
-    assert s["score"] == 0.0 and s["keys"]["correct"] and s["category"] == "reader_error"
+    judge = {"verdict": "incorrect", "grounded": True, "claims": [{"claim": "PFS 7.3 months", "supported": True}]}
+    s = score_item(item, "Median PFS was 7.3 months [1].", passages, judge, PATTERNS, SPEAKERS, candidates=passages)
+    assert s["score"] == 0.0 and s["keys"]["correct"] and s["category"] == "reader_error" and s["faithfulness"] == 1.0
+    assert s["retrieval"]["candidate_recall"] == 1.0
     rows = [{"uid": "a", "keys": {"correct": True}, "judge_score": 0.0}, {"uid": "b", "keys": {"correct": True}, "judge_score": 1.0},
             {"uid": "c", "keys": {"correct": None}, "judge_score": 1.0}]
     assert agreement(rows) == {"items": 2, "agree": 0.5, "keys_only": ["a"], "judge_only": []}

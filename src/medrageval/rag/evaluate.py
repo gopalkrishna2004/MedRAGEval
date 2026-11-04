@@ -12,8 +12,8 @@ are read over the benchmark's stored distractors, mapped to the application's
 chunks by page and text overlap (`distractor_passages`), with any chunk that
 holds the withheld evidence dropped, so the evidence is certainly absent.
 
-Writes responses.jsonl (one row per item: the reply, the passages, retrieval,
-keys, judge, outcome) and eval_report.json (per type and overall, with 95%
+Writes responses.jsonl (one row per item: the reply, the passages, the
+candidate pool, retrieval, keys, judge, outcome) and eval_report.json (per type and overall, with 95%
 bootstrap intervals), and prints the summary.
 """
 
@@ -202,11 +202,13 @@ def make_row(it: dict, a: dict, judge: dict | None, patterns: list[str], speaker
            "evidence": [{"unit_id": e.get("unit_id"), "doc_id": e.get("doc_id"), "pages": e.get("pages")} for e in it.get("evidence") or []]}
     if a.get("error"):
         return {**row, "error": a["error"], "score": 0.0, "category": "error"}
-    scored = score_item(it, a["answer"], a["passages"], judge, patterns, speakers)
+    candidates = a.get("candidates")
+    scored = score_item(it, a["answer"], a["passages"], judge, patterns, speakers, candidates)
     return {**row, "response": a["answer"], "context": a.get("context", "retrieved"), **scored, "judge": judge,
             "passages": [{"chunk_id": c.chunk_id, "document_title": c.document_title, "pages": [c.page_start, c.page_end], "kind": c.kind}
                          for c in a["passages"]],
             "retrieved": [{**h, "in_context": h.get("in_context")} for h in a["retrieved"]],
+            "candidates": [c.chunk_id for c in candidates] if candidates is not None else None,   # the fused pool, before reranking
             "context_chars": a["context_chars"], "usage": a["usage"], "latency_s": a["latency_s"]}
 
 
@@ -273,12 +275,15 @@ def print_report(report: dict) -> None:
     print(f"{report['items']} items from {', '.join(report['datasets'])}")
     print(f"  RAG: {r['model']}, {r['retrieval']['mode']} top {r['retrieval']['top_k']}{' + rerank' if r['retrieval'].get('rerank') else ''} "
           f"over {r['chunks']} chunks (prompt v{r['prompt_version']}); judge: {report['judge_model'] or 'none (keys only)'}")
-    print(f"  {'':14s} {'n':>3s}  {'score':>5s}  {'95% CI':13s}  {'hit':>4s}  {'all-ev':>6s}  {'MRR':>4s}  {'keys':>4s}  {'grounded':>8s}")
+    k, n = r["retrieval"]["top_k"], r["retrieval"]["candidates"]
+    print(f"  {'':14s} {'n':>3s}  {'score':>5s}  {'95% CI':13s}  {'hit':>4s}  {'all-ev':>6s}  {'MRR':>4s}  {'prec@' + str(k):>7s}  "
+          f"{'cand@' + str(n):>7s}  {'keys':>4s}  {'ground':>6s}  {'faith':>5s}")
 
     def line(name: str, s: dict) -> None:
         ci = f"[{s['ci95'][0]:.2f}, {s['ci95'][1]:.2f}]" if s["ci95"] else "-"
         print(f"  {name:14s} {s['items']:3d}  {_f(s['score']):>5s}  {ci:13s}  {_f(s['hit']):>4s}  {_f(s['all_evidence']):>6s}  "
-              f"{_f(s['mrr']):>4s}  {_f(s['key_recall']):>4s}  {_f(s['grounded']):>8s}")
+              f"{_f(s['mrr']):>4s}  {_f(s['context_precision']):>7s}  {_f(s['candidate_recall']):>7s}  {_f(s['key_recall']):>4s}  "
+              f"{_f(s['grounded']):>6s}  {_f(s['faithfulness']):>5s}")
 
     for t, s in report["per_type"].items():
         line(t, s)
@@ -411,12 +416,15 @@ def run_ablate_cli(args: argparse.Namespace) -> None:
             report = _run(items, app, judge, full, args.out_root / label, unit_texts, mode, rerank)
             o = report["overall"]
             summary.append({"run": label, "chunk_tokens": size, "mode": mode, "rerank": rerank, **{k: o[k] for k in
-                            ("items", "score", "ci95", "hit", "all_evidence", "evidence_recall", "mrr", "key_recall", "grounded")},
+                            ("items", "score", "ci95", "hit", "all_evidence", "evidence_recall", "mrr", "context_precision",
+                             "candidate_recall", "key_recall", "grounded", "faithfulness")},
                             "categories": o["categories"]})
-            print(f"  {label}: score {_f(o['score'])}  hit {_f(o['hit'])}  all-ev {_f(o['all_evidence'])}  MRR {_f(o['mrr'])}")
+            print(f"  {label}: score {_f(o['score'])}  hit {_f(o['hit'])}  all-ev {_f(o['all_evidence'])}  MRR {_f(o['mrr'])}  "
+                  f"prec {_f(o['context_precision'])}  cand {_f(o['candidate_recall'])}  faith {_f(o['faithfulness'])}")
     args.out_root.mkdir(parents=True, exist_ok=True)
     (args.out_root / "ablation.json").write_text(json.dumps({"datasets": sorted({it['dataset'] for it in items}), "runs": summary}, indent=2))
-    print(f"\n  {'run':22s} {'score':>5s}  {'hit':>4s}  {'all-ev':>6s}  {'recall':>6s}  {'MRR':>4s}  {'keys':>4s}")
+    print(f"\n  {'run':22s} {'score':>5s}  {'hit':>4s}  {'all-ev':>6s}  {'recall':>6s}  {'MRR':>4s}  {'prec':>4s}  {'cand':>4s}  {'keys':>4s}  {'faith':>5s}")
     for s in summary:
-        print(f"  {s['run']:22s} {_f(s['score']):>5s}  {_f(s['hit']):>4s}  {_f(s['all_evidence']):>6s}  {_f(s['evidence_recall']):>6s}  {_f(s['mrr']):>4s}  {_f(s['key_recall']):>4s}")
+        print(f"  {s['run']:22s} {_f(s['score']):>5s}  {_f(s['hit']):>4s}  {_f(s['all_evidence']):>6s}  {_f(s['evidence_recall']):>6s}  "
+              f"{_f(s['mrr']):>4s}  {_f(s['context_precision']):>4s}  {_f(s['candidate_recall']):>4s}  {_f(s['key_recall']):>4s}  {_f(s['faithfulness']):>5s}")
     print(f"summary in {args.out_root / 'ablation.json'}")

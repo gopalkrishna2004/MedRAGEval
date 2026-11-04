@@ -104,7 +104,9 @@ def small_model(messages, tag):
 
 
 def passing_judge(messages, tag):
-    return {"verdict": "correct", "keypoints": [], "grounded": True, "unsupported_claims": [], "reason": "ok"}
+    declined = "Not found in the documents." in messages[-1]["content"].split("System answer:")[1].split("Passages shown")[0]
+    claims = [] if declined else [{"claim": "median PFS 7.3 months", "supported": True}]
+    return {"verdict": "correct", "keypoints": [], "claims": claims, "grounded": None if declined else True, "reason": "ok"}
 
 
 def test_unit_chunks_map_by_text_overlap_then_caption_then_page():
@@ -137,15 +139,20 @@ def test_eval_end_to_end(tmp_path):
     assert [r["uid"] for r in rows] == ["numerical-001", "unanswerable-001", "unanswerable-002"]
     pfs, withheld, price = rows
     assert pfs["score"] == 1.0 and pfs["category"] == "correct" and pfs["keys"]["correct"] and pfs["context"] == "retrieved"
-    assert pfs["retrieval"]["hit"] and pfs["retrieval"]["first_rank"] == 1
+    assert pfs["retrieval"]["hit"] and pfs["retrieval"]["first_rank"] == 1 and pfs["faithfulness"] == 1.0
+    assert pfs["retrieval"]["context_precision"] == round(1 / 3, 3) and pfs["retrieval"]["candidate_recall"] == 1.0
+    assert pfs["candidates"][0] == "c00002" and len(pfs["candidates"]) <= 10            # the fused pool, in fused order
     assert "Median PFS (months) | 7.3 | 3.1" in judge.calls[0][0][1]["content"]   # the judge sees the passages the model saw
     assert withheld["context"] == "fixed" and withheld["category"] == "correct_abstention" and withheld["retrieval"] is None
+    assert withheld["candidates"] is None and withheld["faithfulness"] is None            # no pool and no claims for a decline
     assert [p["chunk_id"] for p in withheld["passages"]] == ["c00003", "c00001"]
     assert "7.3" not in judge.calls[1][0][1]["content"].split("Passages shown")[1]
     assert price["context"] == "retrieved" and price["category"] == "correct_abstention" and price["retrieved"][0]["score"] is not None
 
     assert report["items"] == 3 and set(report["per_type"]) == {"numerical", "unanswerable"} and report["fixed_context_items"] == 1
     assert report["overall"]["score"] == 1.0 and report["agreement"] == {"items": 3, "agree": 1.0, "keys_only": [], "judge_only": []}
+    o = report["overall"]
+    assert o["context_precision"] == round(1 / 3, 3) and o["candidate_recall"] == 1.0 and o["faithfulness"] == 1.0
     assert report["judge_model"] == "fake" and report["rag"]["retrieval"]["mode"] == "bm25" and report["rag"]["chunks"] == 4
     assert report["evidence_matching"] == {"page_only": 0, "quote_split": 0, "distractors_unmapped": 0} and not report["warnings"]
     assert json.loads((tmp_path / "run" / "eval_report.json").read_text())["items"] == 3

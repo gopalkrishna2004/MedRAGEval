@@ -9,12 +9,15 @@ counts as a hit; a quote found across two passages adjacent in the document
 counts, and is recorded as `quote_split`.
 
 Three views of each answer:
-- retrieval: `hit`, `all_evidence`, `evidence_recall`, MRR over the passages shown.
+- retrieval: `hit`, `all_evidence`, `evidence_recall`, MRR and `context_precision`
+  over the passages shown; `candidate_recall` over the fused pool the reranker
+  chose from, so a miss is put down to the pool or to the ordering.
 - keys: deterministic. Every answer key in the reply (a number may differ in
   thousands separators or trailing zeros: "£52,681" is "52681", "0.50" is
   "0.5"), the party for attribution, a decline for unanswerable items.
 - judge: the frontier judge's verdict, keypoint coverage for summaries
-  (completeness / hallucination / irrelevance) and groundedness.
+  (completeness / hallucination / irrelevance), groundedness and faithfulness
+  (the share of the reply's claims the passages support).
 
 The judge's verdict is the score when there is one; the keys are the score
 otherwise, and their agreement with the judge is reported as a check on both.
@@ -68,8 +71,8 @@ def _adjacent(a: Chunk, b: Chunk) -> bool:
         return False
 
 
-def quote_split_rank(ev: dict, passages: list[Chunk]) -> int | None:
-    """Rank of the first passage of an adjacent pair whose joined text holds the quote, when neither does alone."""
+def quote_split_pair(ev: dict, passages: list[Chunk]) -> tuple[int, int] | None:
+    """Indexes of an adjacent pair whose joined text holds the quote, when neither does alone."""
     q = norm_alnum(ev.get("quote") or "")
     if not q:
         return None
@@ -78,30 +81,67 @@ def quote_split_rank(ev: dict, passages: list[Chunk]) -> int | None:
         a, b = passages[i], passages[j]
         if _adjacent(a, b) and (pages_overlap(ev.get("pages"), a) or pages_overlap(ev.get("pages"), b)) \
                 and q in norm_alnum(a.text) + norm_alnum(b.body):   # b's header line would sit between the two halves
-            return min(i, j) + 1
+            return (i, j)
     return None
 
 
-def retrieval_metrics(item: dict, passages: list[Chunk]) -> dict | None:
-    """Gold evidence among the passages shown, in rank order. None for unanswerable items and items without evidence."""
-    ev = list({(e.get("unit_id"), e.get("quote")): e for e in item.get("evidence") or [] if e.get("quote") or e.get("pages")}.values())
-    if not item.get("answerable", True) or not ev:
-        return None
+def quote_split_rank(ev: dict, passages: list[Chunk]) -> int | None:
+    """Rank of the first passage of an adjacent pair whose joined text holds the quote, when neither does alone."""
+    pair = quote_split_pair(ev, passages)
+    return min(pair) + 1 if pair else None
+
+
+def gold_evidence(item: dict) -> list[dict]:
+    """The item's distinct evidence entries that can be matched (a quote or pages); [] for unanswerable items."""
+    if not item.get("answerable", True):
+        return []
+    return list({(e.get("unit_id"), e.get("quote")): e for e in item.get("evidence") or [] if e.get("quote") or e.get("pages")}.values())
+
+
+def locate(ev: list[dict], passages: list[Chunk]) -> tuple[list[int | None], set[int], int, int]:
+    """(rank per evidence entry, indexes of the passages that hold evidence, page-only count, split count)."""
     ranks: list[int | None] = []
+    holding: set[int] = set()
     page_only = split = 0
     for e in ev:
-        rank = next((r for r, c in enumerate(passages, start=1) if quote_match(e, c) == "quote"), None)
-        if rank is None:
-            rank = quote_split_rank(e, passages)
-            split += rank is not None
-        if rank is None and any(quote_match(e, c) == "page" for c in passages):
-            page_only += 1
-        ranks.append(rank)
+        idx = next((i for i, c in enumerate(passages) if quote_match(e, c) == "quote"), None)
+        if idx is not None:
+            holding.add(idx)
+            ranks.append(idx + 1)
+            continue
+        pair = quote_split_pair(e, passages)
+        if pair:
+            holding.update(pair)
+            split += 1
+            ranks.append(min(pair) + 1)
+            continue
+        page_only += any(quote_match(e, c) == "page" for c in passages)
+        ranks.append(None)
+    return ranks, holding, page_only, split
+
+
+def retrieval_metrics(item: dict, passages: list[Chunk], candidates: list[Chunk] | None = None) -> dict | None:
+    """Gold evidence among the passages shown, in rank order, and among the candidate pool when given.
+    None for unanswerable items and items without evidence. `context_precision` is the share of the passages shown
+    that hold gold evidence; its ceiling is the evidence count over the passages shown, since a passage that is
+    merely on topic counts as irrelevant."""
+    ev = gold_evidence(item)
+    if not ev:
+        return None
+    ranks, holding, page_only, split = locate(ev, passages)
     found = [r is not None for r in ranks]
     first = min((r for r in ranks if r is not None), default=None)
-    return {"evidence": len(ev), "evidence_found": sum(found), "evidence_recall": round(sum(found) / len(ev), 3),
-            "all_evidence": all(found), "hit": first is not None, "first_rank": first, "rr": round(1 / first, 3) if first else 0.0,
-            "page_only": page_only, "quote_split": split}
+    out = {"evidence": len(ev), "evidence_found": sum(found), "evidence_recall": round(sum(found) / len(ev), 3),
+           "all_evidence": all(found), "hit": first is not None, "first_rank": first, "rr": round(1 / first, 3) if first else 0.0,
+           "shown": len(passages), "relevant_shown": len(holding),
+           "context_precision": round(len(holding) / len(passages), 3) if passages else 0.0,
+           "page_only": page_only, "quote_split": split}
+    if candidates is not None:
+        c_ranks = locate(ev, candidates)[0]
+        c_found = sum(r is not None for r in c_ranks)
+        out.update({"candidates": len(candidates), "candidate_found": c_found, "candidate_recall": round(c_found / len(ev), 3),
+                    "candidate_all_evidence": c_found == len(ev)})
+    return out
 
 
 def _numbers(text: str) -> set[float]:
@@ -168,6 +208,15 @@ def judge_score(item: dict, judge: dict | None) -> float | None:
     return VERDICT_SCORE.get(verdict)
 
 
+def faithfulness(judge: dict | None) -> float | None:
+    """Share of the reply's factual claims the judge found supported by the passages shown. None without claims
+    (a decline, or a judge verdict without a claim list)."""
+    claims = [c for c in (judge or {}).get("claims") or [] if isinstance(c, dict)]
+    if not claims:
+        return None
+    return round(sum(bool(c.get("supported")) for c in claims) / len(claims), 3)
+
+
 def keypoint_stats(item: dict, judge: dict | None) -> dict | None:
     """Keypoint metrics: shares of keypoints covered, contradicted and missing. A keypoint the judge skipped is missing."""
     kps = item.get("keypoints") or []
@@ -196,8 +245,9 @@ def category(item: dict, retrieval: dict | None, declined: bool, score: float | 
     return "false_abstention" if declined else "reader_error"
 
 
-def score_item(item: dict, response: str, passages: list[Chunk], judge: dict | None, patterns: list[str], speakers: dict) -> dict:
-    retrieval = retrieval_metrics(item, passages)
+def score_item(item: dict, response: str, passages: list[Chunk], judge: dict | None, patterns: list[str], speakers: dict,
+               candidates: list[Chunk] | None = None) -> dict:
+    retrieval = retrieval_metrics(item, passages, candidates)
     keys = key_scores(item, response, patterns, speakers)
     js = judge_score(item, judge)
     if js is not None:
@@ -206,7 +256,7 @@ def score_item(item: dict, response: str, passages: list[Chunk], judge: dict | N
         score = None if keys["correct"] is None else float(keys["correct"])
         declined = keys["abstained"]
     return {"retrieval": retrieval, "keys": keys, "judge_score": js, "keypoints": keypoint_stats(item, judge),
-            "score": score, "abstained": declined, "category": category(item, retrieval, declined, score)}
+            "faithfulness": faithfulness(judge), "score": score, "abstained": declined, "category": category(item, retrieval, declined, score)}
 
 
 def bootstrap_ci(values: list[float], n: int, seed: int) -> list[float] | None:
@@ -236,10 +286,14 @@ def summarize(rows: list[dict], n_boot: int, seed: int) -> dict:
         "all_evidence": _mean([float(x["all_evidence"]) for x in ret]),
         "evidence_recall": _mean([x["evidence_recall"] for x in ret]),
         "mrr": _mean([x["rr"] for x in ret]),
+        "context_precision": _mean([x["context_precision"] for x in ret]),           # share of the passages shown that hold gold evidence
+        "candidate_recall": _mean([x["candidate_recall"] for x in ret if "candidate_recall" in x]),   # evidence in the pool before reranking
+        "candidate_all_evidence": _mean([float(x["candidate_all_evidence"]) for x in ret if "candidate_all_evidence" in x]),
         "evidence_page_only": sum(x.get("page_only", 0) for x in ret),     # evidence pages shown without the quote: not credited
         "evidence_quote_split": sum(x.get("quote_split", 0) for x in ret),  # quote found across two adjacent passages: credited
         "key_recall": _mean([r["keys"]["key_recall"] for r in rows if r.get("keys") and r["keys"].get("key_recall") is not None]),
         "grounded": _mean([float(j["grounded"]) for j in judged if isinstance(j.get("grounded"), bool)]),
+        "faithfulness": _mean([r["faithfulness"] for r in rows if r.get("faithfulness") is not None]),
         "abstained": _mean([float(r["abstained"]) for r in rows if r.get("abstained") is not None]),
         "keypoint_completeness": _mean([k["completeness"] for k in kps]),
         "keypoint_hallucination": _mean([k["hallucination"] for k in kps]),

@@ -258,15 +258,18 @@ holds the withheld quote or every withheld answer key is dropped. `context` in
 distractors with no chunk on their pages.
 
 Outputs in the run directory:
-- `responses.jsonl`: per item, the reply, the passages shown (with BM25, dense, fused and rerank ranks), and the scores below.
+- `responses.jsonl`: per item, the reply, the passages shown (with BM25, dense, fused and rerank ranks), the candidate pool, and the scores below.
 - `eval_report.json`: the application's config and collection, per-type and overall metrics with 95% bootstrap intervals, outcomes, agreement and evidence-matching counts.
 
 | Metric | What it measures |
 |---|---|
 | `hit`, `all_evidence`, `evidence_recall`, `MRR` | Retrieval: was the item's gold evidence among the passages shown? Multi-hop and summary items need `all_evidence`. A copy of the fact in another document is not credited, so these are conservative. |
+| `context_precision` (`prec@k`) | The share of the passages shown that hold gold evidence: how much of what reaches the model is irrelevant. Its ceiling is the evidence count over `top_k`, since an on-topic passage without the evidence counts as irrelevant. |
+| `candidate_recall` (`cand@n`) | Evidence recall over the fused candidate pool (`candidates` chunks) before the reranker and the top-k cut. Low `candidate_recall` means the retrievers never found it; high `candidate_recall` with low `evidence_recall` means the ordering lost it. Not computed for fixed-context items. |
 | `keys` | Deterministic: every answer key in the reply (numbers compared as numbers: "£52,681" = "52681", "0.50" = "0.5"), the party for attribution, a decline for unanswerable items. |
 | `score` | The judge's verdict (correct 1, partial 0.5, incorrect or declined 0; for unanswerable items a decline is correct). Keys when run with `--no-judge`. |
 | `grounded` | The judge: every claim of the reply is supported by the passages shown. |
+| `faithfulness` | The judge lists the reply's factual claims, each supported or not by the passages shown; this is the supported share (0 to 1). None when the judge lists no claims (a bare decline); a decline that goes on to describe the passages is scored on what it says. |
 | keypoints | Summaries: share of keypoints covered and contradicted (completeness and hallucination). |
 | outcome | `correct`; `retrieval_miss` (wrong, evidence not shown); `reader_error` (wrong, evidence shown); `false_abstention` (declined, evidence shown); `correct_abstention` / `hallucinated_answer` for unanswerable items. |
 | judge vs keys | Agreement on items both can decide, with the disagreeing ids: a check on the scorer, and a pointer to keys or items worth a look. |

@@ -47,6 +47,11 @@ class Retriever:
         self.bm25 = BM25({c.chunk_id: tokenize(c.text) for c in self.chunks})
 
     def search(self, query: str, mode: str | None = None, k: int | None = None, rerank: bool | None = None) -> list[Hit]:
+        return self.retrieve(query, mode, k, rerank)[0]
+
+    def retrieve(self, query: str, mode: str | None = None, k: int | None = None, rerank: bool | None = None) -> tuple[list[Hit], list[Chunk]]:
+        """(hits, candidates): the top k after reranking, and the fused candidate pool (`candidates` chunks, in fused order)
+        before the reranker and the top-k cut, so a miss can be put down to the pool or to the ordering."""
         rc = self.cfg
         mode, k, n = mode or rc["mode"], k or rc["top_k"], rc["candidates"]
         rerank = rc.get("rerank", False) if rerank is None else rerank
@@ -62,7 +67,8 @@ class Retriever:
             ranked["dense"] = [cid for cid, _ in self.store.dense_search(self.collection, np.asarray(q, dtype=np.float32), n)]
         fused = rrf(list(ranked.values()), rc["rrf_k"])
         positions = {name: {cid: r for r, cid in enumerate(ids, start=1)} for name, ids in ranked.items()}
-        order = [(cid, s) for cid, s in fused]
+        order = [(cid, s) for cid, s in fused][:n]
+        pool = [self.by_id[cid] for cid, _ in order]
         fused_rank = {cid: r for r, (cid, _) in enumerate(order, start=1)}
         rerank_rank: dict[str, int] = {}
         if rerank and self.reranker is not None and order:
@@ -79,4 +85,4 @@ class Retriever:
             if rerank_rank:
                 ranks["rerank"] = rerank_rank.get(cid)
             hits.append(Hit(self.by_id[cid], rank, round(float(score), 5), ranks))
-        return hits
+        return hits, pool

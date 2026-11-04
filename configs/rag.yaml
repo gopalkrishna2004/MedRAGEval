@@ -44,7 +44,7 @@ store:
 retrieval:
   mode: hybrid                       # bm25 | dense | hybrid
   top_k: 6                           # passages shown to the model
-  candidates: 30                     # per retriever before fusion
+  candidates: 30                     # per retriever before fusion, and the width of the fused pool the reranker sees
   rrf_k: 60                          # reciprocal rank fusion constant
   rerank: true                       # cross-encoder over the fused candidates
   rerank_model: BAAI/bge-reranker-v2-m3

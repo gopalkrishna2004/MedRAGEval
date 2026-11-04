@@ -72,6 +72,14 @@ def test_reranker_reorders_the_fused_candidates():
     assert reranked[0].ranks["rerank"] == 1 and reranked[0].ranks["fused"] > 1
 
 
+def test_retrieve_returns_the_candidate_pool_in_fused_order():
+    r = Retriever(store(), "t", {**CFG, "top_k": 1, "candidates": 3}, HashEmbedder(), ReverseReranker())
+    hits, pool = r.retrieve("ICER per QALY", rerank=True)
+    assert len(hits) == 1 and len(pool) == 3                                   # the pool is `candidates` wide, whatever top_k is
+    assert [c.chunk_id for c in pool] == [h.chunk.chunk_id for h in r.search("ICER per QALY", rerank=False, k=3)]   # fused order, unreranked
+    assert hits[0].chunk.chunk_id in {c.chunk_id for c in pool}
+
+
 def test_memory_store_persists(tmp_path):
     s = MemoryStore(tmp_path / "ms", dim=64)
     s.replace_collection("t", {"pdf_path": "x.pdf"}, CHUNKS, HashEmbedder().embed([c.text for c in CHUNKS]))
