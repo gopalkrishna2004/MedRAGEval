@@ -140,7 +140,7 @@ def test_eval_end_to_end(tmp_path):
     pfs, withheld, price = rows
     assert pfs["score"] == 1.0 and pfs["category"] == "correct" and pfs["keys"]["correct"] and pfs["context"] == "retrieved"
     assert pfs["retrieval"]["hit"] and pfs["retrieval"]["first_rank"] == 1 and pfs["faithfulness"] == 1.0
-    assert pfs["retrieval"]["context_precision"] == round(1 / 3, 3) and pfs["retrieval"]["candidate_recall"] == 1.0
+    assert pfs["retrieval"]["gold_prec"] == round(1 / 3, 3) and pfs["retrieval"]["candidate_recall"] == 1.0
     assert pfs["candidates"][0] == "c00002" and len(pfs["candidates"]) <= 10            # the fused pool, in fused order
     assert "Median PFS (months) | 7.3 | 3.1" in judge.calls[0][0][1]["content"]   # the judge sees the passages the model saw
     assert withheld["context"] == "fixed" and withheld["category"] == "correct_abstention" and withheld["retrieval"] is None
@@ -152,7 +152,7 @@ def test_eval_end_to_end(tmp_path):
     assert report["items"] == 3 and set(report["per_type"]) == {"numerical", "unanswerable"} and report["fixed_context_items"] == 1
     assert report["overall"]["score"] == 1.0 and report["agreement"] == {"items": 3, "agree": 1.0, "keys_only": [], "judge_only": []}
     o = report["overall"]
-    assert o["context_precision"] == round(1 / 3, 3) and o["candidate_recall"] == 1.0 and o["faithfulness"] == 1.0
+    assert o["gold_prec"] == round(1 / 3, 3) and o["candidate_recall"] == 1.0 and o["faithfulness"] == 1.0
     assert report["judge_model"] == "fake" and report["rag"]["retrieval"]["mode"] == "bm25" and report["rag"]["chunks"] == 4
     assert report["evidence_matching"] == {"page_only": 0, "quote_split": 0, "distractors_unmapped": 0} and not report["warnings"]
     assert json.loads((tmp_path / "run" / "eval_report.json").read_text())["items"] == 3

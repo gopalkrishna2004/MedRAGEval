@@ -9,7 +9,7 @@ counts as a hit; a quote found across two passages adjacent in the document
 counts, and is recorded as `quote_split`.
 
 Three views of each answer:
-- retrieval: `hit`, `all_evidence`, `evidence_recall`, MRR and `context_precision`
+- retrieval: `hit`, `all_evidence`, `evidence_recall`, MRR and `gold_prec`
   over the passages shown; `candidate_recall` over the fused pool the reranker
   chose from, so a miss is put down to the pool or to the ordering.
 - keys: deterministic. Every answer key in the reply (a number may differ in
@@ -122,7 +122,7 @@ def locate(ev: list[dict], passages: list[Chunk]) -> tuple[list[int | None], set
 
 def retrieval_metrics(item: dict, passages: list[Chunk], candidates: list[Chunk] | None = None) -> dict | None:
     """Gold evidence among the passages shown, in rank order, and among the candidate pool when given.
-    None for unanswerable items and items without evidence. `context_precision` is the share of the passages shown
+    None for unanswerable items and items without evidence. `gold_prec` is the share of the passages shown
     that hold gold evidence; its ceiling is the evidence count over the passages shown, since a passage that is
     merely on topic counts as irrelevant."""
     ev = gold_evidence(item)
@@ -134,7 +134,7 @@ def retrieval_metrics(item: dict, passages: list[Chunk], candidates: list[Chunk]
     out = {"evidence": len(ev), "evidence_found": sum(found), "evidence_recall": round(sum(found) / len(ev), 3),
            "all_evidence": all(found), "hit": first is not None, "first_rank": first, "rr": round(1 / first, 3) if first else 0.0,
            "shown": len(passages), "relevant_shown": len(holding),
-           "context_precision": round(len(holding) / len(passages), 3) if passages else 0.0,
+           "gold_prec": round(len(holding) / len(passages), 3) if passages else 0.0,
            "page_only": page_only, "quote_split": split}
     if candidates is not None:
         c_ranks = locate(ev, candidates)[0]
@@ -286,7 +286,7 @@ def summarize(rows: list[dict], n_boot: int, seed: int) -> dict:
         "all_evidence": _mean([float(x["all_evidence"]) for x in ret]),
         "evidence_recall": _mean([x["evidence_recall"] for x in ret]),
         "mrr": _mean([x["rr"] for x in ret]),
-        "context_precision": _mean([x["context_precision"] for x in ret]),           # share of the passages shown that hold gold evidence
+        "gold_prec": _mean([x["gold_prec"] for x in ret]),           # share of the passages shown that hold gold evidence
         "candidate_recall": _mean([x["candidate_recall"] for x in ret if "candidate_recall" in x]),   # evidence in the pool before reranking
         "candidate_all_evidence": _mean([float(x["candidate_all_evidence"]) for x in ret if "candidate_all_evidence" in x]),
         "evidence_page_only": sum(x.get("page_only", 0) for x in ret),     # evidence pages shown without the quote: not credited

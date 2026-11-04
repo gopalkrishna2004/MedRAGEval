@@ -106,15 +106,15 @@ def test_a_quote_split_across_two_adjacent_passages_counts():
     assert m["hit"] and m["first_rank"] == 1 and m["quote_split"] == 1
     far = chunk("c00090", 120, "was £24,567 per QALY gained, below the £30,000 threshold.")
     assert not retrieval_metrics({"answerable": True, "evidence": [EV]}, [a, far])["hit"]   # not adjacent in the document
-    assert m["relevant_shown"] == 2 and m["context_precision"] == 1.0                      # both halves hold the evidence
+    assert m["relevant_shown"] == 2 and m["gold_prec"] == 1.0                      # both halves hold the evidence
 
 
-def test_context_precision_counts_the_passages_that_hold_evidence():
+def test_gold_prec_counts_the_passages_that_hold_evidence():
     gold = chunk("c00020", 120, "The company's base-case ICER was £24,567 per QALY gained [Table 47].")
     noise = [chunk(f"c0010{i}", 120 + i, f"Filler passage {i} about the decision problem.") for i in range(5)]
     m = retrieval_metrics(TWO, noise[:2] + [gold] + noise[2:])
-    assert m["shown"] == 6 and m["relevant_shown"] == 1 and m["context_precision"] == round(1 / 6, 3)
-    assert retrieval_metrics(TWO, noise)["context_precision"] == 0.0
+    assert m["shown"] == 6 and m["relevant_shown"] == 1 and m["gold_prec"] == round(1 / 6, 3)
+    assert retrieval_metrics(TWO, noise)["gold_prec"] == 0.0
 
 
 def test_candidate_recall_is_over_the_pool_before_reranking():
@@ -134,12 +134,12 @@ def test_faithfulness_is_the_supported_share_of_claims():
                                     {"claim": "in 2023", "supported": False}]}) == round(2 / 3, 3)
     assert faithfulness({"claims": []}) is None and faithfulness(None) is None
     assert faithfulness({"grounded": True}) is None            # an older verdict without a claim list
-    rows = [{"faithfulness": 1.0, "retrieval": {"hit": True, "all_evidence": True, "evidence_recall": 1.0, "rr": 1.0, "context_precision": 0.5,
+    rows = [{"faithfulness": 1.0, "retrieval": {"hit": True, "all_evidence": True, "evidence_recall": 1.0, "rr": 1.0, "gold_prec": 0.5,
                                                 "candidate_recall": 1.0, "candidate_all_evidence": True}},
-            {"faithfulness": 0.5, "retrieval": {"hit": False, "all_evidence": False, "evidence_recall": 0.0, "rr": 0.0, "context_precision": 0.0}},
+            {"faithfulness": 0.5, "retrieval": {"hit": False, "all_evidence": False, "evidence_recall": 0.0, "rr": 0.0, "gold_prec": 0.0}},
             {"faithfulness": None, "retrieval": None}]
     o = summarize(rows, 10, 1)
-    assert o["faithfulness"] == 0.75 and o["context_precision"] == 0.25 and o["candidate_recall"] == 1.0 and o["candidate_all_evidence"] == 1.0
+    assert o["faithfulness"] == 0.75 and o["gold_prec"] == 0.25 and o["candidate_recall"] == 1.0 and o["candidate_all_evidence"] == 1.0
 
 
 @pytest.mark.parametrize("answerable, all_ev, declined, score, expected", [

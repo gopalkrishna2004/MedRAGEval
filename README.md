@@ -264,7 +264,7 @@ Outputs in the run directory:
 | Metric | What it measures |
 |---|---|
 | `hit`, `all_evidence`, `evidence_recall`, `MRR` | Retrieval: was the item's gold evidence among the passages shown? Multi-hop and summary items need `all_evidence`. A copy of the fact in another document is not credited, so these are conservative. |
-| `context_precision` (`prec@k`) | The share of the passages shown that hold gold evidence: how much of what reaches the model is irrelevant. Its ceiling is the evidence count over `top_k`, since an on-topic passage without the evidence counts as irrelevant. |
+| `gold_prec` (`gold_prec@k`) | The share of the passages shown that hold gold evidence: how much of what reaches the model is irrelevant. Its ceiling is the evidence count over `top_k`, since an on-topic passage without the evidence counts as irrelevant. |
 | `candidate_recall` (`cand@n`) | Evidence recall over the fused candidate pool (`candidates` chunks) before the reranker and the top-k cut. Low `candidate_recall` means the retrievers never found it; high `candidate_recall` with low `evidence_recall` means the ordering lost it. Not computed for fixed-context items. |
 | `keys` | Deterministic: every answer key in the reply (numbers compared as numbers: "£52,681" = "52681", "0.50" = "0.5"), the party for attribution, a decline for unanswerable items. |
 | `score` | The judge's verdict (correct 1, partial 0.5, incorrect or declined 0; for unanswerable items a decline is correct). Keys when run with `--no-judge`. |

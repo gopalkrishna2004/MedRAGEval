@@ -276,13 +276,13 @@ def print_report(report: dict) -> None:
     print(f"  RAG: {r['model']}, {r['retrieval']['mode']} top {r['retrieval']['top_k']}{' + rerank' if r['retrieval'].get('rerank') else ''} "
           f"over {r['chunks']} chunks (prompt v{r['prompt_version']}); judge: {report['judge_model'] or 'none (keys only)'}")
     k, n = r["retrieval"]["top_k"], r["retrieval"]["candidates"]
-    print(f"  {'':14s} {'n':>3s}  {'score':>5s}  {'95% CI':13s}  {'hit':>4s}  {'all-ev':>6s}  {'MRR':>4s}  {'prec@' + str(k):>7s}  "
+    print(f"  {'':14s} {'n':>3s}  {'score':>5s}  {'95% CI':13s}  {'hit':>4s}  {'all-ev':>6s}  {'MRR':>4s}  {'gold_prec@' + str(k):>12s}  "
           f"{'cand@' + str(n):>7s}  {'keys':>4s}  {'ground':>6s}  {'faith':>5s}")
 
     def line(name: str, s: dict) -> None:
         ci = f"[{s['ci95'][0]:.2f}, {s['ci95'][1]:.2f}]" if s["ci95"] else "-"
         print(f"  {name:14s} {s['items']:3d}  {_f(s['score']):>5s}  {ci:13s}  {_f(s['hit']):>4s}  {_f(s['all_evidence']):>6s}  "
-              f"{_f(s['mrr']):>4s}  {_f(s['context_precision']):>7s}  {_f(s['candidate_recall']):>7s}  {_f(s['key_recall']):>4s}  "
+              f"{_f(s['mrr']):>4s}  {_f(s['gold_prec']):>12s}  {_f(s['candidate_recall']):>7s}  {_f(s['key_recall']):>4s}  "
               f"{_f(s['grounded']):>6s}  {_f(s['faithfulness']):>5s}")
 
     for t, s in report["per_type"].items():
@@ -416,15 +416,15 @@ def run_ablate_cli(args: argparse.Namespace) -> None:
             report = _run(items, app, judge, full, args.out_root / label, unit_texts, mode, rerank)
             o = report["overall"]
             summary.append({"run": label, "chunk_tokens": size, "mode": mode, "rerank": rerank, **{k: o[k] for k in
-                            ("items", "score", "ci95", "hit", "all_evidence", "evidence_recall", "mrr", "context_precision",
+                            ("items", "score", "ci95", "hit", "all_evidence", "evidence_recall", "mrr", "gold_prec",
                              "candidate_recall", "key_recall", "grounded", "faithfulness")},
                             "categories": o["categories"]})
             print(f"  {label}: score {_f(o['score'])}  hit {_f(o['hit'])}  all-ev {_f(o['all_evidence'])}  MRR {_f(o['mrr'])}  "
-                  f"prec {_f(o['context_precision'])}  cand {_f(o['candidate_recall'])}  faith {_f(o['faithfulness'])}")
+                  f"gold_prec {_f(o['gold_prec'])}  cand {_f(o['candidate_recall'])}  faith {_f(o['faithfulness'])}")
     args.out_root.mkdir(parents=True, exist_ok=True)
     (args.out_root / "ablation.json").write_text(json.dumps({"datasets": sorted({it['dataset'] for it in items}), "runs": summary}, indent=2))
-    print(f"\n  {'run':22s} {'score':>5s}  {'hit':>4s}  {'all-ev':>6s}  {'recall':>6s}  {'MRR':>4s}  {'prec':>4s}  {'cand':>4s}  {'keys':>4s}  {'faith':>5s}")
+    print(f"\n  {'run':22s} {'score':>5s}  {'hit':>4s}  {'all-ev':>6s}  {'recall':>6s}  {'MRR':>4s}  {'gold_prec':>9s}  {'cand':>4s}  {'keys':>4s}  {'faith':>5s}")
     for s in summary:
         print(f"  {s['run']:22s} {_f(s['score']):>5s}  {_f(s['hit']):>4s}  {_f(s['all_evidence']):>6s}  {_f(s['evidence_recall']):>6s}  "
-              f"{_f(s['mrr']):>4s}  {_f(s['context_precision']):>4s}  {_f(s['candidate_recall']):>4s}  {_f(s['key_recall']):>4s}  {_f(s['faithfulness']):>5s}")
+              f"{_f(s['mrr']):>4s}  {_f(s['gold_prec']):>9s}  {_f(s['candidate_recall']):>4s}  {_f(s['key_recall']):>4s}  {_f(s['faithfulness']):>5s}")
     print(f"summary in {args.out_root / 'ablation.json'}")
