@@ -43,7 +43,11 @@ generate:
   # model id listed on openrouter.ai works. The key is read from
   # OPENROUTER_API_KEY, or from a gitignored .env (see .env.example).
   model: openai/gpt-6-luna
-  judge_model: null             # null: the judge uses the same model
+  judge_model: deepseek/deepseek-v4.1-flash   # null: the judge uses the same model
+  # OpenRouter's reasoning field, sent as is. This model's reasoning counts
+  # against max_tokens: left on, 60% of 132 judge calls at 2,000 tokens came
+  # back with no verdict. null: the model's default.
+  judge_reasoning: {enabled: false}
   base_url: https://openrouter.ai/api/v1
   # Generation samples (varied phrasing across items). Reproducibility comes
   # from the seed (which evidence is picked) and the response cache, not from
@@ -408,8 +412,8 @@ facts:
 
 # The RAG the dataset evaluates (`medrageval index / ask / eval`): chunks of
 # the parse output, a hybrid BM25 + dense retriever, and a small local model
-# behind vLLM's OpenAI-compatible server. A frontier judge on OpenRouter
-# grades its answers.
+# behind vLLM's OpenAI-compatible server. A judge on OpenRouter grades its
+# answers.
 rag:
   # Evaluation of the RAG application (the `medrag` package, configured in
   # configs/rag.yaml). Only the judge and the scoring live here: what the
@@ -417,8 +421,9 @@ rag:
   judge:
     # Always OpenRouter (OPENROUTER_API_KEY), never the answering model's
     # server: a small model cannot grade itself. null model / base_url: those of `generate`.
-    model: null
+    model: deepseek/deepseek-v4.1-flash
     base_url: null
+    reasoning: {enabled: false}    # as generate.judge_reasoning; left on, 26% of 168 calls at 3,000 tokens lost the verdict
     temperature: 0.0               # deterministic verdicts
     max_tokens: 3000               # the verdict with its claim list; a cut-off reply is a lost verdict
     max_workers: 6

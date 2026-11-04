@@ -48,9 +48,9 @@ def parse_json_object(text: str) -> dict:
 
 class LLM:
     def __init__(self, model: str, base_url: str, api_key: str, temperature: float, max_tokens: int,
-                 cache_dir: Path | None = None, timeout: float = 120.0, max_retries: int = 5):
+                 cache_dir: Path | None = None, timeout: float = 120.0, max_retries: int = 5, reasoning: dict | None = None):
         from openai import OpenAI
-        self.model, self.temperature, self.max_tokens = model, temperature, max_tokens
+        self.model, self.temperature, self.max_tokens, self.reasoning = model, temperature, max_tokens, reasoning
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout, max_retries=max_retries)
         self.stats = Counter()
@@ -66,6 +66,8 @@ class LLM:
     def _call(self, messages: list[dict], _retry: bool = False, json_mode: bool = True) -> tuple[str, dict]:
         from openai import APIError
         fmt = {"response_format": {"type": "json_object"}} if json_mode else {}
+        if self.reasoning is not None:   # OpenRouter's field, not part of the OpenAI API
+            fmt["extra_body"] = {"reasoning": self.reasoning}
         try:
             r = self.client.chat.completions.create(
                 model=self.model, messages=messages, temperature=self.temperature,
@@ -85,6 +87,8 @@ class LLM:
         payload = {"model": self.model, "temperature": self.temperature, "messages": messages}
         if fmt:   # only text calls carry it, so the keys of JSON responses cached before text mode existed still hit
             payload["format"] = fmt
+        if self.reasoning is not None:   # likewise: clients that do not set it keep their cached responses
+            payload["reasoning"] = self.reasoning
         return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
     def _store(self, path: Path | None, tag: str, text: str, usage: dict) -> None:
@@ -170,12 +174,12 @@ def api_key(env_file: Path | None = None) -> str:
 
 
 def make_llm(section: dict, cfg: dict, use_cache: bool = True) -> LLM:
-    """A client for a stage with its own config section (`facts`, `rag.judge`): its model, temperature and token limit,
-    with the endpoint (unless the section sets `base_url`) and response cache of the `generate` section."""
+    """A client for a stage with its own config section (`facts`, `rag.judge`): its model, temperature, token limit and
+    reasoning setting, with the endpoint (unless the section sets `base_url`) and response cache of the `generate` section."""
     key = api_key()
     cache = Path(cfg["cache_dir"]) if use_cache and cfg.get("cache_dir") else None
     return LLM(section.get("model") or cfg["model"], section.get("base_url") or cfg["base_url"], key,
-               section["temperature"], section["max_tokens"], cache)
+               section["temperature"], section["max_tokens"], cache, reasoning=section.get("reasoning"))
 
 
 def make_local_llm(section: dict, cache_dir: str | Path | None, use_cache: bool = True) -> LLM:
@@ -193,5 +197,6 @@ def make_llms(cfg: dict, use_cache: bool = True) -> tuple[LLM, LLM]:
     key = api_key()
     cache = Path(cfg["cache_dir"]) if use_cache and cfg.get("cache_dir") else None
     gen = LLM(cfg["model"], cfg["base_url"], key, cfg["temperature"], cfg["max_tokens"], cache)
-    judge = LLM(cfg.get("judge_model") or cfg["model"], cfg["base_url"], key, cfg["judge_temperature"], cfg["max_tokens"], cache)
+    judge = LLM(cfg.get("judge_model") or cfg["model"], cfg["base_url"], key, cfg["judge_temperature"], cfg["max_tokens"], cache,
+                reasoning=cfg.get("judge_reasoning"))
     return gen, judge

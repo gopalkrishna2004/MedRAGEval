@@ -115,3 +115,36 @@ def test_text_mode_sends_no_response_format():
     assert "response_format" not in sent
     assert llm.complete_json([{"role": "user", "content": "q"}]) == {"a": 1}
     assert sent["response_format"] == {"type": "json_object"}
+
+
+def test_reasoning_setting_is_sent_and_keys_the_cache():
+    from types import SimpleNamespace
+    sent = {}
+
+    class Completions:
+        def create(self, **kw):
+            sent.clear()
+            sent.update(kw)
+            return SimpleNamespace(usage=None, choices=[SimpleNamespace(message=SimpleNamespace(content='{"a": 1}'))])
+    messages = [{"role": "user", "content": "q"}]
+    plain = LLM("test-model", "http://localhost:1/v1", "key", 0.0, 100)
+    off = LLM("test-model", "http://localhost:1/v1", "key", 0.0, 100, reasoning={"enabled": False})
+    for llm in (plain, off):
+        llm.client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    plain.complete_json(messages)
+    assert "extra_body" not in sent
+    off.complete_json(messages)
+    assert sent["extra_body"] == {"reasoning": {"enabled": False}}
+    assert plain._key(messages) != off._key(messages)   # a verdict reached with reasoning is not served to a run without it
+
+
+def test_judge_clients_take_their_reasoning_from_the_config(monkeypatch):
+    from medrageval.config import load_config
+    from medrageval.generate.llm import make_llm, make_llms
+    monkeypatch.setenv(ENV_KEY, "sk-test")
+    full = load_config()
+    gen, judge = make_llms(full["generate"], use_cache=False)
+    rag_judge = make_llm(full["rag"]["judge"], full["generate"], use_cache=False)
+    assert gen.reasoning is None   # only the judges: the writer keeps the model's default
+    assert judge.model == rag_judge.model == "deepseek/deepseek-v4.1-flash"
+    assert judge.reasoning == rag_judge.reasoning == {"enabled": False}

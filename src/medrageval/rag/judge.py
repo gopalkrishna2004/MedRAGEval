@@ -1,4 +1,4 @@
-"""The judge prompt: a frontier model grades the RAG's answer against the item, seeing what the RAG saw.
+"""The judge prompt: the judge model grades the RAG's answer against the item, seeing what the RAG saw.
 
 It grades correctness against the reference answer and its keys, and
 groundedness against the passages, so a wrong answer can be put down to

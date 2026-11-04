@@ -15,7 +15,7 @@ Three views of each answer:
 - keys: deterministic. Every answer key in the reply (a number may differ in
   thousands separators or trailing zeros: "£52,681" is "52681", "0.50" is
   "0.5"), the party for attribution, a decline for unanswerable items.
-- judge: the frontier judge's verdict, keypoint coverage for summaries
+- judge: the judge's verdict, keypoint coverage for summaries
   (completeness / hallucination / irrelevance), groundedness and faithfulness
   (the share of the reply's claims the passages support).
 
