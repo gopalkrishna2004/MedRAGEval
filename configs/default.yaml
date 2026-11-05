@@ -43,11 +43,15 @@ generate:
   # model id listed on openrouter.ai works. The key is read from
   # OPENROUTER_API_KEY, or from a gitignored .env (see .env.example).
   model: openai/gpt-6-luna
-  judge_model: deepseek/deepseek-v4.1-flash   # null: the judge uses the same model
+  judge_model: z-ai/glm-5.3-flash   # null: the judge uses the same model
   # OpenRouter's reasoning field, sent as is. This model's reasoning counts
   # against max_tokens: left on, 60% of 132 judge calls at 2,000 tokens came
   # back with no verdict. null: the model's default.
-  judge_reasoning: {enabled: false}
+  judge_reasoning: {enabled: True, max_tokens: 4000}
+  # The judge's reply cap, reasoning included, so it must leave room for the
+  # verdict above judge_reasoning.max_tokens (four GLM calls spent all of 2,000
+  # on reasoning and returned nothing). null: uses max_tokens.
+  judge_max_tokens: 4000
   base_url: https://openrouter.ai/api/v1
   # Generation samples (varied phrasing across items). Reproducibility comes
   # from the seed (which evidence is picked) and the response cache, not from

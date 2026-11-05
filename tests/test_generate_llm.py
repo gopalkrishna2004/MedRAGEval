@@ -146,5 +146,20 @@ def test_judge_clients_take_their_reasoning_from_the_config(monkeypatch):
     gen, judge = make_llms(full["generate"], use_cache=False)
     rag_judge = make_llm(full["rag"]["judge"], full["generate"], use_cache=False)
     assert gen.reasoning is None   # only the judges: the writer keeps the model's default
-    assert judge.model == rag_judge.model == "deepseek/deepseek-v4.1-flash"
-    assert judge.reasoning == rag_judge.reasoning == {"enabled": False}
+    assert judge.model == full["generate"]["judge_model"] and rag_judge.model == full["rag"]["judge"]["model"]
+    assert judge.reasoning == full["generate"]["judge_reasoning"] and rag_judge.reasoning == full["rag"]["judge"]["reasoning"]
+    assert judge.max_tokens == full["generate"]["judge_max_tokens"] and gen.max_tokens == full["generate"]["max_tokens"]
+
+
+def test_judge_token_limit_defaults_to_the_shared_one(monkeypatch):
+    from medrageval.config import load_config
+    from medrageval.generate.llm import make_llms
+    monkeypatch.setenv(ENV_KEY, "sk-test")
+    cfg = {**load_config()["generate"], "judge_max_tokens": None}
+    assert make_llms(cfg, use_cache=False)[1].max_tokens == cfg["max_tokens"]
+
+
+def test_judge_limit_leaves_room_for_the_verdict_after_reasoning():
+    from medrageval.config import load_config
+    cfg = load_config()["generate"]
+    assert (cfg["judge_max_tokens"] or cfg["max_tokens"]) > ((cfg.get("judge_reasoning") or {}).get("max_tokens") or 0)

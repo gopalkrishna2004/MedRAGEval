@@ -6,7 +6,7 @@ from synthetic import build_sheet, config, write_factsheet, write_interim
 
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.generate import Run, generate_dataset
-from medrageval.generate.llm import FakeLLM
+from medrageval.generate.llm import FakeLLM, LLMJsonError
 from medrageval.generate.prompts import PROMPT_VERSION, rewrite_feedback
 
 FACT = re.compile(r"^Fact (\S+): (.*?) \(from the (.*?)\)\n((?:  .*(?:\n|$))*)", re.M)
@@ -189,6 +189,49 @@ def test_shortfall_raises_after_writing(tmp_path):
     assert sum(1 for _ in (out / "dataset.jsonl").open()) == report["items"]
 
 
+def losing(prefix: str, losses: float = float("inf")):
+    """The scripted judge, but the first `losses` calls whose tag starts with prefix return nothing usable."""
+    lost = []
+
+    def respond(messages, tag):
+        if tag.startswith(prefix) and len(lost) < losses:
+            lost.append(tag)
+            raise LLMJsonError(f"{tag}: model returned no JSON object: ''")
+        return scripted(messages, tag)
+    return respond, lost
+
+
+def test_lost_verdict_costs_the_candidate_not_the_run(tmp_path):
+    interim = write_factsheet(tmp_path / "interim")
+    out = tmp_path / "out"
+    respond, lost = losing("judge:", losses=1)
+    report = generate_dataset(interim, out, config(), FakeLLM(scripted), FakeLLM(respond), targets={"factual": 2}, types=["factual"])
+    st = report["per_type"]["factual"]
+    assert st["accepted"] == 2 and st["rejected_by_reason"] == {"no_verdict": 1} and st["rewrites"]["tried"] == 0   # nothing to reword
+    assert len(lost) == 1 and "no_verdict" in (out / "rejects.jsonl").read_text()
+
+
+def test_lost_screening_costs_the_unanswerable_candidate(tmp_path):
+    interim = write_factsheet(tmp_path / "interim")
+    respond, lost = losing("withhold:", losses=1)
+    report = generate_dataset(interim, tmp_path / "out", config(), FakeLLM(scripted), FakeLLM(respond),
+                              targets={"factual": 3, "unanswerable": 1}, types=["factual", "unanswerable"])
+    st = report["per_type"]["unanswerable"]
+    assert st["accepted"] == 1 and st["rejected_by_reason"] == {"no_verdict": 1} and len(lost) == 1
+
+
+def test_judge_that_never_answers_stops_the_run_after_writing(tmp_path):
+    interim = write_factsheet(tmp_path / "interim")
+    out = tmp_path / "out"
+    respond, lost = losing("judge:")
+    cfg = config()
+    cfg["abort_after_consecutive_failures"] = 2
+    with pytest.raises(RuntimeError, match="no verdict"):
+        generate_dataset(interim, out, cfg, FakeLLM(scripted), FakeLLM(respond), targets={"factual": 50}, types=["factual"])
+    assert 2 <= len(lost) < 50 * cfg["attempts_per_item"]["default"]   # a wrong model or limit should not spend the whole budget
+    assert json.loads((out / "generate_report.json").read_text())["per_type"]["factual"]["rejected_by_reason"]["no_verdict"] >= 2
+
+
 def test_missing_parse_output_or_fact_sheet_fails_loudly(tmp_path):
     llm = FakeLLM(scripted)
     with pytest.raises(FileNotFoundError):
@@ -280,6 +323,7 @@ def test_only_failures_the_wording_can_fix_are_rewritten(tmp_path):
     assert not run._rewritable([{"stage": "programmatic", "reasons": ["claim_restated_in:d02-e0001"]}])   # the evidence's fault
     assert not run._rewritable([{"stage": "skipped", "reasons": ["skip:generic"]}])
     assert not run._rewritable([{"stage": "generation", "reasons": ["bad_json:x"]}])
+    assert not run._rewritable([{"stage": "no_verdict", "reasons": ["no_verdict:x"]}])
     assert not run._rewritable([{"stage": "withhold", "reasons": ["too_few_distractors:2"]}])   # no wording to fix: the pool was dirty
     run.cfg["rewrite_rejected"] = False
     assert not run._rewritable(fixable)

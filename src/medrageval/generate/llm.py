@@ -197,6 +197,6 @@ def make_llms(cfg: dict, use_cache: bool = True) -> tuple[LLM, LLM]:
     key = api_key()
     cache = Path(cfg["cache_dir"]) if use_cache and cfg.get("cache_dir") else None
     gen = LLM(cfg["model"], cfg["base_url"], key, cfg["temperature"], cfg["max_tokens"], cache)
-    judge = LLM(cfg.get("judge_model") or cfg["model"], cfg["base_url"], key, cfg["judge_temperature"], cfg["max_tokens"], cache,
+    judge = LLM(cfg.get("judge_model") or cfg["model"], cfg["base_url"], key, cfg["judge_temperature"], cfg.get("judge_max_tokens") or cfg["max_tokens"], cache,
                 reasoning=cfg.get("judge_reasoning"))
     return gen, judge

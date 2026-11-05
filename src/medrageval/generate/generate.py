@@ -107,7 +107,10 @@ class Run:
             return raw, [{"cand": cand, "item": raw, "stage": "programmatic", "reasons": verdict.reasons, "verdict": verdict}]
         if cand.type not in self.cfg["judge_types"]:
             return raw, [{"cand": cand, "item": raw, "stage": "accepted", "reasons": [], "verdict": verdict, "judge": None}]
-        judge = self.judge.complete_json(build_judge(raw, cand, self.corpus, self.cfg), f"judge:{tag}")
+        try:
+            judge = self.judge.complete_json(build_judge(raw, cand, self.corpus, self.cfg), f"judge:{tag}")
+        except LLMJsonError as e:
+            return raw, [self._no_verdict(cand, raw, e, verdict=verdict)]
         reasons = []
         if not judge.get("pass"):
             reasons.append("judge_failed")
@@ -120,9 +123,16 @@ class Run:
                 reasons.append("judge:answerable_from_single_excerpt")
         alone = None
         if not reasons and cand.type in self.cfg["alone_check_types"]:
-            alone = self._answer_alone(raw, cand)
+            try:
+                alone = self._answer_alone(raw, cand)
+            except LLMJsonError as e:
+                return raw, [self._no_verdict(cand, raw, e, verdict=verdict, judge=judge)]
             reasons += [f"answerable_from:{uid}" for uid, r in alone.items() if r["matches"]]
         return raw, [{"cand": cand, "item": raw, "stage": "judge" if reasons else "accepted", "reasons": reasons, "verdict": verdict, "judge": judge, "alone": alone}]
+
+    def _no_verdict(self, cand: Candidate, item: dict, error: LLMJsonError, **extra) -> dict:
+        """The judge returned nothing usable: this candidate is lost, not the run. Not a wording problem, so no rewrite."""
+        return {"cand": cand, "item": item, "stage": "no_verdict", "reasons": [f"no_verdict:{error}"[:200]], **extra}
 
     def _answer_alone(self, raw: dict, cand: Candidate) -> dict[str, dict]:
         """Each excerpt on its own, with the question: an answer holding every answer key means one excerpt was enough.
@@ -172,7 +182,10 @@ class Run:
         item = {"question": question, "answer": None, "answer_keys": [], "quotes": [], "distractors": [], "screening": []}
         if len(pool) < uc["min_distractors"]:
             return {"cand": cand, "item": item, "stage": "withhold", "reasons": [f"too_few_distractors:{len(pool)}"]}
-        check = self.judge.complete_json(build_withhold_check(question, answer, pool, self.corpus, uc["max_chars_per_passage"]), f"withhold:{cand.candidate_id}")
+        try:
+            check = self.judge.complete_json(build_withhold_check(question, answer, pool, self.corpus, uc["max_chars_per_passage"]), f"withhold:{cand.candidate_id}")
+        except LLMJsonError as e:
+            return self._no_verdict(cand, item, e)
         verdicts = {str(r.get("unit_id")): r for r in (check.get("results") or []) if isinstance(r, dict)}
         kept = []
         for u in pool:
@@ -229,7 +242,9 @@ class Run:
                         raise RuntimeError(f"{self.failures} LLM calls failed in a row; check the model and key: {e}") from e
                     print(f"  LLM error: {e}")
                     continue
-                self.failures = 0
+                flat = [r for group in results for r in group]
+                lost = sum(r["stage"] == "no_verdict" for r in flat)   # candidates the checks rejected never reached the judge, so say nothing about it
+                self.failures = self.failures + lost if lost and not any(r.get("judge") for r in flat) else 0
                 rewritten = set()
                 for res in (r for group in results for r in group):
                     if accepted_here >= target:
@@ -260,6 +275,8 @@ class Run:
                         self.rejects.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 self.dataset.flush()
                 self.rejects.flush()
+                if self.failures >= cfg["abort_after_consecutive_failures"]:
+                    raise RuntimeError(f"{self.failures} candidates in a row got no verdict; check the judge model and judge_max_tokens")
         print(f"  {type_:12s} {selector:26s} accepted {accepted_here:3d}/{target}  attempts {attempts}")
 
     def record(self, res: dict) -> dict:
