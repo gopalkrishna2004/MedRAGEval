@@ -73,4 +73,4 @@ class ChatLLM:
 def make_llm(section: dict, use_cache: bool = True) -> ChatLLM:
     return ChatLLM(section["model"], section["base_url"], env_or(section, "api_key_env", fallback="EMPTY"),
                    section.get("temperature", 0.0), section.get("max_tokens", 512),
-                   section.get("cache_dir") if use_cache else None, section.get("timeout", 300.0))
+                   section.get("cache_dir") if use_cache else None, section.get("timeout", 300.0), section.get("max_retries", 3))

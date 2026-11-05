@@ -24,6 +24,8 @@ dependencies = [
     "sentence-transformers>=3.3",
     "psycopg[binary]>=3.2",
     "pgvector>=0.3",
+    "fastapi>=0.162.0",
+    "uvicorn>=0.54.0",
 ]
 
 [project.scripts]
@@ -46,5 +48,6 @@ packages = ["src/medrageval", "src/medrag"]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.2.0",
 ]

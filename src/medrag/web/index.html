@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MedRAG Demo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='white'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f1f0ec; --hover: #f4f3ef;
+  --text: #0b0b0b; --text-2: #52514e; --text-3: #6d6c67;
+  --line: #e1e0d9; --line-strong: #c3c2b7;
+  --accent: #1f66bd; --accent-fill: #2a78d6; --accent-wash: rgba(42, 120, 214, .10); --on-accent: #ffffff;
+  --good-text: #006300; --bad-text: #b02a2a; --warn-wash: rgba(250, 178, 25, .14);
+  --shadow: 0 1px 2px rgba(11, 11, 11, .04), 0 8px 24px rgba(11, 11, 11, .05);
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #242423; --hover: #232322;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #a3a29a;
+    --line: #2c2c2a; --line-strong: #383835;
+    --accent: #7db2f0; --accent-fill: #3987e5; --accent-wash: rgba(57, 135, 229, .16); --on-accent: #ffffff;
+    --good-text: #3fc23f; --bad-text: #f08a8a; --warn-wash: rgba(250, 178, 25, .12);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .3);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #242423; --hover: #232322;
+  --text: #f0efec; --text-2: #c3c2b7; --text-3: #a3a29a;
+  --line: #2c2c2a; --line-strong: #383835;
+  --accent: #7db2f0; --accent-fill: #3987e5; --accent-wash: rgba(57, 135, 229, .16); --on-accent: #ffffff;
+  --good-text: #3fc23f; --bad-text: #f08a8a; --warn-wash: rgba(250, 178, 25, .12);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .3);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--page); color: var(--text); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+h1, h2, h3, p { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent-fill); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.muted { color: var(--text-3); }
+.num { font-variant-numeric: tabular-nums; }
+.nowrap { white-space: nowrap; }
+
+/* Header */
+.topbar { position: sticky; top: 0; z-index: 10; background: var(--surface); border-bottom: 1px solid var(--line); }
+.topbar-in { max-width: 1240px; margin: 0 auto; padding: 0 24px; height: 56px; display: flex; align-items: center; gap: 24px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: -.01em; }
+.brand svg { width: 22px; height: 22px; flex: none; }
+.tabs { display: flex; gap: 2px; height: 100%; }
+.tab { background: none; border: 0; padding: 0 12px; height: 100%; color: var(--text-2); border-bottom: 2px solid transparent; border-top: 2px solid transparent; font-weight: 500; }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent-fill); }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.reader { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); flex: none; }
+.dot.up { background: var(--good); }
+.dot.down { background: var(--critical); }
+.icon-btn { width: 32px; height: 32px; display: grid; place-items: center; background: none; border: 1px solid transparent; border-radius: 8px; color: var(--text-2); }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+main { max-width: 1240px; margin: 0 auto; padding: 32px 24px 64px; }
+
+/* Ask */
+.ask-intro { max-width: 760px; margin: 0 auto 22px; text-align: center; transition: margin .2s; }
+.ask-intro h1 { font-size: 28px; line-height: 1.2; letter-spacing: -.02em; font-weight: 650; margin-bottom: 8px; }
+.ask-intro p { color: var(--text-2); }
+.ask-box-wrap { max-width: 860px; margin: 0 auto; }
+.has-result .ask-intro { display: none; }
+.has-result .ask-box-wrap { max-width: none; }
+.ask-box { display: flex; align-items: flex-end; gap: 8px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; padding: 8px 8px 8px 16px; box-shadow: var(--shadow); }
+.ask-box:focus-within { border-color: var(--accent-fill); }
+.ask-box textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: none; resize: none; font: inherit; font-size: 16px; color: var(--text); padding: 6px 0; line-height: 24px; height: 36px; max-height: 140px; }
+.btn { background: var(--accent-fill); color: var(--on-accent); border: 0; border-radius: 8px; padding: 7px 16px; font-weight: 600; white-space: nowrap; height: 36px; }
+.btn:hover { filter: brightness(.94); }
+.btn:disabled { opacity: .5; cursor: default; filter: none; }
+.btn.ghost { background: none; color: var(--text); border: 1px solid var(--line-strong); font-weight: 500; }
+.btn.ghost:hover { background: var(--hover); filter: none; }
+.ask-controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-top: 12px; }
+.has-result .ask-controls { justify-content: flex-start; }
+.segmented { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: 2px; }
+.segmented button { background: none; border: 0; border-radius: 6px; padding: 3px 10px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+.segmented button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 550; box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+.control-label { font-size: 13px; color: var(--text-3); margin-right: 8px; }
+.examples { margin-top: 26px; }
+.has-result .examples { display: none; }
+.examples h2 { font-size: 13px; font-weight: 500; color: var(--text-3); margin-bottom: 8px; }
+.example { display: block; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; margin-bottom: 6px; color: var(--text-2); font-size: 14px; }
+.example:hover { background: var(--hover); color: var(--text); border-color: var(--line-strong); }
+
+.progress { display: flex; align-items: center; gap: 9px; margin-top: 18px; font-size: 13px; color: var(--text-2); min-height: 20px; }
+.spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent-fill); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.answer { padding: 20px 24px; margin-top: 12px; font-size: 17px; line-height: 1.6; }
+.answer.abstain { background: var(--surface-2); }
+.answer .label { font-size: 12px; font-weight: 600; color: var(--text-3); letter-spacing: .02em; display: block; margin-bottom: 6px; font-family: inherit; }
+.answer-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cite { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; margin: 0 1px; vertical-align: 2px; border: 0; border-radius: 5px; background: var(--accent-wash); color: var(--accent); font-size: 12px; font-weight: 650; }
+.cite:hover, .cite.on { background: var(--accent-fill); color: var(--on-accent); }
+.notice { margin-top: 12px; padding: 12px 16px; border-radius: 10px; background: var(--warn-wash); border: 1px solid var(--line); font-size: 14px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+
+.ask-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; align-items: start; }
+.section-title { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0 0 8px 2px; }
+.source { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+.source.on { border-color: var(--accent-fill); }
+.source-head { display: flex; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 11px 14px; align-items: flex-start; }
+.source-head:hover { background: var(--hover); }
+.source-n { flex: none; min-width: 22px; height: 22px; border-radius: 6px; background: var(--accent-wash); color: var(--accent); font-size: 12px; font-weight: 650; display: grid; place-items: center; margin-top: 1px; }
+.source.cut .source-n { background: var(--surface-2); color: var(--text-3); }
+.source-meta { min-width: 0; flex: 1; }
+.source-title { font-weight: 550; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+.source-sub { font-size: 13px; color: var(--text-2); line-height: 1.4; margin-top: 1px; overflow-wrap: anywhere; }
+.source-ranks { font-size: 12px; color: var(--text-3); margin-top: 3px; }
+.tag { display: inline-block; font-size: 11px; font-weight: 550; padding: 0 6px; border-radius: 4px; background: var(--surface-2); color: var(--text-2); line-height: 18px; vertical-align: 1px; margin-left: 2px; }
+.source-body { border-top: 1px solid var(--line); padding: 12px 14px; font-size: 14px; color: var(--text-2); max-height: 380px; overflow: auto; overflow-wrap: anywhere; }
+.source-body p { margin-bottom: 8px; white-space: pre-wrap; }
+.source-body p:last-child { margin-bottom: 0; }
+.table-wrap { overflow-x: auto; margin-bottom: 8px; }
+.source-body table { border-collapse: collapse; font-size: 12.5px; }
+.source-body th, .source-body td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; vertical-align: top; min-width: 56px; }
+.source-body th { background: var(--surface-2); font-weight: 600; color: var(--text); }
+
+.pdf-pane { position: sticky; top: 72px; }
+.pdf-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-height: 28px; }
+.pdf-head .section-title { margin: 0 auto 0 2px; }
+.pdf-nav { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-2); }
+.pdf-nav button { width: 28px; height: 28px; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; line-height: 1; }
+.pdf-nav button:hover:not(:disabled) { background: var(--hover); }
+.pdf-nav button:disabled { opacity: .4; cursor: default; }
+.pdf-frame { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; overflow: auto; height: calc(100vh - 128px); min-height: 420px; }
+.pdf-frame img { display: block; width: 100%; height: auto; background: #fff; }
+.pdf-frame.loading img { opacity: .5; }
+
+/* Evaluation */
+.eval-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; justify-content: space-between; margin-bottom: 18px; }
+.eval-head h1 { font-size: 22px; line-height: 1.25; letter-spacing: -.015em; font-weight: 650; }
+.eval-meta { font-size: 13px; color: var(--text-3); }
+.summary { display: grid; grid-template-columns: 1.35fr repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.tile { padding: 16px 18px; }
+.tile-label { font-size: 13px; color: var(--text-2); font-weight: 550; }
+.tile-value { font-size: 28px; line-height: 1.2; letter-spacing: -.02em; font-weight: 600; margin: 4px 0 2px; }
+.tile.hero .tile-value { font-size: 48px; line-height: 1.1; }
+.tile-note { font-size: 12.5px; line-height: 1.4; color: var(--text-3); }
+.charts { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; margin-bottom: 16px; }
+.chart { padding: 18px 20px; }
+.chart h2 { font-size: 14px; font-weight: 600; }
+.chart .chart-note { font-size: 12.5px; color: var(--text-3); margin: 1px 0 14px; }
+.bar-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) 142px; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 3px 4px; border-radius: 6px; text-align: left; font-size: 13px; }
+.bar-row:hover { background: var(--hover); }
+.bar-row.on { background: var(--accent-wash); }
+.bar-track { position: relative; height: 18px; border-left: 1px solid var(--line-strong); }
+.bar { display: block; height: 100%; background: var(--accent-fill); border-radius: 0 4px 4px 0; min-width: 1px; }
+.bar-value { text-align: right; color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
+.bar-value b { color: var(--text); font-weight: 600; }
+.segbar { display: flex; gap: 2px; height: 28px; margin-bottom: 14px; }
+.segment { border-radius: 4px; display: flex; align-items: center; padding-left: 7px; font-size: 12px; font-weight: 600; min-width: 3px; border: 0; cursor: pointer; white-space: nowrap; overflow: visible; }
+.legend-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; width: 100%; background: none; border: 0; padding: 5px 4px; border-radius: 6px; text-align: left; align-items: baseline; font-size: 13px; }
+.legend-row:hover { background: var(--hover); }
+.legend-row.on { background: var(--accent-wash); }
+.glyph { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; font-size: 10px; font-weight: 700; line-height: 1; transform: translateY(2px); }
+.legend-name { font-weight: 550; }
+.legend-desc { color: var(--text-3); margin-left: 6px; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.filters h2 { font-size: 14px; font-weight: 600; margin-right: auto; }
+.field { height: 32px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); padding: 0 9px; font-size: 13px; min-width: 0; }
+input.field { width: 220px; }
+.items-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.items-table th { text-align: left; font-size: 12px; font-weight: 550; color: var(--text-3); padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.items-table td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.items-table tbody tr { cursor: pointer; }
+.items-table tbody tr:hover { background: var(--hover); }
+.items-table tbody tr:last-child td { border-bottom: 0; }
+.col-outcome { width: 180px; white-space: nowrap; }
+.col-type { width: 108px; color: var(--text-2); }
+.col-score { width: 64px; text-align: right !important; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.empty { padding: 28px; text-align: center; color: var(--text-3); }
+.warnings { font-size: 12.5px; color: var(--text-3); margin-top: 12px; }
+.warnings li { margin-bottom: 2px; }
+.warnings ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* Item drawer */
+dialog.drawer { margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(680px, 100vw); max-width: 100vw; border: 0; border-left: 1px solid var(--line); background: var(--surface); color: var(--text); padding: 0; box-shadow: var(--shadow); }
+dialog.drawer::backdrop { background: rgba(0, 0, 0, .32); }
+.drawer-in { padding: 20px 24px 40px; }
+.drawer-top { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 16px; }
+.drawer-kicker { font-size: 13px; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-bottom: 6px; }
+.drawer h2 { font-size: 18px; line-height: 1.35; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.drawer-sec { margin-top: 18px; }
+.drawer-sec h3 { font-size: 12.5px; font-weight: 600; color: var(--text-3); margin-bottom: 5px; }
+.drawer-sec p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.quiet-box { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.keylist { display: flex; flex-wrap: wrap; gap: 5px; list-style: none; padding: 0; margin: 0; font-size: 13px; }
+.keylist li { padding: 1px 8px; border-radius: 5px; background: var(--surface-2); overflow-wrap: anywhere; }
+.keylist li.found { color: var(--good-text); }
+.keylist li.missing { color: var(--bad-text); }
+.claims { list-style: none; padding: 0; margin: 0; font-size: 14px; }
+.claims li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 6px; padding: 3px 0; overflow-wrap: anywhere; }
+.ok { color: var(--good-text); font-weight: 700; }
+.no { color: var(--bad-text); font-weight: 700; }
+.linklike { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; font-size: inherit; }
+.pass-row { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 8px; }
+.pass-row:last-child { border-bottom: 0; }
+.drawer-page { width: 100%; margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; display: block; background: #fff; }
+
+.tip { position: fixed; z-index: 30; pointer-events: none; background: var(--text); color: var(--page); font-size: 12.5px; line-height: 1.4; padding: 6px 9px; border-radius: 6px; max-width: 260px; }
+
+@media (max-width: 1040px) {
+  .summary { grid-template-columns: repeat(2, 1fr); }
+  .tile.hero { grid-column: 1 / -1; }
+  .charts { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 820px) {
+  .ask-grid { grid-template-columns: minmax(0, 1fr); }
+  .pdf-pane { position: static; }
+  .pdf-frame { height: auto; min-height: 240px; }
+}
+@media (max-width: 640px) {
+  main { padding: 20px 16px 48px; }
+  .topbar-in { padding: 0 16px; gap: 10px; }
+  .brand span, .reader-text { display: none; }
+  .ask-intro h1 { font-size: 24px; }
+  .answer { padding: 16px; font-size: 16px; }
+  .bar-row { grid-template-columns: 78px minmax(0, 1fr) 42px; }
+  .bar-value span { display: none; }
+  .legend-desc { display: none; }
+  .col-type { display: none; }
+  .col-outcome { width: auto; white-space: normal; }
+  .pill-name { display: none; }
+  .col-outcome { width: 28px; padding-right: 0 !important; }
+  input.field { width: 100%; }
+  .filters h2 { width: 100%; }
+  .filters select { flex: 1; }
+  .drawer-in { padding: 16px 16px 32px; }
+  .segmented button { padding: 3px 8px; }
+  .control-label { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2a78d6"/><path d="M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z" fill="#fff"/></svg>
+      <span>MedRAG</span>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" id="tab-ask" aria-controls="view-ask" aria-selected="true">Ask</button>
+      <button class="tab" role="tab" id="tab-evaluation" aria-controls="view-evaluation" aria-selected="false">Evaluation</button>
+    </nav>
+    <div class="top-right">
+      <div class="reader" id="reader" role="status"><span class="dot" id="reader-dot"></span><span class="reader-text" id="reader-text">Checking model</span></div>
+      <button class="icon-btn" id="theme" type="button" aria-label="Switch colour theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="view-ask" role="tabpanel" aria-labelledby="tab-ask">
+    <div class="ask-intro">
+      <h1>Ask the TA1063 evidence</h1>
+      <p id="intro-sub">A small local model answers from the appraisal's documents and shows the sources it read.</p>
+    </div>
+    <div class="ask-box-wrap">
+      <form class="ask-box" id="ask-form">
+        <textarea id="question" rows="1" placeholder="Ask about capivasertib with fulvestrant" aria-label="Question"></textarea>
+        <button class="btn" id="ask-btn" type="submit">Ask</button>
+      </form>
+      <div class="ask-controls">
+        <div><span class="control-label" id="mode-label">Retrieval</span><span class="segmented" id="modes" role="group" aria-labelledby="mode-label"></span></div>
+      </div>
+      <div class="examples" id="examples" hidden>
+        <h2>Try one of these</h2>
+        <div id="example-list"></div>
+      </div>
+    </div>
+    <div class="progress" id="progress" role="status" hidden></div>
+    <div id="result"></div>
+  </section>
+
+  <section id="view-evaluation" role="tabpanel" aria-labelledby="tab-evaluation" hidden></section>
+</main>
+
+<dialog class="drawer" id="drawer" aria-labelledby="drawer-q"></dialog>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+// All model and document text goes in through text nodes, never as markup.
+function el(tag, props, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") node.className = v;
+    else if (k === "text") node.textContent = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (k === "style") node.style.cssText = v;
+    else node.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()) if (c !== null && c !== undefined && c !== false) node.append(c);
+  return node;
+}
+
+async function api(path, body) {
+  const res = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : undefined);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(typeof data.detail === "string" ? data.detail : `Request failed (${res.status})`), {status: res.status});
+  return data;
+}
+
+const pct = (v) => v === null || v === undefined ? "n/a" : `${(v * 100).toFixed(1)}%`;
+const fixed = (v, d = 3) => v === null || v === undefined ? "n/a" : v.toFixed(d);
+const short = (name) => (name || "").split("/").pop();
+const pagesLabel = (a, b) => a === b ? `p. ${a}` : `pp. ${a}–${b}`;
+
+/* Theme */
+function store(key, value) {
+  try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch { return null; }
+}
+const savedTheme = store("medrag-theme");
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+$("theme").addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  store("medrag-theme", dark ? "light" : "dark");
+});
+
+/* Views */
+function showView(name, push = true) {
+  for (const v of ["ask", "evaluation"]) {
+    $(`view-${v}`).hidden = v !== name;
+    $(`tab-${v}`).setAttribute("aria-selected", String(v === name));
+  }
+  if (push) history.replaceState(null, "", `#${name}`);
+  if (name === "evaluation") loadRun();
+  window.scrollTo(0, 0);
+}
+$("tab-ask").addEventListener("click", () => showView("ask"));
+$("tab-evaluation").addEventListener("click", () => showView("evaluation"));
+
+/* Tooltip for chart marks; keyboard focus shows the same text. */
+function tipFor(target) { return target.closest && target.closest("[data-tip]"); }
+function placeTip(x, y) {
+  const tip = $("tip"), r = tip.getBoundingClientRect();
+  tip.style.left = `${Math.max(8, Math.min(x + 12, innerWidth - r.width - 8))}px`;
+  tip.style.top = `${Math.max(8, y - r.height - 10)}px`;
+}
+document.addEventListener("mousemove", (e) => {
+  const t = tipFor(e.target);
+  $("tip").hidden = !t;
+  if (t) { $("tip").textContent = t.dataset.tip; placeTip(e.clientX, e.clientY); }
+});
+document.addEventListener("focusin", (e) => {
+  const t = tipFor(e.target);
+  if (!t || !e.target.matches(":focus-visible")) return;
+  const r = t.getBoundingClientRect();
+  $("tip").hidden = false; $("tip").textContent = t.dataset.tip; placeTip(r.left, r.top);
+});
+document.addEventListener("focusout", () => { $("tip").hidden = true; });
+
+/* Status */
+let status = null;
+async function refreshStatus() {
+  try {
+    status = await api("/api/status");
+  } catch {
+    $("reader-dot").className = "dot down"; $("reader-text").textContent = "Server unreachable";
+    return;
+  }
+  $("reader-dot").className = `dot ${status.reader_up ? "up" : "down"}`;
+  $("reader-text").textContent = `${short(status.model)} ${status.reader_up ? "online" : "offline"}`;
+  $("reader").title = status.reader_up ? "The answering model is reachable" : "The answering model is unreachable. Questions already asked still answer from the cache.";
+  $("intro-sub").textContent = `A small local model answers from the appraisal's ${status.pages} pages, split into ${status.chunks.toLocaleString()} passages, and shows the sources it read.`;
+  if (status.examples.length && !$("example-list").children.length) {
+    $("example-list").append(...status.examples.map((q) => el("button", {class: "example", type: "button", text: q, onclick: () => ask(q)})));
+    $("examples").hidden = false;
+  }
+}
+refreshStatus();
+setInterval(refreshStatus, 30000);
+
+/* Ask */
+const MODES = [
+  {id: "hybrid+rerank", label: "Hybrid + rerank", mode: "hybrid", rerank: true},
+  {id: "hybrid", label: "Hybrid", mode: "hybrid", rerank: false},
+  {id: "dense", label: "Dense", mode: "dense", rerank: false},
+  {id: "bm25", label: "BM25", mode: "bm25", rerank: false},
+];
+let mode = MODES[0];
+function renderModes() {
+  $("modes").replaceChildren(...MODES.map((m) => el("button", {type: "button", "aria-pressed": String(m === mode), text: m.label, onclick: () => { mode = m; renderModes(); }})));
+}
+renderModes();
+
+const q = $("question");
+function growQuestion() { q.style.height = "auto"; q.style.height = `${Math.min(q.scrollHeight, 140)}px`; }
+q.addEventListener("input", growQuestion);
+q.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("ask-form").requestSubmit(); } });
+$("ask-form").addEventListener("submit", (e) => { e.preventDefault(); ask(q.value); });
+
+let askId = 0, clock = null;
+function setProgress(text, spinning, since) {
+  clearInterval(clock);
+  const box = $("progress");
+  box.hidden = false;
+  const label = el("span", {text});
+  box.replaceChildren(...(spinning ? [el("span", {class: "spinner"})] : []), label);
+  if (since) clock = setInterval(() => { label.textContent = `${text} ${Math.round((Date.now() - since) / 1000)}s`; }, 1000);
+}
+
+async function ask(text) {
+  const question = (text || "").trim();
+  if (!question) { q.focus(); return; }
+  const id = ++askId;
+  q.value = question;
+  showView("ask");
+  $("view-ask").classList.add("has-result");
+  growQuestion();
+  $("result").replaceChildren();
+  $("ask-btn").disabled = true;
+  setProgress("Retrieving passages", true);
+  let hits;
+  try {
+    const r = await api("/api/retrieve", {question, mode: mode.mode, rerank: mode.rerank});
+    if (id !== askId) return;
+    hits = r.hits;
+    if (!hits.length) {
+      setProgress(`Retrieved in ${r.latency_s.toFixed(1)}s`);
+      $("result").replaceChildren(el("div", {class: "card answer abstain"}, el("span", {class: "label", text: "No passages found"}),
+        el("div", {class: "answer-text", text: `${mode.label} matched nothing in the documents, so the model was not asked. Try other wording or another retrieval mode.`})));
+      return;
+    }
+    const shown = hits.filter((h) => h.n);
+    const answerSlot = el("div");
+    const view = sourcesView(hits);
+    $("result").replaceChildren(answerSlot, view.node);
+    const t0 = Date.now();
+    setProgress(`Reading ${shown.length} passages with ${short(status && status.model) || "the model"}`, true, t0);
+    await readAnswer(id, question, hits, answerSlot, view, r.latency_s);
+  } catch (err) {
+    if (id !== askId) return;
+    clearInterval(clock);
+    $("progress").hidden = true;
+    $("result").append(el("div", {class: "notice", role: "alert"}, el("span", {text: err.message})));
+  } finally {
+    if (id === askId) $("ask-btn").disabled = false;
+  }
+}
+
+async function readAnswer(id, question, hits, slot, view, retrievalS) {
+  try {
+    const a = await api("/api/answer", {question, chunk_ids: hits.map((h) => h.chunk_id)});
+    if (id !== askId) return;
+    slot.replaceChildren(answerCard(a, view));
+    setProgress(`Retrieved in ${retrievalS.toFixed(1)}s, answered ${a.cached ? "from cache" : `in ${a.latency_s.toFixed(1)}s`}`);
+    refreshStatus();
+  } catch (err) {
+    if (id !== askId) return;
+    clearInterval(clock);
+    $("progress").hidden = true;
+    slot.replaceChildren(el("div", {class: "notice", role: "alert"},
+      el("span", {text: err.message}),
+      el("button", {class: "btn ghost", type: "button", text: "Try again", onclick: () => {
+        setProgress("Reading passages", true, Date.now());
+        slot.replaceChildren();
+        readAnswer(id, question, hits, slot, view, retrievalS);
+      }})));
+    refreshStatus();
+  }
+}
+
+function answerCard(a, view) {
+  const body = el("div", {class: "answer-text"});
+  const parts = a.answer.split(/(\[\d+\])/);
+  for (const part of parts) {
+    const m = part.match(/^\[(\d+)\]$/);
+    const n = m ? Number(m[1]) : 0;
+    if (m && view.has(n)) body.append(el("button", {class: "cite", type: "button", text: n, "data-n": n, "aria-label": `Show source ${n}`, onclick: () => view.select(n, true)}));
+    else body.append(part);
+  }
+  view.onSelect = (n) => body.querySelectorAll(".cite").forEach((c) => c.classList.toggle("on", Number(c.dataset.n) === n));
+  const cited = a.answer.match(/\[(\d+)\]/);
+  const first = cited && view.has(Number(cited[1])) ? Number(cited[1]) : null;
+  if (first) view.select(first, false);
+  return el("div", {class: `card answer${a.abstained ? " abstain" : ""}`},
+    el("span", {class: "label", text: a.abstained ? "No answer in the documents" : "Answer"}), body);
+}
+
+/* Sources and the PDF page beside them */
+function sourcesView(hits) {
+  const rows = new Map();
+  const pdf = pageViewer();
+  const api_ = {
+    onSelect: null,
+    has: (n) => rows.has(n),
+    select(n, scroll) {
+      for (const [k, r] of rows) {
+        const on = k === n;
+        r.node.classList.toggle("on", on);
+        r.head.setAttribute("aria-expanded", String(on));
+        r.body.hidden = !on;
+      }
+      const r = rows.get(n);
+      if (!r) return;
+      pdf.show(r.hit.pages[0], r.hit.pages[1]);
+      if (api_.onSelect) api_.onSelect(n);
+      if (scroll && innerWidth <= 820) r.node.scrollIntoView({block: "nearest", behavior: "smooth"});
+    },
+  };
+  let cutKey = -1;
+  const list = hits.map((h) => {
+    const key = h.n || cutKey--;
+    const body = el("div", {class: "source-body", hidden: true}, renderBody(h.body));
+    const head = el("button", {class: "source-head", type: "button", "aria-expanded": "false", onclick: () => api_.select(key, false)},
+      el("span", {class: "source-n", text: h.n || "–"}),
+      el("span", {class: "source-meta"},
+        el("div", {class: "source-title", text: h.document_title || "Untitled document"}),
+        el("div", {class: "source-sub"}, `${[...(h.section || [])].slice(-1)[0] || "No section heading"} · `, el("span", {class: "nowrap", text: pagesLabel(h.pages[0], h.pages[1])}), " ", h.kind === "table" ? el("span", {class: "tag", text: "Table"}) : null),
+        el("div", {class: "source-ranks num", text: h.n ? ranksText(h.ranks) : "Left out: over the context budget"})));
+    const node = el("div", {class: `source${h.n ? "" : " cut"}`}, head, body);
+    rows.set(key, {node, head, body, hit: h});
+    return node;
+  });
+  api_.node = el("div", {class: "ask-grid"},
+    el("div", {}, el("div", {class: "pdf-head"}, el("h2", {class: "section-title", text: `Sources (${hits.length})`})), list),
+    pdf.node);
+  if (hits.length) api_.select(hits[0].n || -1, false);
+  return api_;
+}
+
+function ranksText(ranks) {
+  const names = {bm25: "BM25", dense: "dense", rerank: "rerank"};
+  const parts = Object.keys(names).filter((k) => k in ranks).map((k) => `${names[k]} ${ranks[k] ? `#${ranks[k]}` : "not ranked"}`);
+  return parts.join(" · ");
+}
+
+// A chunk body is prose and Markdown tables; tables become real tables.
+function renderBody(text) {
+  const out = [];
+  let para = [], table = [];
+  const flushPara = () => { if (para.join("").trim()) out.push(el("p", {text: para.join("\n").trim()})); para = []; };
+  const cells = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+  const flushTable = () => {
+    if (!table.length) return;
+    const isRule = (r) => r.every((c) => /^:?-{2,}:?$/.test(c));
+    const rows = table.map(cells);
+    const head = rows.length > 1 && isRule(rows[1]) ? rows[0] : null;
+    const data = rows.filter((r, i) => !isRule(r) && !(head && i === 0));
+    out.push(el("div", {class: "table-wrap"}, el("table", {},
+      head ? el("thead", {}, el("tr", {}, head.map((c) => el("th", {text: c})))) : null,
+      el("tbody", {}, data.map((r) => el("tr", {}, r.map((c) => el("td", {text: c}))))))));
+    table = [];
+  };
+  for (const line of (text || "").split("\n")) {
+    if (line.trim().startsWith("|")) { flushPara(); table.push(line); }
+    else { flushTable(); para.push(line); }
+  }
+  flushTable(); flushPara();
+  return out;
+}
+
+function pageViewer() {
+  let page = 1, first = 1, last = 1;
+  const label = el("span", {class: "num"});
+  const img = el("img", {alt: ""});
+  const frame = el("div", {class: "pdf-frame"}, img);
+  const prev = el("button", {type: "button", "aria-label": "Previous page", text: "‹", onclick: () => go(page - 1)});
+  const next = el("button", {type: "button", "aria-label": "Next page", text: "›", onclick: () => go(page + 1)});
+  const total = () => (status ? status.pages : Infinity);
+  img.addEventListener("load", () => frame.classList.remove("loading"));
+  function go(n) {
+    page = Math.max(1, Math.min(n, total()));
+    frame.classList.add("loading");
+    img.src = `/api/page/${page}.png`;
+    img.alt = `PDF page ${page}`;
+    frame.scrollTop = 0;
+    label.textContent = status ? `Page ${page} of ${status.pages}` : `Page ${page}`;
+    prev.disabled = page <= 1;
+    next.disabled = page >= total();
+  }
+  return {
+    node: el("aside", {class: "pdf-pane"},
+      el("div", {class: "pdf-head"}, el("h2", {class: "section-title", text: "Source page"}), el("div", {class: "pdf-nav"}, prev, label, next)),
+      frame),
+    show(a, b) { first = a; last = b; go(first); },
+  };
+}
+
+/* Evaluation */
+const OUTCOMES = {
+  correct: {name: "Correct", desc: "answered correctly", color: "var(--good)", ink: "#0b0b0b", glyph: "✓"},
+  correct_abstention: {name: "Correctly declined", desc: "evidence withheld, it declined", color: "var(--good)", ink: "#0b0b0b", glyph: "✓"},
+  retrieval_miss: {name: "Retrieval miss", desc: "evidence never reached the model", color: "var(--warning)", ink: "#0b0b0b", glyph: "!"},
+  false_abstention: {name: "False decline", desc: "evidence shown, it declined", color: "var(--warning)", ink: "#0b0b0b", glyph: "!"},
+  reader_error: {name: "Reader error", desc: "evidence shown, answer wrong", color: "var(--serious)", ink: "#0b0b0b", glyph: "!"},
+  hallucinated_answer: {name: "Hallucinated", desc: "evidence withheld, it answered anyway", color: "var(--critical)", ink: "#ffffff", glyph: "×"},
+};
+const OUTCOME_ORDER = Object.keys(OUTCOMES);
+const outcomeOf = (key) => OUTCOMES[key] || {name: key ? key.replaceAll("_", " ") : "Not scored", desc: "", color: "var(--line-strong)", ink: "#0b0b0b", glyph: "?"};
+const glyph = (o) => el("span", {class: "glyph", "aria-hidden": "true", text: o.glyph, style: `background:${o.color};color:${o.ink}`});
+const TYPE_NAMES = {factual: "Factual", numerical: "Numerical", comparative: "Comparative", multihop: "Multi-hop", attribution: "Attribution", summary: "Summary", unanswerable: "Unanswerable"};
+const typeName = (t) => TYPE_NAMES[t] || t;
+
+let run = null, runError = null;
+const filters = {text: "", type: "", outcome: ""};
+
+async function loadRun() {
+  if (run) return;
+  const view = $("view-evaluation");
+  if (!view.children.length) view.append(el("p", {class: "muted", text: "Loading results…"}));
+  try {
+    run = await api("/api/run");
+    renderEval();
+  } catch (err) {
+    runError = err;
+    view.replaceChildren(el("div", {class: "card empty"},
+      el("p", {text: err.status === 404 ? err.message : "The evaluation results could not be loaded."}),
+      err.status === 404 ? el("p", {class: "muted", text: "Create one with `medrageval eval`, or start the demo with --run <directory>."}) : null));
+  }
+}
+
+function renderEval() {
+  const o = run.overall, a = run.answerable, u = run.unanswerable, r = run.retrieval || {};
+  const retrievalName = `${r.mode || "hybrid"}${r.rerank ? " + rerank" : ""}, top ${r.top_k}`;
+  const tile = (label, value, note) => el("div", {class: "card tile"},
+    el("div", {class: "tile-label", text: label}), el("div", {class: "tile-value", text: value}), el("div", {class: "tile-note", text: note}));
+  const warnings = (run.warnings || []).length ? el("details", {class: "warnings"}, el("summary", {text: `${run.warnings.length} notes on this run`}), el("ul", {}, run.warnings.map((w) => el("li", {text: w})))) : null;
+
+  $("view-evaluation").replaceChildren(
+    el("div", {class: "eval-head"},
+      el("h1", {text: "How well the small model answers"}),
+      el("div", {class: "eval-meta", text: `${short(run.model)} · ${retrievalName} · ${o.items} questions · judged by ${short(run.judge_model) || "answer keys"}`})),
+    el("div", {class: "summary"},
+      el("div", {class: "card tile hero"},
+        el("div", {class: "tile-label", text: "Overall score"}),
+        el("div", {class: "tile-value", text: fixed(o.score)}),
+        el("div", {class: "tile-note", text: `95% CI ${fixed(o.ci95 && o.ci95[0])}–${fixed(o.ci95 && o.ci95[1])}, over ${o.items} questions`})),
+      tile("Evidence hit", pct(a.hit), `Evidence among the passages shown, ${a.items} answerable questions`),
+      tile("Candidate recall", pct(a.candidate_recall), `Evidence in the pool before the top-${r.top_k || "k"} cut, ${a.items} answerable`),
+      tile("Faithfulness", pct(a.faithfulness), `Answer claims backed by the passages shown, ${a.items} answerable`),
+      tile("Correct abstention", pct(u.score), `Declined when evidence was withheld, ${u.items} unanswerable`)),
+    el("div", {class: "charts"},
+      el("div", {class: "card chart"}, el("h2", {text: "Score by question type"}), el("p", {class: "chart-note", text: "Scale 0 to 1, with 95% CI. Select a type to filter the questions."}), el("div", {id: "type-bars"})),
+      el("div", {class: "card chart"}, el("h2", {text: "What happened to each question"}), el("p", {class: "chart-note", text: `Each of the ${o.items} questions has one outcome. Select one to filter.`}), el("div", {id: "outcomes"}))),
+    el("div", {class: "card"},
+      el("div", {class: "filters"},
+        el("h2", {id: "items-count"}),
+        el("input", {class: "field", id: "f-text", type: "search", placeholder: "Search questions", "aria-label": "Search questions", value: filters.text, oninput: (e) => { filters.text = e.target.value; renderFiltered(); }}),
+        el("select", {class: "field", id: "f-type", "aria-label": "Filter by type", onchange: (e) => { filters.type = e.target.value; renderFiltered(); }}),
+        el("select", {class: "field", id: "f-outcome", "aria-label": "Filter by outcome", onchange: (e) => { filters.outcome = e.target.value; renderFiltered(); }})),
+      el("div", {style: "overflow-x:auto"}, el("table", {class: "items-table"},
+        el("thead", {}, el("tr", {}, el("th", {class: "col-outcome", text: "Outcome"}), el("th", {class: "col-type", text: "Type"}), el("th", {text: "Question"}), el("th", {class: "col-score", text: "Score"}))),
+        el("tbody", {id: "items-body"}))),
+      el("div", {class: "empty", id: "items-empty", hidden: true, text: "No questions match these filters."})),
+    warnings);
+
+  const types = Object.keys(run.per_type);
+  $("f-type").append(el("option", {value: "", text: "All types"}), ...types.map((t) => el("option", {value: t, text: typeName(t)})));
+  const present = [...new Set(run.items.map((i) => i.category))].sort((x, y) => orderOf(x) - orderOf(y));
+  $("f-outcome").append(el("option", {value: "", text: "All outcomes"}), ...present.map((c) => el("option", {value: c, text: outcomeOf(c).name})));
+  renderFiltered();
+}
+
+const orderOf = (k) => { const i = OUTCOME_ORDER.indexOf(k); return i < 0 ? 99 : i; };
+
+function toggleFilter(key, value) {
+  filters[key] = filters[key] === value ? "" : value;
+  renderFiltered();
+}
+
+function renderTypeBars() {
+  const rows = Object.entries(run.per_type).sort((a, b) => (b[1].score ?? -1) - (a[1].score ?? -1));
+  $("type-bars").replaceChildren(...rows.map(([t, v]) => {
+    const ci = v.ci95 ? `${fixed(v.ci95[0], 2)}–${fixed(v.ci95[1], 2)}` : "n/a";
+    return el("button", {class: `bar-row${filters.type === t ? " on" : ""}`, type: "button", "aria-pressed": String(filters.type === t),
+      "data-tip": `${typeName(t)}: score ${fixed(v.score)}, 95% CI ${ci}, ${v.items} questions`, onclick: () => toggleFilter("type", t)},
+      el("span", {text: typeName(t)}),
+      el("span", {class: "bar-track"}, el("span", {class: "bar", style: `width:${(v.score || 0) * 100}%`})),
+      el("span", {class: "bar-value num"}, el("b", {text: fixed(v.score, 2)}), el("span", {text: ` ${ci} · n=${v.items}`})));
+  }));
+}
+
+function renderOutcomes() {
+  const cats = run.overall.categories;
+  const total = Object.values(cats).reduce((s, n) => s + n, 0);
+  const keys = Object.keys(cats).sort((x, y) => orderOf(x) - orderOf(y));
+  const bar = el("div", {class: "segbar", role: "img", "aria-label": keys.map((k) => `${outcomeOf(k).name} ${cats[k]}`).join(", ")},
+    keys.map((k) => {
+      const o = outcomeOf(k), share = Math.round(cats[k] / total * 100);
+      return el("button", {class: "segment", type: "button", tabindex: "-1", style: `flex:${cats[k]} 1 0;background:${o.color};color:${o.ink}`,
+        "data-tip": `${o.name}: ${cats[k]} of ${total} (${share}%)`, onclick: () => toggleFilter("outcome", k)}, share >= 10 ? `${share}%` : "");
+    }));
+  $("outcomes").replaceChildren(bar, ...keys.map((k) => {
+    const o = outcomeOf(k);
+    return el("button", {class: `legend-row${filters.outcome === k ? " on" : ""}`, type: "button", "aria-pressed": String(filters.outcome === k), onclick: () => toggleFilter("outcome", k)},
+      glyph(o),
+      el("span", {}, el("span", {class: "legend-name", text: o.name}), el("span", {class: "legend-desc", text: o.desc})),
+      el("span", {class: "num", text: cats[k]}));
+  }));
+}
+
+function renderFiltered() {
+  $("f-type").value = filters.type; $("f-outcome").value = filters.outcome;
+  renderTypeBars(); renderOutcomes();
+  const needle = filters.text.trim().toLowerCase();
+  const items = run.items.filter((i) => (!filters.type || i.type === filters.type) && (!filters.outcome || i.category === filters.outcome) && (!needle || i.question.toLowerCase().includes(needle)));
+  $("items-count").textContent = items.length === run.items.length ? `All ${items.length} questions` : `${items.length} of ${run.items.length} questions`;
+  $("items-empty").hidden = items.length > 0;
+  $("items-body").replaceChildren(...items.map((i) => {
+    const o = outcomeOf(i.category);
+    return el("tr", {tabindex: "0", onclick: () => openItem(i), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openItem(i); } }},
+      el("td", {class: "col-outcome"}, el("span", {class: "pill", title: o.name}, glyph(o), el("span", {class: "pill-name", text: o.name}))),
+      el("td", {class: "col-type", text: typeName(i.type)}),
+      el("td", {text: i.question}),
+      el("td", {class: "col-score num", text: fixed(i.score, 2)}));
+  }));
+}
+
+/* One question's full record */
+function openItem(i) {
+  const d = $("drawer"), o = outcomeOf(i.category), j = i.judge || {}, keys = i.keys || {}, ref = i.reference || {}, ret = i.retrieval || {};
+  const preview = el("img", {class: "drawer-page", alt: "", hidden: true});
+  const showPage = (n) => { preview.src = `/api/page/${n}.png`; preview.alt = `PDF page ${n}`; preview.hidden = false; preview.scrollIntoView({block: "nearest", behavior: "smooth"}); };
+  const pageLink = (a, b) => el("button", {class: "linklike num", type: "button", text: pagesLabel(a, b), onclick: () => showPage(a)});
+  const sec = (title, ...kids) => el("div", {class: "drawer-sec"}, el("h3", {text: title}), ...kids);
+  const found = keys.found || [], missing = keys.missing || [];
+  const evidence = i.evidence || [];
+  const claims = j.claims || [];
+
+  d.replaceChildren(el("div", {class: "drawer-in"},
+    el("div", {class: "drawer-top"},
+      el("div", {style: "flex:1;min-width:0"},
+        el("div", {class: "drawer-kicker"}, el("span", {class: "pill"}, glyph(o), o.name), el("span", {text: typeName(i.type)}), el("span", {class: "num", text: `Score ${fixed(i.score, 2)}`}), i.faithfulness !== null && i.faithfulness !== undefined ? el("span", {class: "num", text: `Faithfulness ${fixed(i.faithfulness, 2)}`}) : null),
+        el("h2", {id: "drawer-q", text: i.question})),
+      el("button", {class: "icon-btn", type: "button", "aria-label": "Close", text: "✕", onclick: () => d.close()})),
+    i.answerable ? el("button", {class: "btn ghost", type: "button", text: "Ask this live", onclick: () => { d.close(); ask(i.question); }}) : null,
+    !i.answerable ? el("div", {class: "notice", text: "In this test the evidence was withheld: the model only saw stand-in passages, so the right response was to decline."}) : null,
+    sec("Model's answer", el("div", {class: "quiet-box"}, el("p", {text: i.response || "No response recorded."}))),
+    ref.answer ? sec("Reference answer", el("p", {text: ref.answer})) : null,
+    found.length || missing.length ? sec("Answer keys", el("ul", {class: "keylist"}, found.map((k) => el("li", {class: "found", text: `✓ ${k}`})), missing.map((k) => el("li", {class: "missing", text: `× ${k}`})))) : null,
+    claims.length ? sec(`Judge: ${j.verdict || "no verdict"}, claim by claim`, el("ul", {class: "claims"}, claims.map((c) => el("li", {}, el("span", {class: c.supported ? "ok" : "no", "aria-label": c.supported ? "Supported" : "Not supported", text: c.supported ? "✓" : "×"}), el("span", {text: c.claim}))))) : j.verdict ? sec("Judge", el("p", {text: j.verdict})) : null,
+    evidence.length ? sec(`Gold evidence (${ret.evidence_found ?? 0} of ${ret.evidence ?? evidence.length} found in the passages shown)`, el("div", {}, evidence.flatMap((e, n) => [n ? ", " : null, pageLink(e.pages[0], e.pages[1])]))) : null,
+    (i.passages || []).length ? sec("Passages shown to the model", el("div", {}, i.passages.map((p, n) => el("div", {class: "pass-row"},
+      el("span", {class: "muted num", text: `[${n + 1}]`}),
+      el("span", {}, p.document_title || "Untitled document", p.kind === "table" ? el("span", {class: "tag", text: "Table"}) : null),
+      pageLink(p.pages[0], p.pages[1]))))) : null,
+    preview));
+  d.showModal();
+  d.scrollTop = 0;
+}
+$("drawer").addEventListener("click", (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+
+// Deep links and refreshes keep the tab.
+showView(location.hash === "#evaluation" ? "evaluation" : "ask", false);
+if (location.hash !== "#evaluation") q.focus();
+</script>
+</body>
+</html>

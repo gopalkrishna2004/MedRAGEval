@@ -32,6 +32,11 @@ def main() -> None:
     ask.add_argument("--base-url", help="override llm.base_url")
     ask.add_argument("--no-cache", action="store_true")
 
+    srv = sub.add_parser("serve", help="the demo: ask questions and read an evaluation run in a browser")
+    srv.add_argument("--host", default="127.0.0.1")
+    srv.add_argument("--port", type=int, default=8000)
+    srv.add_argument("--run", help="evaluation run directory; default: the config's demo.run")
+
     a = ap.parse_args()
     app = App(a.config, use_cache=not getattr(a, "no_cache", False))
     if getattr(a, "model", None):
@@ -62,6 +67,9 @@ def main() -> None:
         for i, c in enumerate(res["passages"], start=1):
             head, _, body = c.text.partition("\n")
             print(f"  [{i}] {c.chunk_id} {head}\n      {' '.join(body.split())[:160]}")
+    elif a.command == "serve":
+        from medrag.server import serve
+        serve(app, a.run, a.host, a.port)
     sys.stdout.flush()
 
 

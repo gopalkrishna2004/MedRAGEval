@@ -221,6 +221,26 @@ The embedding and reranking models run locally through sentence-transformers
 (Apple MPS or CUDA when available). `embedding.provider: openai` points the
 embedder at any `/v1/embeddings` server instead.
 
+### The demo
+
+A browser view of the application and of an evaluation run:
+
+```bash
+uv run medrag serve                              # http://127.0.0.1:8000; needs Postgres, and the reader for new questions
+uv run medrag serve --run data/runs/<run>        # show another run (default: demo.run in configs/rag.yaml)
+```
+
+**Ask** answers a live question and shows the passages it read, with each
+retriever's rank, beside the PDF page each one came from. A retrieval control
+switches between hybrid with reranking, hybrid, dense and BM25. **Evaluation**
+reads the run's `eval_report.json` and `responses.jsonl`: overall metrics, score
+by question type, outcomes, and every question with its answer, reference, judge
+claims and evidence pages. It makes no model calls.
+
+If the reader is down, the header says so and sources still appear. A new question
+fails within `demo.llm_timeout` seconds, and one asked before answers from the
+cache, so run the `demo.examples` once before presenting.
+
 ### Evaluating it
 
 ```bash
