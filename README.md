@@ -213,7 +213,7 @@ createdb medrag                                  # store.dsn in configs/rag.yaml
 uv run medrag db init                            # tables and indexes
 uv run medrag ingest                             # Docling (cached) -> chunks -> bge-m3 embeddings -> Postgres; ~10 min
 uv run medrag search "EAG base-case ICER versus everolimus" --mode hybrid
-vllm serve Qwen/Qwen2.5-7B-Instruct --port 8000 --max-model-len 8192           # on a GPU machine; llm.base_url points at it
+vllm serve Qwen/Qwen2.5-3B-Instruct --port 8003                                # on a GPU machine; VLLM_BASE_URL in .env points at it
 uv run medrag ask "What was the company's base-case ICER for capivasertib plus fulvestrant versus everolimus plus exemestane?"
 ```
 

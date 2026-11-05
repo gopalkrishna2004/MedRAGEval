@@ -425,11 +425,11 @@ rag:
   judge:
     # Always OpenRouter (OPENROUTER_API_KEY), never the answering model's
     # server: a small model cannot grade itself. null model / base_url: those of `generate`.
-    model: deepseek/deepseek-v4.1-flash
+    model: z-ai/glm-5.3-flash
     base_url: null
-    reasoning: {enabled: false}    # as generate.judge_reasoning; left on, 26% of 168 calls at 3,000 tokens lost the verdict
+    reasoning: {enabled: True, max_tokens: 4000}    # as generate.judge_reasoning; this model refuses a request with reasoning disabled
     temperature: 0.0               # deterministic verdicts
-    max_tokens: 3000               # the verdict with its claim list; a cut-off reply is a lost verdict
+    max_tokens: 7000               # reasoning counts against this: 3,000 stay for the verdict with its claim list; a cut-off reply is a lost verdict
     max_workers: 6
     max_chars_per_passage: 4000    # a table chunk can run to ~1,500 tokens; the judge should see it whole
   eval:

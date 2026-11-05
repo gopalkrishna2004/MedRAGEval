@@ -163,3 +163,9 @@ def test_judge_limit_leaves_room_for_the_verdict_after_reasoning():
     from medrageval.config import load_config
     cfg = load_config()["generate"]
     assert (cfg["judge_max_tokens"] or cfg["max_tokens"]) > ((cfg.get("judge_reasoning") or {}).get("max_tokens") or 0)
+
+
+def test_rag_judge_limit_leaves_room_for_the_verdict_after_reasoning():
+    from medrageval.config import load_config
+    cfg = load_config()["rag"]["judge"]
+    assert cfg["max_tokens"] > ((cfg.get("reasoning") or {}).get("max_tokens") or 0)

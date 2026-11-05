@@ -52,9 +52,10 @@ retrieval:
   max_context_chars: 12000           # ~3.5k tokens of passages
 
 llm:
-  # vLLM's OpenAI-compatible server: `vllm serve Qwen/Qwen2.5-7B-Instruct --port 8000 --max-model-len 8192`
-  model: Qwen/Qwen2.5-7B-Instruct
-  base_url: http://localhost:8000/v1
+  # vLLM's OpenAI-compatible server on the GPU machine: `vllm serve Qwen/Qwen2.5-3B-Instruct --port 8003`
+  model: Qwen/Qwen2.5-3B-Instruct
+  base_url: http://localhost:8003/v1
+  base_url_env: VLLM_BASE_URL       # overrides base_url when set; a remote server's address stays in .env
   api_key_env: VLLM_API_KEY          # read when the server runs with --api-key; "EMPTY" otherwise
   temperature: 0.0
   max_tokens: 512

@@ -13,6 +13,7 @@ def load_config(path: str | Path | None = None) -> dict:
     with p.open() as f:
         cfg = yaml.safe_load(f)
     cfg["_path"] = str(p)
+    cfg["llm"]["base_url"] = env_or(cfg["llm"], "base_url_env", "base_url")
     return cfg
 
 

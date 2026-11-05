@@ -14,7 +14,7 @@ import time
 from medrag.chunk import Chunk
 from medrag.retrieve import Hit, Retriever
 
-PROMPT_VERSION = "3"
+PROMPT_VERSION = "4"
 ABSTAIN = "Not found in the documents."
 
 
@@ -26,7 +26,7 @@ def build_prompt(question: str, passages: list[Chunk], topic: str) -> list[dict]
               "- Say whose position, analysis or estimate it is (the company, the assessment group, the committee, a clinical or "
               "patient expert, a patient organisation) when the passage says.\n"
               "- Cite the passages you used, like [2].\n"
-              "- Values printed as [REDACTED] or as a run of x's are confidential: never guess them or take a neighbouring value instead.\n"
+              "- Values printed as [REDACTED] or as a run of x's or asterisks (xxxxx, *****) are confidential: never guess them or take a neighbouring value instead.\n"
               f"- If the passages do not answer the question, reply exactly: {ABSTAIN}\n"
               "- Do not use knowledge from outside the passages.\n"
               f"(prompt version {PROMPT_VERSION})")
