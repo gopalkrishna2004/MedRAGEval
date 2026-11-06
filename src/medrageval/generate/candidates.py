@@ -451,7 +451,7 @@ def select_multihop(corpus: Corpus, sheet: FactSheet, cfg: dict, rng: Random, ta
                 continue
             asked.add((b.fact_id, label))
             hint = {"group": b.group, "slot": b.slot, "link": f"{link.source} -> {link.target}", "mode": link.match, "bridge": bridge,
-                    "bridge_value": a.value, "via": link.via, "via_value": label, "value": value, "rival": rival,
+                    "bridge_fact": a.fact_id, "bridge_value": a.value, "via": link.via, "via_value": label, "value": value, "rival": rival,
                     "description": sorted(desc), "must_mention": without(sheet.must_mention(b), label, a.value)}
             yield Candidate("multihop", "bridge" if link.match == "value" else "described", _units(sheet, a, b), hint, [a, b])
 

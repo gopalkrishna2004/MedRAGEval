@@ -50,6 +50,9 @@ def scripted(messages, tag):
         return {"answer": None, "reason": "the passage alone does not say"}
     if tag.startswith("withhold:"):   # the screening judge: no candidate distractor answers
         return {"results": [{"unit_id": uid, "answers": "no", "answer_if_any": None} for uid in screened(user)]}
+    if tag.startswith("messy:"):   # the user-style rewrite: the clean question, lower case and chatty
+        clean = re.search(r"^Clean question: (.*)$", user, re.M).group(1)
+        return {"question": "hey quick one, " + clean.lower()}
     facts, exs = facts_in(user), excerpts(user)
     quotes = [{"unit_id": uid, "quote": " ".join(body.split()[:12])} for uid, body in exs]
     f = facts[0]
@@ -70,6 +73,15 @@ def test_end_to_end_writes_dataset_rejects_and_report(tmp_path):
 
     items = [json.loads(l) for l in (out / "dataset.jsonl").open()]
     assert [i["item_id"] for i in items] == ["factual-001", "factual-002", "unanswerable-001", "unanswerable-002"]
+    for it in items:   # every item carries its messy twin; an unanswerable one copies its source's
+        tw = it["question_messy"]
+        assert tw["text"] and tw["severity"] in ("light", "medium", "heavy") and tw["rewrite"].startswith("hey quick one, ")
+        assert "error" not in tw
+    src = {i["item_id"]: i for i in items}
+    for u in (i for i in items if i["type"] == "unanswerable"):
+        assert u["question_messy"] == src[u["source_item_id"]]["question_messy"]
+    assert report["messy"]["rewritten"] == 2 and report["messy"]["copied_from_source"] == 2 and report["messy"]["errors"] == []
+    assert sum(1 for _, tag in llm.calls if tag.startswith("messy:")) == 2
     f = items[0]
     assert f["answerable"] and f["facts"] and f["group"] in ("trial_design", "economic_model", "stakeholder_views")
     assert f["provenance"]["prompt_version"] == PROMPT_VERSION and f["provenance"]["model"] == "fake"

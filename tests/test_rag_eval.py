@@ -279,3 +279,32 @@ def test_several_datasets_get_prefixed_ids(tmp_path):
     assert [it["uid"] for it in items] == ["smoke_a/numerical-001", "smoke_b/numerical-001"]
     assert [it["item_id"] for it in load_items([write_dataset(tmp_path / "c", [PFS, WITHHELD, PRICE], tmp_path / "i")], types=["unanswerable"])] \
         == ["unanswerable-001", "unanswerable-002"]
+
+
+def test_messy_setting_asks_the_twin_and_grades_against_the_clean_question(tmp_path):
+    twin = {"text": "hey quick one median pfs w/ cap + fulv investigator assessed, months??", "severity": "medium", "habits": ["informal", "shorthand"],
+            "persona": "a busy oncologist between clinics", "rewrite": "hey quick one, median PFS w/ cap + fulv, investigator assessed, months?", "surface": ["lowercase"]}
+    ds = write_dataset(tmp_path / "ds", [{**PFS, "question_messy": twin}, {**WITHHELD, "question_messy": twin}, PRICE], tmp_path / "interim")
+    asked = []
+
+    def recording(messages, tag):
+        asked.append(question(messages))
+        return small_model(messages, tag)
+
+    items = load_items([ds], question="messy")
+    assert [it["question_asked"] for it in items] == [twin["text"], twin["text"], PRICE["question"]]   # no twin: the clean question
+    judge = FakeLLM(passing_judge)
+    report = evaluate(items, make_rag(recording), judge, full_config(), tmp_path / "run")
+    assert asked[:2] == [twin["text"], twin["text"]] and asked[2] == PRICE["question"]
+    rows = [json.loads(line) for line in (tmp_path / "run" / "responses.jsonl").open()]
+    assert rows[0]["question"] == PFS["question"] and rows[0]["question_asked"] == twin["text"] and rows[0]["question_setting"] == "messy"
+    assert rows[0]["score"] == 1.0   # the small model still finds "median" in the twin
+    for msgs, tag in judge.calls:   # the judge and the screening work from the clean question
+        assert twin["text"] not in msgs[1]["content"] and (PFS["question"] in msgs[1]["content"] or tag.startswith("judge:unanswerable-002"))
+    assert report["question_setting"] == "messy" and report["messy_missing"] == ["unanswerable-002"]
+    assert any("no messy twin" in w for w in report["warnings"])
+
+    clean = load_items([ds])
+    assert all(it["question_asked"] == it["question"] and it["question_setting"] == "clean" for it in clean)
+    with pytest.raises(ValueError):
+        load_items([ds], question="sloppy")

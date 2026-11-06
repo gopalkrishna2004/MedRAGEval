@@ -280,6 +280,36 @@ generate:
     min_distractors: 4           # fewer clean passages than this rejects the item (reason too_few_distractors)
     max_chars_per_passage: 1500  # shown to the screening judge
 
+  # Second question setting. Every accepted item also carries the same
+  # question as a real user would type it (`question_messy`): the generator
+  # rewrites the clean question in one or more user habits picked by the seed,
+  # then code adds surface noise (typos, lower case, dropped punctuation). The
+  # answer, keys and evidence are the item's own; the evaluator asks either
+  # version (`--question clean|messy`), so the two scores are paired. Nothing
+  # checks the rewrite: the setting measures what sloppy wording costs, and a
+  # rewrite that drifts is part of that cost. An unanswerable item reuses its
+  # source item's rewrite. Numbers in a question are never altered.
+  messy:
+    enabled: true
+    # severity sets how many habits the rewrite applies and how much surface noise follows
+    severity_mix: {light: 0.4, medium: 0.4, heavy: 0.2}
+    habits_per_severity: {light: 1, medium: 2, heavy: 3}
+    # keyword_query is applied alone: a keyword string cannot also ramble
+    habits: [informal, shorthand, lay_terms, keyword_query, statement, grammar, rambling, vague]
+    personas:
+      - a busy oncologist between clinics
+      - a health economist checking a figure for a report
+      - an appraisal committee member preparing for a meeting
+      - a medical affairs manager at a pharmaceutical company
+      - a patient advocate reading the committee papers
+      - a pharmacy student writing an essay
+    # per word: a typo (letter swap, drop, double or keyboard neighbour); per question: lower case, punctuation stripped
+    surface:
+      light: {typo_rate: 0.03, lowercase: 0.3, drop_punctuation: 0.3}
+      medium: {typo_rate: 0.08, lowercase: 0.6, drop_punctuation: 0.6}
+      heavy: {typo_rate: 0.15, lowercase: 0.9, drop_punctuation: 0.9}
+    min_word_len: 4            # shorter words are left alone (a typo in "PFS" or "OS" changes the term)
+
   judge:
     max_chars_per_unit: 2500
   # The judge pass costs a call per item. It runs on every answerable type:
@@ -295,6 +325,13 @@ generate:
   multihop:
     rare_df_max: 0.03
     min_description_tokens: 2
+    # Accepted items one bridge fact may carry. TA1063 has two usable bridges
+    # (both comparator descriptions) and the v19 run asked one of them five
+    # times; the trial's primary-endpoint link yields nothing there, since
+    # every PFS passage either says "primary endpoint" or reports no other
+    # endpoint, so one excerpt would answer. Fewer multi-hop items beat
+    # five readings of the same hop.
+    max_per_bridge: 3
 
   judge_types: [factual, numerical, comparative, multihop, attribution, summary]
   # After the judge passes them, these items go back to the judge model once

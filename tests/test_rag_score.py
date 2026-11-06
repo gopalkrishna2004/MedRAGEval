@@ -2,8 +2,8 @@ import pytest
 from medrag.chunk import Chunk
 
 from medrageval.config import load_config
-from medrageval.rag.score import (agreement, bootstrap_ci, category, faithfulness, is_abstention, judge_score, key_found, key_scores,
-                                  keypoint_stats, quote_match, retrieval_metrics, score_item, summarize)
+from medrageval.rag.score import (agreement, bootstrap_ci, category, faithfulness, holds, is_abstention, judge_score, key_found,
+                                  key_scores, keypoint_stats, norm_alnum, quote_match, retrieval_metrics, score_item, summarize)
 
 FULL = load_config()
 PATTERNS = FULL["rag"]["eval"]["abstain_patterns"]
@@ -24,6 +24,11 @@ def chunk(cid, pages, body, title="Company evidence submission"):
     ("28.8%", "The response rate was 26.8%.", False),
     ("Exclude subsequent treatment costs", "The scenario excludes subsequent treatment costs.", True),
     ("piecewise NMA", "It used the network meta-analysis.", False),
+    ("lognormal distribution", "The company chose the log-normal distribution.", True),      # a hyphen is spelled either way
+    ("log-normal", "A lognormal curve was fitted.", True),
+    ("NMA-estimated HRs", "The HRs were estimated in the NMA.", True),                     # or as separate words
+    ("patient organisation", "The patient organization submitted a response.", True),     # s and z endings share a stem
+    ("5-10 mg", "Doses of 510 mg were given.", False),                                     # a number range keeps its dash
 ])
 def test_key_found(key, text, ok):
     assert key_found(key, text) is ok
@@ -79,6 +84,22 @@ def test_redaction_placeholders_match_the_benchmarks_redacted_marker():
     row = "| Everolimus + exemestane | £25,714 | 1.96 | 1.45 | xxxxxxx | 1.30 | 0.94 | ******* | xxxxxxx |"
     assert quote_match(ev, chunk("c1", 126, row)) == "quote"
     assert quote_match(ev, chunk("c1", 126, row.replace("1.30", "1.31"))) == "page"
+    short = {"unit_id": "u", "pages": [45, 45], "quote": "At the time of DCO1 (August 15th, 2022), there were [REDACTED] OS events"}
+    assert quote_match(short, chunk("c1", 45, "At the time of DCO1 (August 15th, 2022), there were xx OS events (xxxxx data maturity).")) == "quote"
+
+
+HEADER = "Company evidence submission: Capivasertib with fulvestrant for treating HR-positive, HER2negative advanced breast cancer [ID6370]"
+
+
+def test_a_running_header_inside_the_sentence_does_not_break_the_quote():
+    ev = {"unit_id": "u", "pages": [70, 71], "quote": "The trial was a robust phase 3 trial, at low risk of bias and provided valid results that are "
+                                                      "generalisable to patients anticipated to receive capivasertib plus fulvestrant in clinical practice."}
+    body = (f"The trial was a robust phase 3 trial, at low risk of bias and provided valid results that are generalisable to patients\n\n"
+            f"{HEADER}\n\nanticipated to receive capivasertib plus fulvestrant in clinical practice. The trial demonstrated a benefit.")
+    assert quote_match(ev, chunk("c1", (70, 71), body)) == "quote"
+    assert holds(norm_alnum(ev["quote"]), norm_alnum(body.replace(HEADER, HEADER * 4))) is False   # a long gap is a different passage
+    assert holds(norm_alnum(ev["quote"]), norm_alnum(body.replace("clinical practice", "routine care"))) is False
+    assert holds("", "anything") is False
 
 
 TWO = {"type": "multihop", "answerable": True, "also_in": ["d05-e0009"],

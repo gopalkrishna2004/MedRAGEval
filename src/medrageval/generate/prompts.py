@@ -21,7 +21,7 @@ from medrageval.facts.factsheet import Fact, FactSheet
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.corpus import Corpus, Unit
 
-PROMPT_VERSION = "19"
+PROMPT_VERSION = "20"
 
 SCHEMA = ('{"question": str, "answer": str, "answer_keys": [str, ...], '
           '"quotes": [{"unit_id": str, "quote": str}, ...]}')
@@ -166,7 +166,8 @@ def build_generation(cand: Candidate, corpus: Corpus, cfg: dict, sheet: FactShee
 
 JUDGE_CRITERIA = {
     "factual": "The answer is stated by the quotes, and the question is specific enough that this fact is the natural answer.",
-    "numerical": "The answer's number and unit appear in the quotes and belong to the measure, arm and population the question names.",
+    "numerical": "The answer's number and unit appear in the quotes and belong to the measure, arm and population the question names, "
+                 "and the quotes hold no other value that the question as asked would equally accept (\"in one of its scenarios\" when three scenarios are listed fails).",
     "comparative": "Both values appear in the quotes, the direction (higher/lower) is correct, and the two labels are the right ones. The question is not answerable from one value alone, and the difference is one a reader would care about.",
     "multihop": "The question identifies what it asks about through a description (hop A) and asks for a value (hop B). Pass when the description is resolved in one excerpt and the value is in the other, "
                 "and the value excerpt alone would not settle it: it does not state what the description states, and it holds other values the question could mean until the description is resolved. "
@@ -336,3 +337,29 @@ def withhold_check(shown: str, question: str, answer: str, topic: str, id_key: s
             f"(prompt version {PROMPT_VERSION}){note}"},
         {"role": "user", "content": f"Question: {question}\nCorrect answer (withheld from the system under test): {answer}\n\nPassages:\n{shown}"},
     ]
+
+
+# ----- the messy question setting: the same question as a user would type it -----
+HABITS = {
+    "informal": "chatty and casual: openers, fillers and hedges (\"hey quick one\", \"so basically\", \"I think\", \"or whatever it was\")",
+    "shorthand": "clinical and texting shorthand where a colleague would use it (pts, tx, w/, vs, b/c, abt, HR, CE model, cap + fulv)",
+    "lay_terms": "lay words in place of technical terms where a non-specialist would use them (\"how long before the cancer got worse\" for progression-free survival), keeping any term that has no plain equivalent",
+    "keyword_query": "a search-engine keyword string, not a sentence: the key terms in any order, no question word, no verb",
+    "statement": "a request or statement instead of a question (\"need the ICER for ...\", \"looking for the company's figure on ...\")",
+    "grammar": "the English of a fluent non-native speaker: dropped or wrong articles, odd prepositions, unusual word order, agreement slips",
+    "rambling": "extra context a real user would add and the answer does not need: why they ask, what they were just reading, a tangent",
+    "vague": "one specific detail blurred into something vaguer (\"the new drug\", \"that trial\", \"the EAG or whoever it was\"), still enough for someone who knows the appraisal to tell what is meant",
+}
+
+
+def build_messy(question: str, persona: str, habits: list[str]) -> list[dict]:
+    """Rewrite a clean evaluation question as a real user would type it. No checks follow: the rewrite is the setting."""
+    lines = "\n".join(f"- {h}: {HABITS[h]}" for h in habits)
+    system = ("You turn well-formed questions about a health technology appraisal into the way real users type them into a chat box or search bar. "
+              "Users are hurried, informal and inconsistent; they do not write like a document. You are shown the clean question, who is typing and "
+              "which habits to apply. Keep the same intent: the same thing is asked about the same subject, so the same answer is right. Keep every "
+              "number, unit and name of a drug, trial or party that the clean question has, in whatever spelling or shorthand the habits call for; "
+              "never add the answer or facts the clean question does not state. One or two lines at most. "
+              'Return only a JSON object: {"question": str}.')
+    user = f"Clean question: {question}\n\nTyped by: {persona}\n\nApply these habits, all of them, and nothing else:\n{lines}"
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]

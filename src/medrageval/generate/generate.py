@@ -5,7 +5,9 @@ writes an item about them, the programmatic checks and then the judge LLM
 decide whether to keep it, until the type's target is met or the attempt
 budget is spent. Unanswerable items come last and need no generator: an
 accepted answerable item is asked again with its evidence withheld (see
-`Run._withhold`). Accepted items are appended to dataset.jsonl as they come
+`Run._withhold`). Last of all, when `messy.enabled`, every accepted item gets
+its question rewritten as a user would type it (`question_messy`, see
+`messy.py`), and dataset.jsonl is written again with it. Accepted items are appended to dataset.jsonl as they come
 (a crash loses nothing), rejected ones to rejects.jsonl with their reasons,
 and generate_report.json summarises the run. If a type ends far short of its
 target the run fails after writing, because a dataset with a hole in it
@@ -29,6 +31,7 @@ from medrageval.facts.schema import known_roles, load_schema
 from medrageval.generate.candidates import SELECTORS, Candidate, candidate_counts, idents, interleave, spread
 from medrageval.generate.corpus import Corpus, Unit, load_corpus
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llms
+from medrageval.generate.messy import messy_pass
 from medrageval.generate.prompts import (PROMPT_VERSION, build_alone_check, build_generation, build_judge, build_rewrite, build_withhold_check,
                                          rewrite_feedback)
 from medrageval.generate.validate import is_duplicate, token_set, validate
@@ -60,6 +63,7 @@ class Run:
         self.stats: dict[str, dict] = defaultdict(lambda: {"attempted": 0, "accepted": 0, "rejected": Counter(), "subtypes": Counter(),
                                                            "rewrites": 0, "rewrites_accepted": 0, "first_reasons": Counter()})
         self.speakers = Counter()
+        self.used: Counter = Counter()   # accepted items per (quota key, value), see `quota`
         self.taken: Counter = Counter()   # accepted answerable items per schema group; each type's selector continues the group rotation from it
         self.failures = 0
         self.dataset = (out_dir / "dataset.jsonl").open("w")
@@ -212,6 +216,15 @@ class Run:
                     "answer": src["answer"], "answer_keys": src["answer_keys"], "also_in": src["also_in"], "withheld_evidence": src["evidence"]}
             yield Candidate("unanswerable", "withheld", units, hint, facts)
 
+    def quota(self, type_: str, target: int) -> tuple[str, str, int] | None:
+        """(hint key, rejection name, limit): how many accepted items one speaker, or one bridge fact, may carry.
+        The v19 run took five multi-hop items through one comparator description: the reader resolved the same hop five times."""
+        if type_ == "attribution":
+            return "speaker", "speaker_quota", math.ceil(self.cfg["attribution"]["max_share_per_speaker"] * target)
+        if type_ == "multihop":
+            return "bridge_fact", "bridge_quota", self.cfg["multihop"]["max_per_bridge"]
+        return None
+
     # ----- main thread -----
     def run_type(self, selector: str, type_: str, target: int, candidates: Iterator[Candidate] | None = None) -> None:
         cfg = self.cfg
@@ -219,13 +232,14 @@ class Run:
         it = candidates if candidates is not None else SELECTORS[selector](self.corpus, self.sheet, cfg, Random(f"{self.seed}:{selector}"), taken=self.taken)
         budget = target * attempts_per_item(cfg, type_)
         accepted_here, attempts = 0, 0
-        quota = math.ceil(cfg["attribution"]["max_share_per_speaker"] * target) if type_ == "attribution" else None
+        quota = self.quota(type_, target)
+        full = lambda cand: quota is not None and self.used[(quota[0], cand.hint.get(quota[0]))] >= quota[2]
         window = max(1, cfg["max_workers"]) * 2
         with ThreadPoolExecutor(max_workers=max(1, cfg["max_workers"])) as pool:
             while accepted_here < target and attempts < budget:
                 batch = []
                 for cand in it:
-                    if quota and self.speakers[cand.hint.get("speaker")] >= quota:
+                    if full(cand):
                         continue
                     batch.append(cand)
                     if len(batch) >= min(window, target - accepted_here, budget - attempts):   # no over-fetch past the target
@@ -255,8 +269,8 @@ class Run:
                         st["first_reasons"].update({r.split(":")[0] for r in res["first"]["reasons"]})
                     if res["stage"] == "accepted" and type_ != "unanswerable" and is_duplicate(res["item"].get("question", ""), self.questions, cfg["dedupe_jaccard"]):
                         res["stage"], res["reasons"] = "duplicate", ["duplicate_question"]
-                    if res["stage"] == "accepted" and quota and self.speakers[res["cand"].hint.get("speaker")] >= quota:
-                        res["stage"], res["reasons"] = "speaker_quota", ["speaker_quota"]
+                    if res["stage"] == "accepted" and full(res["cand"]):
+                        res["stage"], res["reasons"] = quota[1], [quota[1]]
                     rec = self.record(res)
                     if res["stage"] == "accepted":
                         accepted_here += 1
@@ -269,6 +283,8 @@ class Run:
                             self.taken[rec["group"]] += 1
                         if type_ == "attribution":
                             self.speakers[res["cand"].hint.get("speaker")] += 1
+                        if quota is not None:
+                            self.used[(quota[0], res["cand"].hint.get(quota[0]))] += 1
                         self.dataset.write(json.dumps(rec, ensure_ascii=False) + "\n")
                     else:
                         st["rejected"][res["reasons"][0].split(":")[0] if res["reasons"] else res["stage"]] += 1
@@ -346,8 +362,9 @@ def load_sheet(interim_dir: Path, cfg: dict, fcfg: dict, facts_path: Path | None
 
 def generate_dataset(interim_dir: Path, out_dir: Path, cfg: dict, gen, judge, targets: dict[str, int] | None = None,
                      types: list[str] | None = None, seed: int | None = None, fcfg: dict | None = None,
-                     facts_path: Path | None = None) -> dict:
-    """Generate the dataset into out_dir and return the report. Raises after writing if a type fell short."""
+                     facts_path: Path | None = None, messy: bool | None = None) -> dict:
+    """Generate the dataset into out_dir and return the report. Raises after writing if a type fell short.
+    `messy` overrides `cfg["messy"]["enabled"]` (the second question setting)."""
     t0 = time.time()
     seed = cfg["seed"] if seed is None else seed
     targets = {**cfg["targets"], **(targets or {})}
@@ -367,7 +384,16 @@ def generate_dataset(interim_dir: Path, out_dir: Path, cfg: dict, gen, judge, ta
         error = e
     finally:
         run.close()
+    messy_report = None
+    if (cfg["messy"]["enabled"] if messy is None else messy) and run.accepted and error is None:
+        messy_report = messy_pass(run.accepted, gen, cfg["messy"], seed, cfg["max_workers"])
+        with (out_dir / "dataset.jsonl").open("w") as f:   # the same records, now with their messy twin
+            for rec in run.accepted:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        print(f"  {'messy':12s} {'rewritten as a user types':26s} {messy_report['rewritten']:3d} rewritten, {messy_report['copied_from_source']} copied; "
+              f"{messy_report['severity']}")
     report = build_report(run, targets, types, time.time() - t0, error)
+    report["messy"] = messy_report
     (out_dir / "generate_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
     if error:
         raise error
@@ -418,6 +444,9 @@ def print_report(report: dict) -> None:
               f"rewrites {rw['accepted']}/{rw['tried']} accepted  rejected: {rej}")
     if mix := report.get("group_mix"):
         print("  groups, answerable items/target: " + ", ".join(f"{g} {m['answerable']}/{m['target']}" for g, m in mix.items()))
+    if m := report.get("messy"):
+        print(f"  messy twins: {m['rewritten']} rewritten, {m['copied_from_source']} copied from source items, {len(m['errors'])} fell back to surface noise; "
+              f"severity {m['severity']}; habits {m['habits']}")
     g, j = report["llm"]["generator"], report["llm"]["judge"]
     print(f"  LLM calls: {g.get('calls', 0) + j.get('calls', 0)} ({g.get('cache_hits', 0) + j.get('cache_hits', 0)} cached), "
           f"tokens in/out: {g.get('prompt_tokens', 0) + j.get('prompt_tokens', 0)}/{g.get('completion_tokens', 0) + j.get('completion_tokens', 0)}")
@@ -440,6 +469,8 @@ def dry_run(interim_dir: Path, cfg: dict, fcfg: dict, seed: int | None = None, f
         for e in info["examples"][:1]:
             print(f"      e.g. {e['facts']}")
     print(f"  {'unanswerable':26s} derived from accepted items of types {', '.join(cfg['unanswerable']['source_types'])}, evidence withheld")
+    if cfg["messy"]["enabled"]:
+        print(f"  {'messy':26s} every accepted item asked again as a user would type it (one generator call per answerable item)")
     return {"corpus": s, "facts": fs, "candidates": counts}
 
 
@@ -459,6 +490,7 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--dry-run", action="store_true", help="only load the corpus and fact sheet and count candidates; no LLM calls")
     ap.add_argument("--seed", type=int)
     ap.add_argument("--facts", type=Path, help="fact sheet (default: <interim dir>/factsheet.jsonl from `medrageval extract`)")
+    ap.add_argument("--no-messy", action="store_true", help="skip the messy question twins (config messy.enabled)")
 
 
 def run_cli(args: argparse.Namespace) -> None:
@@ -472,7 +504,8 @@ def run_cli(args: argparse.Namespace) -> None:
     targets = {t: args.per_type for t in TYPES} if args.per_type else None
     types = args.types.split(",") if args.types else None
     try:
-        report = generate_dataset(args.interim_dir, out, cfg, gen, judge, targets, types, args.seed, fcfg, args.facts)
+        report = generate_dataset(args.interim_dir, out, cfg, gen, judge, targets, types, args.seed, fcfg, args.facts,
+                                  messy=False if args.no_messy else None)
     except RuntimeError as e:
         print_report(json.loads((out / "generate_report.json").read_text()))
         raise SystemExit(f"error: {e}")

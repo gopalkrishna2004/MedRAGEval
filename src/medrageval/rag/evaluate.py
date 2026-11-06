@@ -18,6 +18,13 @@ and the context. An item with no passage left (or no judge to screen with) is
 run but not scored (`excluded`): an empty context would make its decline a
 free point.
 
+Two question settings: `clean`, the item's question as generated, and
+`messy`, its `question_messy` twin, the same question as a user would type it.
+Only what the application is asked changes (`question_asked` on the row); the
+stand-in screening, the judge and the keys work from the clean question, which
+is the intent the twin was written from. An item without a twin is asked its
+clean question under either setting and counted in `messy_missing`.
+
 Writes responses.jsonl (one row per item: the reply, the passages, the
 candidate pool, retrieval, keys, judge, outcome) and eval_report.json (per type and overall, with 95%
 bootstrap intervals), and prints the summary.
@@ -43,14 +50,18 @@ from medrageval.generate.generate import TYPES
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llm
 from medrageval.generate.prompts import withhold_check
 from medrageval.rag.judge import JUDGE_VERSION, build_judge
-from medrageval.rag.score import _numbers, agreement, norm_alnum, quote_split_pair, score_item, summarize
+from medrageval.rag.score import _numbers, agreement, holds, norm_alnum, quote_split_pair, score_item, summarize
 
 ABLATION_MODES = ("bm25", "dense", "hybrid", "hybrid+rerank")
+QUESTION_SETTINGS = ("clean", "messy")
 
 
-def load_items(dataset_dirs: list[Path], limit: int | None = None, types: list[str] | None = None) -> list[dict]:
+def load_items(dataset_dirs: list[Path], limit: int | None = None, types: list[str] | None = None, question: str = "clean") -> list[dict]:
     """Items of one or more datasets, optionally of the given types only. With several datasets, ids are prefixed by the
-    dataset directory, since each run numbers from 001."""
+    dataset directory, since each run numbers from 001. `question` picks the setting: under `messy` an item is asked its
+    `question_messy` twin (`question_asked`), when it has one."""
+    if question not in QUESTION_SETTINGS:
+        raise ValueError(f"question setting {question!r}; choose from {QUESTION_SETTINGS}")
     items = []
     for d in dataset_dirs:
         path = d / "dataset.jsonl" if d.is_dir() else d
@@ -60,6 +71,9 @@ def load_items(dataset_dirs: list[Path], limit: int | None = None, types: list[s
                 it = json.loads(line)
                 it["dataset"] = name
                 it["uid"] = f"{name}/{it['item_id']}" if len(dataset_dirs) > 1 else it["item_id"]
+                it["question_setting"] = question
+                twin = (it.get("question_messy") or {}).get("text") if question == "messy" else None
+                it["question_asked"] = twin or it["question"]
                 if not types or it["type"] in types:
                     items.append(it)
     return items[:limit] if limit else items
@@ -74,7 +88,7 @@ def gold_chunks(item: dict, chunks: list[Chunk]) -> list[Chunk]:
         q = norm_alnum(e.get("quote") or "")
         if not q:
             continue
-        holders = [c for c in chunks if q in norm_alnum(c.text)]
+        holders = [c for c in chunks if holds(q, norm_alnum(c.text))]
         out.update((c.chunk_id, c) for c in holders)
         if not holders:   # the application's chunking may cut through the quote
             pair = quote_split_pair(e, chunks)
@@ -188,13 +202,14 @@ def evaluate(items: list[dict], rag: RAG, judge, full: dict, out_dir: Path, mode
                 return {"excluded": s["excluded"]}
             fixed = s["passages"]
         try:
-            return rag.answer(it["question"], tag=f"rag:{it['uid']}", passages=fixed, mode=mode)
+            return rag.answer(it.get("question_asked") or it["question"], tag=f"rag:{it['uid']}", passages=fixed, mode=mode)
         except RagLLMError as e:
             if it is items[0]:
                 raise
             return {"error": str(e)[:300]}
 
-    print(f"answering {len(items)} questions with {rag.llm.model} ({mode or app_cfg['retrieval']['mode']}, top {app_cfg['retrieval']['top_k']}"
+    setting = items[0].get("question_setting", "clean") if items else "clean"
+    print(f"answering {len(items)} {setting} questions with {rag.llm.model} ({mode or app_cfg['retrieval']['mode']}, top {app_cfg['retrieval']['top_k']}"
           f"{', reranked' if rag.retriever.reranker else ''})")
     answers = _map(answer, items, app_cfg["llm"].get("max_workers", 4))
 
@@ -235,6 +250,8 @@ def make_row(it: dict, a: dict, judge: dict | None, patterns: list[str], speaker
     ref = {k: it[k] for k in ("answer", "answer_keys", "answer_aliases", "keypoints", "comparison") if it.get(k)}
     row = {"uid": it["uid"], "dataset": it["dataset"], "item_id": it["item_id"], "type": it["type"], "subtype": it.get("subtype"),
            "answerable": it.get("answerable", True), "question": it["question"], "reference": ref,
+           "question_setting": it.get("question_setting", "clean"),
+           "question_asked": it.get("question_asked") or it["question"],   # what the application was sent: the messy twin under that setting
            "evidence": [{"unit_id": e.get("unit_id"), "doc_id": e.get("doc_id"), "pages": e.get("pages")} for e in it.get("evidence") or []]}
     if a.get("error"):
         return {**row, "error": a["error"], "score": 0.0, "category": "error"}
@@ -284,9 +301,15 @@ def build_report(rows: list[dict], items: list[dict], rag: RAG, judge, full: dic
                  "figures": sum(1 for r in screened for s in r["screening"] if s["answers"] == "figures"),   # dropped by the figure check alone
                  "unscreened": sum(1 for r in screened for s in r["screening"] if s["answers"] == "unscreened"),
                  "passages_mean": round(sum(len(r["passages"]) for r in fixed if r.get("passages")) / len(fixed), 2) if fixed else None}
+    setting = items[0].get("question_setting", "clean") if items else "clean"
+    missing = [it["uid"] for it in items if setting == "messy" and it.get("question_asked") == it["question"]]
+    if missing:
+        warnings.append(f"{len(missing)} items have no messy twin and were asked their clean question: {', '.join(missing[:8])}{' ...' if len(missing) > 8 else ''}")
     overall = summarize(rows, n_boot, seed)
     return {
         "datasets": sorted({it["dataset"] for it in items}),
+        "question_setting": setting,   # clean: the questions as generated; messy: their twins as a user would type them
+        "messy_missing": missing,
         "items": len(rows),
         "excluded": excluded,   # items run but not scored (see `excluded` in responses.jsonl)
         "rag": {"model": rag.llm.model, "base_url": app_cfg["llm"]["base_url"], "temperature": app_cfg["llm"].get("temperature"),
@@ -320,7 +343,7 @@ def _f(x: float | None) -> str:
 
 def print_report(report: dict) -> None:
     r = report["rag"]
-    print(f"{report['items']} items from {', '.join(report['datasets'])}")
+    print(f"{report['items']} items from {', '.join(report['datasets'])}, {report.get('question_setting', 'clean')} questions")
     print(f"  RAG: {r['model']}, {r['retrieval']['mode']} top {r['retrieval']['top_k']}{' + rerank' if r['retrieval'].get('rerank') else ''} "
           f"over {r['chunks']} chunks (prompt v{r['prompt_version']}); judge: {report['judge_model'] or 'none (keys only)'}")
     k, n = r["retrieval"]["top_k"], r["retrieval"]["candidates"]
@@ -370,12 +393,14 @@ def _common(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--no-judge", action="store_true", help="score on answer keys only; no OpenRouter calls")
     ap.add_argument("--limit", type=int, help="only the first N items (smoke runs)")
     ap.add_argument("--types", help=f"comma list of item types to run, from {', '.join(TYPES)} (default: all)")
+    ap.add_argument("--question", choices=QUESTION_SETTINGS, default="clean",
+                    help="question setting: clean, as generated, or messy, the question_messy twin as a user would type it (default: clean)")
     ap.add_argument("--no-cache", action="store_true", help="ignore and do not write the response caches")
 
 
 def add_arguments(ap: argparse.ArgumentParser) -> None:
     _common(ap)
-    ap.add_argument("--out", type=Path, help="run directory (default: data/runs/<first dataset>)")
+    ap.add_argument("--out", type=Path, help="run directory (default: data/runs/<first dataset>, with -messy under that setting)")
     ap.add_argument("--mode", choices=MODES, help="retrieval mode (default: the application's retrieval.mode)")
     ap.add_argument("--top-k", type=int, help="passages shown to the model")
     ap.add_argument("--no-rerank", action="store_true", help="skip the cross-encoder")
@@ -383,9 +408,13 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
 
 def add_ablate_arguments(ap: argparse.ArgumentParser) -> None:
     _common(ap)
-    ap.add_argument("--out-root", type=Path, default=Path("data/runs/ablation"))
+    ap.add_argument("--out-root", type=Path, help="default data/runs/ablation, or data/runs/ablation-messy under that setting")
     ap.add_argument("--modes", default=",".join(ABLATION_MODES), help=f"comma list from {ABLATION_MODES}")
     ap.add_argument("--chunk-tokens", help="comma list of target chunk sizes, e.g. 256,400,512; each is ingested as its own collection")
+
+
+def _suffix(args: argparse.Namespace) -> str:
+    return "" if args.question == "clean" else f"-{args.question}"
 
 
 def _types(args: argparse.Namespace) -> list[str] | None:
@@ -434,14 +463,14 @@ def _run(items: list[dict], app: App, judge, full: dict, out: Path, mode: str, r
 
 def run_cli(args: argparse.Namespace) -> None:
     full = copy.deepcopy(load_config(args.config))
-    items = load_items(args.datasets, args.limit, _types(args))
+    items = load_items(args.datasets, args.limit, _types(args), args.question)
     if not items:
         raise SystemExit("error: no items in the given datasets")
     judge = _judge(args, full)   # before any answering: a missing key fails here, not after the RAG pass
     app = _app(args)
     mode = args.mode or app.cfg["retrieval"]["mode"]
     rerank = False if args.no_rerank else app.cfg["retrieval"].get("rerank", False)
-    out = args.out or Path("data/runs") / args.datasets[0].name
+    out = args.out or Path("data/runs") / (args.datasets[0].name + _suffix(args))
     report = _run(items, app, judge, full, out, mode, rerank)
     print_report(report)
     print(f"outputs in {out}/")
@@ -450,9 +479,10 @@ def run_cli(args: argparse.Namespace) -> None:
 def run_ablate_cli(args: argparse.Namespace) -> None:
     """Every retrieval mode (and chunk size) on the same items, each as its own run directory, with a summary table."""
     full = copy.deepcopy(load_config(args.config))
-    items = load_items(args.datasets, args.limit, _types(args))
+    items = load_items(args.datasets, args.limit, _types(args), args.question)
     if not items:
         raise SystemExit("error: no items in the given datasets")
+    args.out_root = args.out_root or Path("data/runs") / ("ablation" + _suffix(args))
     judge = _judge(args, full)
     modes = [m.strip() for m in args.modes.split(",") if m.strip()]
     for m in modes:
@@ -478,7 +508,8 @@ def run_ablate_cli(args: argparse.Namespace) -> None:
             print(f"  {label}: score {_f(o['score'])}  hit {_f(o['hit'])}  all-ev {_f(o['all_evidence'])}  MRR {_f(o['mrr'])}  "
                   f"gold_prec {_f(o['gold_prec'])}  cand {_f(o['candidate_recall'])}  faith {_f(o['faithfulness'])}")
     args.out_root.mkdir(parents=True, exist_ok=True)
-    (args.out_root / "ablation.json").write_text(json.dumps({"datasets": sorted({it['dataset'] for it in items}), "runs": summary}, indent=2))
+    (args.out_root / "ablation.json").write_text(json.dumps({"datasets": sorted({it['dataset'] for it in items}), "question_setting": args.question,
+                                                             "runs": summary}, indent=2))
     print(f"\n  {'run':22s} {'score':>5s}  {'hit':>4s}  {'all-ev':>6s}  {'recall':>6s}  {'MRR':>4s}  {'gold_prec':>9s}  {'cand':>4s}  {'keys':>4s}  {'faith':>5s}")
     for s in summary:
         print(f"  {s['run']:22s} {_f(s['score']):>5s}  {_f(s['hit']):>4s}  {_f(s['all_evidence']):>6s}  {_f(s['evidence_recall']):>6s}  "

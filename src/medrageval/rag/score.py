@@ -3,7 +3,8 @@
 The RAG under test chunks the PDF its own way, so its passages share no ids
 with the benchmark. Gold evidence is matched by page and text: a passage holds
 an evidence entry when its page span overlaps the evidence pages and the
-normalised quote (letters and digits only) is inside the passage text. A
+normalised quote (letters and digits only) is inside the passage text, whole
+or interrupted once by a running header the parse left at a page break. A
 passage that merely overlaps the pages is recorded as `page_only` and never
 counts as a hit; a quote found across two passages adjacent in the document
 counts, and is recorded as `quote_split`.
@@ -39,12 +40,36 @@ VERDICT_SCORE = {"correct": 1.0, "partial": 0.5, "incorrect": 0.0, "abstained": 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 _DIGITS = re.compile(r"\D")
 # The benchmark prints a redacted value as [REDACTED]; the PDF (and so the application) prints the redactor's placeholder,
-# a run of x's or asterisks. Both vanish before matching, so a table row matches whichever way the gap is written.
-_REDACTION = re.compile(r"\[redacted\]|(?<![a-z0-9])[x*]{3,}(?![a-z0-9])")
+# a run of x's or asterisks, as short as two ("xx OS events"). Both vanish before matching, so a table row matches
+# whichever way the gap is written.
+_REDACTION = re.compile(r"\[redacted\]|(?<![a-z0-9])[x*]{2,}(?![a-z0-9])")
+# A running header or footer the PDF parse leaves in the middle of a sentence at a page break is at most this long once
+# normalised; a quote may be interrupted by one such insertion and still count.
+INSERT_MAX = 300
+_HEAD = 20
 
 
 def norm_alnum(text: str) -> str:
     return _NON_ALNUM.sub("", _REDACTION.sub(" ", (text or "").lower()))
+
+
+def holds(q: str, text: str) -> bool:
+    """Normalised quote `q` inside normalised `text`, whole or interrupted once by up to INSERT_MAX characters."""
+    if not q:
+        return False
+    if q in text:
+        return True
+    if len(q) < 2 * _HEAD:
+        return False
+    i = text.find(q[:_HEAD])
+    while i >= 0:
+        k = _HEAD
+        while k < len(q) and text.startswith(q[k], i + k):   # the part of the quote before the insertion
+            k += 1
+        if k <= len(q) - _HEAD and text.find(q[k:], i + k, i + k + INSERT_MAX + len(q) - k) >= 0:
+            return True
+        i = text.find(q[:_HEAD], i + 1)
+    return False
 
 
 def pages_overlap(pages, chunk: Chunk) -> bool:
@@ -58,8 +83,7 @@ def quote_match(ev: dict, chunk: Chunk) -> str | None:
     """'quote' when the passage is on the evidence pages and holds its quote; 'page' when only the pages overlap; None otherwise."""
     if not pages_overlap(ev.get("pages"), chunk):
         return None
-    q = norm_alnum(ev.get("quote") or "")
-    if q and q in norm_alnum(chunk.text):
+    if holds(norm_alnum(ev.get("quote") or ""), norm_alnum(chunk.text)):
         return "quote"
     return "page" if ev.get("pages") else None
 
@@ -80,7 +104,7 @@ def quote_split_pair(ev: dict, passages: list[Chunk]) -> tuple[int, int] | None:
     for i, j in zip(by_id, by_id[1:]):
         a, b = passages[i], passages[j]
         if _adjacent(a, b) and (pages_overlap(ev.get("pages"), a) or pages_overlap(ev.get("pages"), b)) \
-                and q in norm_alnum(a.text) + norm_alnum(b.body):   # b's header line would sit between the two halves
+                and holds(q, norm_alnum(a.text) + norm_alnum(b.body)):   # b's header line would sit between the two halves
             return (i, j)
     return None
 
@@ -158,15 +182,27 @@ def _stem(t: str) -> str:
     return t[:5] if t.isalpha() else t
 
 
+_WORD_HYPHEN = re.compile(r"(?<=[A-Za-z])-(?=[A-Za-z])")
+
+
+def _joined(text: str) -> str:
+    """A hyphenated word is spelled either way ("log-normal", "lognormal"); number ranges keep their dash."""
+    return _WORD_HYPHEN.sub("", text)
+
+
 def key_found(key: str, text: str) -> bool:
     """The key, verbatim up to punctuation and case; or all of its numbers; or, for a phrase, all its words up to their endings."""
-    if contains_quote(key, text):
+    spellings = ((key, text), (_joined(key), _joined(text)))
+    if any(contains_quote(k, t) for k, t in spellings):
         return True
     nums = _numbers(key)
     if nums:
         return nums <= _numbers(text)
-    words = {_stem(t) for t in tokenize(key) if len(t) >= 3}
-    return bool(words) and words <= {_stem(t) for t in tokenize(text)}
+    for k, t in spellings:
+        words = {_stem(w) for w in tokenize(k) if len(w) >= 3}
+        if words and words <= {_stem(w) for w in tokenize(t)}:
+            return True
+    return False
 
 
 def is_abstention(text: str, patterns: list[str]) -> bool:

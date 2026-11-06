@@ -117,6 +117,7 @@ uv run medrageval generate data/interim/ta1063               # full run: 146 ite
 
 Outputs:
 - `dataset.jsonl`: one item per line, with the facts it was written from, its group, its evidence and `also_in`. An unanswerable item also carries `source_item_id`, `withheld` (the answer, keys and evidence taken away) and `distractors` (the passages it is read with), plus the screening verdict on every candidate passage.
+- Every item also carries `question_messy`, the **second question setting**: the same question as a real user would type it. The generator rewrites the clean question in one to three user habits picked by the seed (informal, shorthand, lay terms, keyword query, statement, non-native grammar, rambling, vague), with a severity (light, medium, heavy) that also sets how much surface noise code then adds: typos, lower case, dropped punctuation. Numbers are never altered. Nothing checks the rewrite: the setting measures what sloppy wording costs, and a rewrite that drifts is part of that cost. The field holds `text` (what is asked), `rewrite` (before the surface noise), `severity`, `persona`, `habits` and `surface`; an unanswerable item copies its source item's twin. `--no-messy` or `messy.enabled: false` skips the pass; `generate_report.json` has the mix under `messy`.
 - `rejects.jsonl`: every rejected candidate, with the reason.
 - `generate_report.json`: counts per type, group and reason, fact-sheet stats and LLM usage.
 
@@ -129,8 +130,11 @@ in proportion to their weights, so the topic mix follows what matters rather
 than page count. The weights hold over the whole dataset: each type continues
 the group rotation from what earlier types accepted, so a group one type
 cannot supply (multi-hop links mostly reach cost-effectiveness results) is
-made up by the others. The report's `group_mix` lists answerable items per
-group against the weights' targets.
+made up by the others. One bridge fact carries at most
+`multihop.max_per_bridge` items, so a bundle with few describable bridges
+gives fewer multi-hop items rather than the same hop asked five ways. The
+report's `group_mix` lists answerable items per group against the weights'
+targets.
 
 | Type | Built from | Checks before the LLM judge |
 |---|---|---|
@@ -248,6 +252,7 @@ uv run medrageval eval data/datasets/ta1063_smoke_v19b --out data/runs/smoke    
 uv run medrageval eval data/datasets/ta1063_smoke_v19b --no-judge --mode bm25           # keys only, no OpenRouter calls
 uv run medrageval eval data/datasets/ta1063 --types unanswerable --out data/runs/unans   # one type only (the rest are cached anyway)
 uv run medrageval ablate data/datasets/ta1063_smoke_v19b --chunk-tokens 256,400,512     # every mode x chunk size, summary table
+uv run medrageval eval data/datasets/ta1063 --question messy                             # the user-typed twins, into data/runs/ta1063-messy
 ```
 
 `eval` builds the application from `configs/rag.yaml` (`--rag-config`) and asks
@@ -261,10 +266,22 @@ size) into `data/runs/ablation/<run>/` with a summary table in `ablation.json`.
 Whether hybrid beats BM25 is a result of that table, not a precondition of
 anything.
 
+**Two question settings.** `--question clean` (default) asks each item's
+question as generated; `--question messy` asks its `question_messy` twin, the
+same question as a user would type it. Only what the application is sent
+changes (`question_asked` on each row): the stand-in screening, the judge and
+the keys work from the clean question, which is the intent the twin was written
+from, so the two runs are paired item for item and their difference is what
+sloppy wording costs. The default run directory gets a `-messy` suffix, the
+report records `question_setting`, and an item without a twin is asked its
+clean question and listed under `messy_missing`.
+
 **Gold evidence is matched by page and text**, since the application's chunks
 share no ids with the benchmark: a passage holds an evidence entry when its page
 span overlaps the evidence pages and the normalised quote (letters and digits
-only) is inside the passage text. A passage that merely overlaps the pages is
+only; a redaction placeholder of any length matches `[REDACTED]`) is inside the
+passage text, whole or interrupted once by a running header the PDF parse left
+at a page break. A passage that merely overlaps the pages is
 counted as `page_only` and never credited; a quote found across two passages
 adjacent in the document is credited and counted as `quote_split`. Both counts
 are in the report under `evidence_matching`.
