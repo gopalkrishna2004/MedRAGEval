@@ -7,10 +7,16 @@ that is down stops the run before the rest are sent); then the judge on
 OpenRouter grades each answer against the item and the passages shown. Both
 are cached, so rescoring after a judge change makes no answering calls.
 
-Unanswerable items are the exception to the application's independence: they
-are read over the benchmark's stored distractors, mapped to the application's
-chunks by page and text overlap (`distractor_passages`), with any chunk that
-holds the withheld evidence dropped, so the evidence is certainly absent.
+Unanswerable items are read over stand-in passages instead of a search
+(`standin_passages`): the application's chunks that hold the withheld quotes
+are found, the application's own retrieval is asked for the chunks nearest to
+each of them, the gold chunks are removed, and the judge screens the rest
+against the question and the withheld answer in one call; the first `top_k`
+that it finds do not answer are the context. The reader is thereby screened on
+exactly the text it is shown, so no string rule stands between the screening
+and the context. An item with no passage left (or no judge to screen with) is
+run but not scored (`excluded`): an empty context would make its decline a
+free point.
 
 Writes responses.jsonl (one row per item: the reply, the passages, the
 candidate pool, retrieval, keys, judge, outcome) and eval_report.json (per type and overall, with 95%
@@ -35,14 +41,16 @@ from medrag.retrieve import MODES
 from medrageval.config import load_config
 from medrageval.generate.generate import TYPES
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llm
+from medrageval.generate.prompts import withhold_check
 from medrageval.rag.judge import JUDGE_VERSION, build_judge
-from medrageval.rag.score import agreement, key_found, norm_alnum, pages_overlap, score_item, summarize
+from medrageval.rag.score import _numbers, agreement, norm_alnum, quote_split_pair, score_item, summarize
 
 ABLATION_MODES = ("bm25", "dense", "hybrid", "hybrid+rerank")
 
 
-def load_items(dataset_dirs: list[Path], limit: int | None = None) -> list[dict]:
-    """Items of one or more datasets. With several, ids are prefixed by the dataset directory, since each run numbers from 001."""
+def load_items(dataset_dirs: list[Path], limit: int | None = None, types: list[str] | None = None) -> list[dict]:
+    """Items of one or more datasets, optionally of the given types only. With several datasets, ids are prefixed by the
+    dataset directory, since each run numbers from 001."""
     items = []
     for d in dataset_dirs:
         path = d / "dataset.jsonl" if d.is_dir() else d
@@ -52,80 +60,98 @@ def load_items(dataset_dirs: list[Path], limit: int | None = None) -> list[dict]
                 it = json.loads(line)
                 it["dataset"] = name
                 it["uid"] = f"{name}/{it['item_id']}" if len(dataset_dirs) > 1 else it["item_id"]
-                items.append(it)
+                if not types or it["type"] in types:
+                    items.append(it)
     return items[:limit] if limit else items
 
 
-def interim_dir(items: list[dict], override: Path | None) -> Path | None:
-    """The benchmark's parse output the datasets came from (for the unit texts of distractors), if it is on disk."""
-    if override:
-        return override
-    dirs = {it.get("provenance", {}).get("interim_dir") for it in items} - {None}
-    if len(dirs) == 1 and Path(next(iter(dirs))).exists():
-        return Path(dirs.pop())
-    return None
+def gold_chunks(item: dict, chunks: list[Chunk]) -> list[Chunk]:
+    """The application's chunks that hold a withheld quote, on any page (a table copied into another document counts),
+    plus both halves of a quote split across two adjacent chunks."""
+    evidence = (item.get("withheld") or {}).get("evidence") or []
+    out: dict[str, Chunk] = {}
+    for e in evidence:
+        q = norm_alnum(e.get("quote") or "")
+        if not q:
+            continue
+        holders = [c for c in chunks if q in norm_alnum(c.text)]
+        out.update((c.chunk_id, c) for c in holders)
+        if not holders:   # the application's chunking may cut through the quote
+            pair = quote_split_pair(e, chunks)
+            if pair:
+                out.update((chunks[i].chunk_id, chunks[i]) for i in pair)
+    return list(out.values())
 
 
-def load_unit_texts(interim: Path | None) -> dict[str, str]:
-    """element id -> plain text, from the benchmark's element store. A row group "e0034#r02" maps to its element's text."""
-    if not interim or not (interim / "elements.jsonl").exists():
-        return {}
-    out = {}
-    for line in (interim / "elements.jsonl").open():
-        if line.strip():
-            e = json.loads(line)
-            out[e["element_id"]] = e.get("plain") or e.get("text") or ""
-    return out
+def render_chunk(c: Chunk, max_chars: int) -> str:
+    """A chunk for the screening judge: its id in brackets, where it is from, and its body cut at a line boundary."""
+    section = " > ".join(" ".join(h.split())[:80] for h in c.heading_path[-3:]) or "-"
+    body = c.body
+    if len(body) > max_chars:
+        cut = body.rfind("\n", 0, max_chars)
+        body = body[: cut if cut > max_chars // 2 else max_chars] + "\n[...]"
+    return f"[{c.chunk_id}] Document: {c.document_title or '-'} | Section: {section} | Pages: {c.page_start}-{c.page_end}\n{body}"
 
 
-def _shingles(text: str, n: int = 12, step: int = 4) -> set[str]:
-    t = norm_alnum(text)
-    return {t[i:i + n] for i in range(0, max(1, len(t) - n + 1), step)} if len(t) >= n else ({t} if t else set())
+def withheld_figures(keys: list[str]) -> set[float]:
+    """The figures a stand-in must not state, when the withheld keys carry specific numbers: a decimal, a number of 100 or
+    more, or two or more numbers together. A lone small integer ("phase 3 trial", "10 RCTs") or a key without numbers
+    ("company") sets none, since those digits mark nothing."""
+    nums: set[float] = set()
+    for k in keys:
+        nums |= _numbers(k)
+    if len(nums) >= 2 or any(n != int(n) or n >= 100 for n in nums):
+        return nums
+    return set()
 
 
-def unit_chunks(d: dict, chunks: list[Chunk], unit_texts: dict[str, str], min_overlap: float, per_unit: int) -> list[Chunk]:
-    """The application's chunks standing for one benchmark unit: on its pages, ranked by shared text when the unit's
-    text is known, else holding its caption, else the first chunks of the page."""
-    on_pages = [c for c in chunks if pages_overlap(d.get("pages"), c)]
-    if not on_pages:
-        return []
-    text = unit_texts.get(str(d.get("unit_id", "")).split("#")[0]) or unit_texts.get(str(d.get("element_id", "")))
-    if text:
-        sh = _shingles(text)
-        if sh:
-            scored = sorted(((len(sh & _shingles(c.text, step=1)) / len(sh), c) for c in on_pages), key=lambda x: -x[0])
-            return [c for s, c in scored[:per_unit] if s >= min_overlap]
-    cap = norm_alnum(d.get("caption") or "")
-    if cap:
-        with_cap = [c for c in on_pages if cap in norm_alnum(c.text)]
-        if with_cap:
-            return with_cap[:per_unit]
-    return on_pages[:per_unit]
+def standin_passages(item: dict, rag: RAG, screener, ecfg: dict, top_k: int, mode: str | None = None) -> dict:
+    """The context an unanswerable item is read over, from the application's own chunks.
 
-
-def distractor_passages(item: dict, chunks: list[Chunk], unit_texts: dict[str, str], ecfg: dict, top_k: int) -> tuple[list[Chunk], int]:
-    """(passages, unmapped): the stored distractors as application chunks, minus any holding the withheld evidence."""
+    The chunks nearest to each gold chunk by the application's retrieval (`standin_search_k` each, the gold chunks
+    removed; the withheld quotes are the queries when no chunk holds them) are screened by the judge against the
+    question and the withheld answer in one call; the first `top_k` it finds do not answer are the passages. A chunk that
+    states every withheld figure (`withheld_figures`) is dropped whatever the judge said ("figures"): the judge has passed
+    a value sitting in row 30 of a long table.
+    Returns {"passages", "gold", "screening", "excluded"}: `excluded` is the reason when no passage is left."""
     withheld = item.get("withheld") or {}
-    quotes = [norm_alnum(e.get("quote") or "") for e in withheld.get("evidence") or [] if e.get("quote")]
-    keys = [str(k) for k in withheld.get("answer_keys") or []]
-    out: list[Chunk] = []
-    seen: set[str] = set()
-    unmapped = 0
-    for d in item.get("distractors") or []:
-        cs = unit_chunks(d, chunks, unit_texts, ecfg.get("distractor_min_overlap", 0.3), ecfg.get("distractor_chunks_per_unit", 2))
-        if not cs:
-            unmapped += 1
-        for c in cs:
-            if c.chunk_id in seen:
-                continue
-            seen.add(c.chunk_id)
-            t = norm_alnum(c.text)
-            if any(q and q in t for q in quotes) or (keys and all(key_found(k, c.text) for k in keys)):
-                continue
-            out.append(c)
-        if len(out) >= top_k:
-            break
-    return out[:top_k], unmapped
+    gold = gold_chunks(item, rag.retriever.chunks)
+    gold_ids = {c.chunk_id for c in gold}
+    queries = [c.text for c in gold] or [e["quote"] for e in withheld.get("evidence") or [] if e.get("quote")] or [item["question"]]
+    k = ecfg.get("standin_search_k", 10)
+    ranked = [[h.chunk for h in rag.retriever.search(q, mode, k, rerank=False)] for q in queries]
+    pool: dict[str, Chunk] = {}
+    for i in range(k):   # interleaved, so every gold chunk's neighbours are represented when the pool is cut
+        for r in ranked:
+            if i < len(r) and r[i].chunk_id not in gold_ids:
+                pool.setdefault(r[i].chunk_id, r[i])
+    candidates = list(pool.values())[:ecfg.get("standin_candidates", 12)]
+    result = {"passages": [], "gold": [c.chunk_id for c in gold], "screening": [], "excluded": None}
+    if not candidates:
+        result["excluded"] = "no candidate chunk near the withheld evidence"
+        return result
+    def screen(chunks: list[Chunk], tag: str) -> dict[str, dict]:
+        shown = "\n\n".join(render_chunk(c, ecfg.get("standin_max_chars", 6000)) for c in chunks)
+        check = screener.complete_json(withhold_check(shown, item["question"], str(withheld.get("answer") or ""), rag.topic, "chunk_id", every_entry=True), tag)
+        return {str(r.get("chunk_id")): r for r in (check.get("results") or []) if isinstance(r, dict)}
+
+    verdicts = screen(candidates, f"screen:{item['uid']}")
+    if missing := [c for c in candidates if c.chunk_id not in verdicts]:   # the judge has listed only the passages it found answering
+        verdicts.update(screen(missing, f"screen2:{item['uid']}"))
+    figures = withheld_figures([str(k) for k in withheld.get("answer_keys") or []])
+    for c in candidates:
+        r = verdicts.get(c.chunk_id, {})
+        verdict = str(r.get("answers") or "unscreened")
+        if figures and figures <= _numbers(c.text):
+            verdict = "figures"
+        result["screening"].append({"chunk_id": c.chunk_id, "answers": verdict, "answer_if_any": r.get("answer_if_any")})
+        if verdict == "no" and len(result["passages"]) < top_k:
+            result["passages"].append(c)
+    if not result["passages"]:
+        unscreened = sum(s["answers"] == "unscreened" for s in result["screening"])
+        result["excluded"] = ("the judge gave no verdict on any candidate chunk near the withheld evidence" if unscreened == len(candidates) else
+                              f"every candidate chunk near the withheld evidence was screened as answering ({unscreened} left unscreened)")
+    return result
 
 
 def _map(fn, xs: list, workers: int) -> list:
@@ -137,20 +163,30 @@ def _map(fn, xs: list, workers: int) -> list:
         return [first] + list(pool.map(fn, xs[1:]))
 
 
-def evaluate(items: list[dict], rag: RAG, judge, full: dict, out_dir: Path, unit_texts: dict[str, str] | None = None,
-             mode: str | None = None) -> dict:
+def evaluate(items: list[dict], rag: RAG, judge, full: dict, out_dir: Path, mode: str | None = None) -> dict:
     rcfg, ecfg = full["rag"], full["rag"]["eval"]
     patterns, speakers = ecfg["abstain_patterns"], full["generate"]["attribution"]["speakers"]
-    unit_texts = unit_texts or {}
     app_cfg = rag.cfg
     t0 = time.time()
     out_dir.mkdir(parents=True, exist_ok=True)
-    unmapped: dict[str, int] = {}
+    standins: dict[str, dict] = {}
 
     def answer(it: dict) -> dict:
         fixed = None
-        if it.get("distractors") and not it.get("answerable", True):
-            fixed, unmapped[it["uid"]] = distractor_passages(it, rag.retriever.chunks, unit_texts, ecfg, app_cfg["retrieval"]["top_k"])
+        if it.get("withheld") and not it.get("answerable", True):   # read over stand-ins, not a search
+            if judge is None:
+                return {"excluded": "stand-in passages need the judge to screen them (run without --no-judge)"}
+            try:
+                s = standins[it["uid"]] = standin_passages(it, rag, judge, ecfg, app_cfg["retrieval"]["top_k"], mode)
+            except LLMJsonError as e:
+                return {"excluded": f"screening gave no verdict: {str(e)[:200]}"}
+            except LLMError as e:
+                if it is items[0]:
+                    raise
+                return {"error": str(e)[:300]}
+            if s["excluded"]:   # an empty context makes a decline certain: a free point, so the item is not scored
+                return {"excluded": s["excluded"]}
+            fixed = s["passages"]
         try:
             return rag.answer(it["question"], tag=f"rag:{it['uid']}", passages=fixed, mode=mode)
         except RagLLMError as e:
@@ -164,7 +200,7 @@ def evaluate(items: list[dict], rag: RAG, judge, full: dict, out_dir: Path, unit
 
     def grade(pair: tuple[dict, dict]) -> dict | None:
         it, a = pair
-        if judge is None or a.get("error"):
+        if judge is None or a.get("error") or a.get("excluded"):
             return None
         try:
             return judge.complete_json(build_judge(it, a["answer"], a["passages"], rag.topic, rcfg["judge"]["max_chars_per_passage"]),
@@ -186,8 +222,8 @@ def evaluate(items: list[dict], rag: RAG, judge, full: dict, out_dir: Path, unit
             row = make_row(it, a, j if j and not j.get("error") else None, patterns, speakers)
             if j and j.get("error"):
                 row["judge_error"] = j["error"]
-            if it["uid"] in unmapped:
-                row["distractors_unmapped"] = unmapped[it["uid"]]
+            if s := standins.get(it["uid"]):
+                row["gold_chunks"], row["screening"] = s["gold"], s["screening"]
             rows.append(row)
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     report = build_report(rows, items, rag, judge, full, time.time() - t0, mode)
@@ -202,6 +238,8 @@ def make_row(it: dict, a: dict, judge: dict | None, patterns: list[str], speaker
            "evidence": [{"unit_id": e.get("unit_id"), "doc_id": e.get("doc_id"), "pages": e.get("pages")} for e in it.get("evidence") or []]}
     if a.get("error"):
         return {**row, "error": a["error"], "score": 0.0, "category": "error"}
+    if a.get("excluded"):
+        return {**row, "context": "fixed", "excluded": a["excluded"], "score": None, "category": "excluded", "passages": []}
     candidates = a.get("candidates")
     scored = score_item(it, a["answer"], a["passages"], judge, patterns, speakers, candidates)
     return {**row, "response": a["answer"], "context": a.get("context", "retrieved"), **scored, "judge": judge,
@@ -216,6 +254,8 @@ def build_report(rows: list[dict], items: list[dict], rag: RAG, judge, full: dic
     rcfg, ecfg = full["rag"], full["rag"]["eval"]
     app_cfg = rag.cfg
     n_boot, seed = ecfg["bootstrap"], ecfg["seed"]
+    excluded = [r["uid"] for r in rows if r.get("excluded")]
+    all_rows, rows = rows, [r for r in rows if not r.get("excluded")]   # summaries are over the items actually scored
     by_type = defaultdict(list)
     for r in rows:
         by_type[r["type"]].append(r)
@@ -232,15 +272,23 @@ def build_report(rows: list[dict], items: list[dict], rag: RAG, judge, full: dic
     if empties := sum(1 for r in rows if r.get("response") == ""):
         warnings.append(f"{empties} replies were empty after a retry (scored as declines; see `usage.finish_reason`): the answering model "
                         f"may be spending max_tokens on reasoning")
-    fixed = [r for r in rows if r.get("context") == "fixed"]
-    if empty := sum(1 for r in fixed if not r.get("passages")):
-        warnings.append(f"{empty} unanswerable items had no distractor chunk left after dropping those holding the evidence")
-    if unmapped := sum(r.get("distractors_unmapped", 0) for r in rows):
-        warnings.append(f"{unmapped} stored distractors mapped to no chunk of the application (see `distractors_unmapped`)")
+    fixed = [r for r in all_rows if r.get("context") == "fixed"]
+    if excluded:
+        warnings.append(f"{len(excluded)} unanswerable items not scored (see `excluded` in responses.jsonl): {', '.join(excluded)}")
+    screened = [r for r in all_rows if r.get("screening")]
+    if no_gold := [r["uid"] for r in screened if not r.get("gold_chunks")]:
+        warnings.append(f"{len(no_gold)} unanswerable items had no chunk holding a withheld quote; the quotes were the search queries: {', '.join(no_gold)}")
+    screening = {"items": len(screened),
+                 "candidates": sum(len(r["screening"]) for r in screened),
+                 "answers": sum(1 for r in screened for s in r["screening"] if s["answers"] in ("yes", "partly")),
+                 "figures": sum(1 for r in screened for s in r["screening"] if s["answers"] == "figures"),   # dropped by the figure check alone
+                 "unscreened": sum(1 for r in screened for s in r["screening"] if s["answers"] == "unscreened"),
+                 "passages_mean": round(sum(len(r["passages"]) for r in fixed if r.get("passages")) / len(fixed), 2) if fixed else None}
     overall = summarize(rows, n_boot, seed)
     return {
         "datasets": sorted({it["dataset"] for it in items}),
         "items": len(rows),
+        "excluded": excluded,   # items run but not scored (see `excluded` in responses.jsonl)
         "rag": {"model": rag.llm.model, "base_url": app_cfg["llm"]["base_url"], "temperature": app_cfg["llm"].get("temperature"),
                 "embedding_model": app_cfg["embedding"]["model"] if rag.retriever.embedder else None,
                 "reranker": rag.retriever.reranker.model if rag.retriever.reranker else None,
@@ -249,14 +297,14 @@ def build_report(rows: list[dict], items: list[dict], rag: RAG, judge, full: dic
                 "prompt_version": PROMPT_VERSION, "config": app_cfg.get("_path")},
         "judge_model": judge.model if judge is not None else None,
         "judge_version": JUDGE_VERSION,
-        "fixed_context_items": len(fixed),   # unanswerable items read with their stored distractors, not a search
+        "fixed_context_items": len(fixed),   # unanswerable items read over screened stand-in passages, not a search
+        "standin_screening": screening,       # candidates near the withheld evidence, and how many the judge found answering
         "overall": overall,
         "answerable": summarize([r for r in rows if r["answerable"]], n_boot, seed),
         "unanswerable": summarize([r for r in rows if not r["answerable"]], n_boot, seed),
         "per_type": {t: summarize(by_type[t], n_boot, seed) for t in TYPES if by_type.get(t)},
         "agreement": agreement(rows),
-        "evidence_matching": {"page_only": overall["evidence_page_only"], "quote_split": overall["evidence_quote_split"],
-                              "distractors_unmapped": sum(r.get("distractors_unmapped", 0) for r in rows)},
+        "evidence_matching": {"page_only": overall["evidence_page_only"], "quote_split": overall["evidence_quote_split"]},
         "usage": {"prompt_tokens_max": max(prompt_tokens, default=0),
                   "prompt_tokens_mean": round(sum(prompt_tokens) / len(prompt_tokens)) if prompt_tokens else 0,
                   "latency_s_mean": round(sum(latencies) / len(latencies), 2) if latencies else None},
@@ -294,9 +342,11 @@ def print_report(report: dict) -> None:
     if o["keypoint_completeness"] is not None:
         print(f"  summaries: keypoints covered {o['keypoint_completeness']:.2f}, contradicted {o['keypoint_hallucination']:.2f}")
     print("  outcomes: " + ", ".join(f"{k} {v}" for k, v in sorted(o["categories"].items(), key=lambda kv: -kv[1])))
-    em = report["evidence_matching"]
-    print(f"  evidence matching: {em['page_only']} page-only (not credited), {em['quote_split']} split across adjacent passages, "
-          f"{em['distractors_unmapped']} distractors unmapped")
+    em, sc = report["evidence_matching"], report["standin_screening"]
+    print(f"  evidence matching: {em['page_only']} page-only (not credited), {em['quote_split']} split across adjacent passages")
+    if sc["items"]:
+        print(f"  stand-ins: {sc['items']} unanswerable items, {sc['candidates']} candidate chunks screened, {sc['answers']} dropped as answering, "
+              f"{sc['figures']} for stating the withheld figures, {sc['unscreened']} unscreened; {sc['passages_mean']} passages shown on average")
     ag = report["agreement"]
     if ag["items"]:
         print(f"  judge vs keys: agree on {ag['agree']:.2f} of {ag['items']} items; keys only: {ag['keys_only'] or '-'}; judge only: {ag['judge_only'] or '-'}")
@@ -314,12 +364,12 @@ def _common(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("datasets", type=Path, nargs="+", help="dataset directories (or dataset.jsonl files) from `medrageval generate`")
     ap.add_argument("--config", type=Path, help="benchmark config (judge, scoring); default configs/default.yaml")
     ap.add_argument("--rag-config", type=Path, help="the application's config; default configs/rag.yaml")
-    ap.add_argument("--interim", type=Path, help="benchmark parse output with elements.jsonl, for mapping distractors (default: the datasets' provenance)")
     ap.add_argument("--model", help="answering model id on the vLLM server (default: the application's llm.model)")
     ap.add_argument("--base-url", help="the answering server (default: the application's llm.base_url)")
     ap.add_argument("--judge-model", help="OpenRouter model id for the judge (default: rag.judge.model, else generate.model)")
     ap.add_argument("--no-judge", action="store_true", help="score on answer keys only; no OpenRouter calls")
     ap.add_argument("--limit", type=int, help="only the first N items (smoke runs)")
+    ap.add_argument("--types", help=f"comma list of item types to run, from {', '.join(TYPES)} (default: all)")
     ap.add_argument("--no-cache", action="store_true", help="ignore and do not write the response caches")
 
 
@@ -336,6 +386,14 @@ def add_ablate_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--out-root", type=Path, default=Path("data/runs/ablation"))
     ap.add_argument("--modes", default=",".join(ABLATION_MODES), help=f"comma list from {ABLATION_MODES}")
     ap.add_argument("--chunk-tokens", help="comma list of target chunk sizes, e.g. 256,400,512; each is ingested as its own collection")
+
+
+def _types(args: argparse.Namespace) -> list[str] | None:
+    types = [t.strip() for t in args.types.split(",") if t.strip()] if args.types else None
+    for t in types or []:
+        if t not in TYPES:
+            raise SystemExit(f"error: unknown type {t!r}; choose from {TYPES}")
+    return types
 
 
 def _app(args: argparse.Namespace, chunk_tokens: int | None = None) -> App:
@@ -363,11 +421,11 @@ def _judge(args: argparse.Namespace, full: dict):
         raise SystemExit(f"error: {e} (the judge runs on OpenRouter; --no-judge scores on keys only)")
 
 
-def _run(items: list[dict], app: App, judge, full: dict, out: Path, unit_texts: dict, mode: str, rerank: bool) -> dict:
+def _run(items: list[dict], app: App, judge, full: dict, out: Path, mode: str, rerank: bool) -> dict:
     try:
         rag = app.rag(mode, rerank)
         print(f"{rag.retriever.collection}: {len(rag.retriever.chunks)} chunks")
-        return evaluate(items, rag, judge, full, out, unit_texts, mode)
+        return evaluate(items, rag, judge, full, out, mode)
     except (RagLLMError, RuntimeError) as e:
         raise SystemExit(f"error: {e}\n(check the answering server at {app.cfg['llm']['base_url']}, the database, and that `medrag ingest` has run)")
     except LLMError as e:
@@ -376,16 +434,15 @@ def _run(items: list[dict], app: App, judge, full: dict, out: Path, unit_texts: 
 
 def run_cli(args: argparse.Namespace) -> None:
     full = copy.deepcopy(load_config(args.config))
-    items = load_items(args.datasets, args.limit)
+    items = load_items(args.datasets, args.limit, _types(args))
     if not items:
         raise SystemExit("error: no items in the given datasets")
-    unit_texts = load_unit_texts(interim_dir(items, args.interim))
     judge = _judge(args, full)   # before any answering: a missing key fails here, not after the RAG pass
     app = _app(args)
     mode = args.mode or app.cfg["retrieval"]["mode"]
     rerank = False if args.no_rerank else app.cfg["retrieval"].get("rerank", False)
     out = args.out or Path("data/runs") / args.datasets[0].name
-    report = _run(items, app, judge, full, out, unit_texts, mode, rerank)
+    report = _run(items, app, judge, full, out, mode, rerank)
     print_report(report)
     print(f"outputs in {out}/")
 
@@ -393,10 +450,9 @@ def run_cli(args: argparse.Namespace) -> None:
 def run_ablate_cli(args: argparse.Namespace) -> None:
     """Every retrieval mode (and chunk size) on the same items, each as its own run directory, with a summary table."""
     full = copy.deepcopy(load_config(args.config))
-    items = load_items(args.datasets, args.limit)
+    items = load_items(args.datasets, args.limit, _types(args))
     if not items:
         raise SystemExit("error: no items in the given datasets")
-    unit_texts = load_unit_texts(interim_dir(items, args.interim))
     judge = _judge(args, full)
     modes = [m.strip() for m in args.modes.split(",") if m.strip()]
     for m in modes:
@@ -413,7 +469,7 @@ def run_ablate_cli(args: argparse.Namespace) -> None:
             label = f"{'t' + str(size) + '-' if size else ''}{m}"
             mode, rerank = (m.split("+")[0], "+rerank" in m)
             app._retriever = None   # a fresh retriever per mode (embedder / reranker as the mode needs)
-            report = _run(items, app, judge, full, args.out_root / label, unit_texts, mode, rerank)
+            report = _run(items, app, judge, full, args.out_root / label, mode, rerank)
             o = report["overall"]
             summary.append({"run": label, "chunk_tokens": size, "mode": mode, "rerank": rerank, **{k: o[k] for k in
                             ("items", "score", "ci95", "hit", "all_evidence", "evidence_recall", "mrr", "gold_prec",

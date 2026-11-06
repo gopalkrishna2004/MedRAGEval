@@ -316,16 +316,23 @@ def build_rewrite(messages: list[dict], raw: dict, feedback: list[str]) -> list[
 
 def build_withhold_check(question: str, answer: str, passages: list[Unit], corpus: Corpus, max_chars: int = 1500) -> list[dict]:
     """Every candidate distractor against the question and the answer it must not give, all in one call."""
-    shown = "\n\n".join(corpus.render(u, max_chars) for u in passages)
+    return withhold_check("\n\n".join(corpus.render(u, max_chars) for u in passages), question, answer, corpus.topic)
+
+
+def withhold_check(shown: str, question: str, answer: str, topic: str, id_key: str = "unit_id", every_entry: bool = False) -> list[dict]:
+    """The screening prompt over already rendered passages, each headed by its id in brackets. The evaluator uses it on
+    the application's chunks (`id_key` "chunk_id", `every_entry` set: a passage without an entry cannot be shown, and the
+    judge has been seen to list only the passages it found answering); the generator on benchmark units."""
+    note = " Include an entry for every passage, those that do not answer as well: a passage without an entry is discarded." if every_entry else ""
     return [
         {"role": "system", "content":
-            f"You screen passages retrieved from the documents of one health technology appraisal (\"{corpus.topic}\"). "
+            f"You screen passages retrieved from the documents of one health technology appraisal (\"{topic}\"). "
             "A question and its correct answer are given; the evidence that answer rests on has been removed. For each passage, decide whether a reader holding it could answer the question. "
-            'Return only a JSON object: {"results": [{"unit_id": str, "answers": "yes" | "partly" | "no", "answer_if_any": str | null}, ...]} with one entry per passage, in order, using the id shown in brackets. '
+            f'Return only a JSON object: {{"results": [{{"{id_key}": str, "answers": "yes" | "partly" | "no", "answer_if_any": str | null}}, ...]}} with one entry per passage, in order, using the id shown in brackets. '
             "\"yes\" means the passage states the answer, or the answer follows directly from what it states; "
             "\"partly\" means it gives part of the answer (one of several values asked for), or a value a reader might take for the answer without being able to tell; "
             "\"no\" means a reader holding it would not get the answer: it says nothing about the question, or gives a related fact (another arm, data cut, population, scenario, document or measure) that is clearly not what is asked. "
             "Judge from the passages' own words, never from what you know. "
-            f"(prompt version {PROMPT_VERSION})"},
+            f"(prompt version {PROMPT_VERSION}){note}"},
         {"role": "user", "content": f"Question: {question}\nCorrect answer (withheld from the system under test): {answer}\n\nPassages:\n{shown}"},
     ]

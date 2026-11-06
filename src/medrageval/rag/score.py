@@ -199,12 +199,15 @@ def key_scores(item: dict, response: str, patterns: list[str], speakers: dict[st
             "key_recall": round(len(found) / len(keys), 3), "correct": len(found) == len(keys)}
 
 
-def judge_score(item: dict, judge: dict | None) -> float | None:
+def judge_score(item: dict, judge: dict | None, declined: bool = False) -> float | None:
+    """The judge's verdict as a score. An unanswerable item scores 1 when the judge says "abstained", or says "correct" of a
+    reply that declines (`declined`: the abstain patterns matched). A reply that states an answer the judge finds supported
+    is not an abstention, whatever the judge calls it."""
     if not judge:
         return None
     verdict = str(judge.get("verdict") or "").lower()
     if not item.get("answerable", True):
-        return 1.0 if verdict in ("correct", "abstained") else 0.0
+        return 1.0 if verdict == "abstained" or (verdict == "correct" and declined) else 0.0
     return VERDICT_SCORE.get(verdict)
 
 
@@ -249,9 +252,12 @@ def score_item(item: dict, response: str, passages: list[Chunk], judge: dict | N
                candidates: list[Chunk] | None = None) -> dict:
     retrieval = retrieval_metrics(item, passages, candidates)
     keys = key_scores(item, response, patterns, speakers)
-    js = judge_score(item, judge)
+    js = judge_score(item, judge, keys["abstained"])
     if js is not None:
-        score, declined = js, str(judge.get("verdict") or "").lower() == "abstained" or (not item.get("answerable", True) and keys["abstained"])
+        score = js
+        # for an unanswerable item `abstained` is a clean decline: it declined and the judge found no answer stated;
+        # keys.abstained keeps the raw pattern match, so "declined, then answered anyway" is visible
+        declined = score >= 1 if not item.get("answerable", True) else str(judge.get("verdict") or "").lower() == "abstained"
     else:
         score = None if keys["correct"] is None else float(keys["correct"])
         declined = keys["abstained"]

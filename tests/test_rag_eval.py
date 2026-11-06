@@ -15,7 +15,7 @@ from synthetic import config
 
 from medrageval.config import load_config
 from medrageval.generate.llm import FakeLLM
-from medrageval.rag.evaluate import distractor_passages, evaluate, interim_dir, load_items, load_unit_texts, unit_chunks
+from medrageval.rag.evaluate import evaluate, gold_chunks, load_items, render_chunk, standin_passages, withheld_figures
 
 APP_CFG = {"topic": "a test appraisal", "chunking": {"target_tokens": 400, "max_tokens": 512, "max_table_tokens": 1500},
            "embedding": {"model": "none", "dim": 4}, "store": {"backend": "memory"},
@@ -41,22 +41,19 @@ PFS = {"item_id": "numerical-001", "type": "numerical", "subtype": "efficacy", "
        "question": "What was the median PFS by investigator assessment with capivasertib plus fulvestrant, in months?",
        "answer": "Median PFS was 7.3 months.", "answer_keys": ["7.3 months"], "also_in": [],
        "evidence": [{"unit_id": "d02-e0003", "element_id": "d02-e0003", "doc_id": "d02", "pages": [21, 21], "quote": "Median PFS (months) | 7.3 | 3.1"}]}
-# The PFS question again with its evidence withheld; the stored distractors are the context. The evidence unit itself is listed among
-# them (as the benchmark would never do, but a page-mapped chunk might) to check it is dropped.
+# The PFS question again with its evidence withheld. The stored distractors are the generator's record; the evaluator builds its
+# own stand-ins from the application's chunks, so the gold chunk c00002 must never be shown.
 WITHHELD = {"item_id": "unanswerable-001", "type": "unanswerable", "subtype": "withheld", "answerable": False, "source_item_id": "numerical-001",
             "question": PFS["question"], "answer": None, "answer_keys": [], "also_in": [], "evidence": [],
             "withheld": {"answer": PFS["answer"], "answer_keys": PFS["answer_keys"], "evidence": PFS["evidence"]},
             "distractors": [{"unit_id": "d02-e0004", "doc_id": "d02", "pages": [40, 40], "quote": "", "caption": None},
                             {"unit_id": "d02-e0001", "doc_id": "d02", "pages": [10, 10], "quote": "", "caption": None},
                             {"unit_id": "d02-e0003", "doc_id": "d02", "pages": [21, 21], "quote": "", "caption": "Table 12. Efficacy results"}]}
-# An unanswerable item without distractors (an older dataset): answered over live retrieval like the rest.
+# An unanswerable item without withheld evidence (an older dataset): answered over live retrieval like the rest.
 PRICE = {"item_id": "unanswerable-002", "type": "unanswerable", "subtype": "redacted", "answerable": False,
          "question": "What is the list price of a pack of 64 capivasertib tablets?", "answer": None, "answer_keys": [], "also_in": [],
          "evidence": [{"unit_id": "d02-e0004", "element_id": "d02-e0004", "doc_id": "d02", "pages": [40, 40], "quote": "£[REDACTED] per pack"}]}
 
-UNIT_TEXTS = {"d02-e0004": "The list price of capivasertib is £[REDACTED] per pack of 64 tablets. A patient access scheme applies.",
-              "d02-e0001": "Capivasertib is an AKT inhibitor given with fulvestrant.",
-              "d02-e0003": "Table 12. Efficacy results | Outcome | Capivasertib | Placebo | Median PFS (months) | 7.3 | 3.1"}
 
 
 class FakeReader:
@@ -104,36 +101,127 @@ def small_model(messages, tag):
 
 
 def passing_judge(messages, tag):
+    if tag.startswith("screen:"):   # the screening call: every candidate chunk is a clean stand-in
+        return {"results": [{"chunk_id": cid, "answers": "no", "answer_if_any": None} for cid in shown_ids(messages)]}
     declined = "Not found in the documents." in messages[-1]["content"].split("System answer:")[1].split("Passages shown")[0]
     claims = [] if declined else [{"claim": "median PFS 7.3 months", "supported": True}]
     return {"verdict": "correct", "keypoints": [], "claims": claims, "grounded": None if declined else True, "reason": "ok"}
 
 
-def test_unit_chunks_map_by_text_overlap_then_caption_then_page():
-    d = {"unit_id": "d02-e0004", "pages": [40, 40]}
-    assert [c.chunk_id for c in unit_chunks(d, CHUNKS, UNIT_TEXTS, 0.3, 2)] == ["c00003"]
-    assert [c.chunk_id for c in unit_chunks({"unit_id": "x", "pages": [21, 21], "caption": "Table 12. Efficacy results"}, CHUNKS, {}, 0.3, 2)] == ["c00002"]
-    assert [c.chunk_id for c in unit_chunks({"unit_id": "x", "pages": [40, 41]}, CHUNKS, {}, 0.3, 2)] == ["c00003", "c00004"]
-    assert unit_chunks({"unit_id": "x", "pages": [99, 99]}, CHUNKS, {}, 0.3, 2) == []
-    # a unit whose text is known but shares nothing with the page's chunks maps to nothing rather than to a wrong chunk
-    assert unit_chunks({"unit_id": "d02-e0001", "pages": [40, 40]}, CHUNKS, UNIT_TEXTS, 0.3, 2) == []
+def shown_ids(messages):
+    """The chunk ids a screening prompt shows, in order."""
+    import re
+    return re.findall(r"^\[(c\d+)\]", messages[-1]["content"], re.M)
 
 
-def test_distractor_passages_drop_the_withheld_evidence():
-    passages, unmapped = distractor_passages(WITHHELD, CHUNKS, UNIT_TEXTS, full_config()["rag"]["eval"], 6)
-    assert [c.chunk_id for c in passages] == ["c00003", "c00001"] and unmapped == 0
-    assert all("7.3" not in c.text for c in passages)
-    _, unmapped = distractor_passages({**WITHHELD, "distractors": [{"unit_id": "x", "pages": [500, 500]}]}, CHUNKS, {}, full_config()["rag"]["eval"], 6)
-    assert unmapped == 1
+def test_gold_chunks_hold_the_withheld_quote_anywhere():
+    copy_elsewhere = mk("c00009", (300, 300), "The EAG reproduced the table: Median PFS (months) | 7.3 | 3.1.", title="EAG report")
+    assert [c.chunk_id for c in gold_chunks(WITHHELD, CHUNKS + [copy_elsewhere])] == ["c00002", "c00009"]
+    assert gold_chunks(PRICE, CHUNKS) == []   # no withheld evidence
+
+
+def test_render_chunk_heads_with_the_id_and_cuts_long_bodies():
+    text = render_chunk(CHUNKS[1], 2000)
+    assert text.startswith("[c00002] Document: Company submission | Section: Results | Pages: 21-21\n") and "7.3" in text
+    cut = render_chunk(mk("c00010", (1, 1), "line one\n" * 50), 100)
+    assert cut.endswith("[...]") and len(cut) < 300
+
+
+def test_standin_passages_search_near_the_gold_screen_and_drop_the_gold():
+    rag = make_rag(small_model)
+    screener = FakeLLM(passing_judge)
+    s = standin_passages({**WITHHELD, "uid": "u1"}, rag, screener, full_config()["rag"]["eval"], 3)
+    assert s["gold"] == ["c00002"] and s["excluded"] is None
+    assert "c00002" not in [c.chunk_id for c in s["passages"]] and len(s["passages"]) == 3
+    assert all("7.3" not in c.text for c in s["passages"])
+    messages, tag = screener.calls[0]
+    assert tag == "screen:u1" and "7.3 months" in messages[-1]["content"] and "[c00002]" not in messages[-1]["content"]
+    assert [x["chunk_id"] for x in s["screening"]] == [c.chunk_id for c in s["passages"]]
+
+
+def test_standin_passages_keep_only_what_the_judge_finds_clean():
+    rag = make_rag(small_model)
+
+    def strict(messages, tag):   # c00001 is said to answer; the rest are clean
+        return {"results": [{"chunk_id": cid, "answers": "yes" if cid == "c00001" else "no"} for cid in shown_ids(messages)]}
+    s = standin_passages({**WITHHELD, "uid": "u1"}, rag, FakeLLM(strict), full_config()["rag"]["eval"], 3)
+    assert "c00001" not in [c.chunk_id for c in s["passages"]] and len(s["passages"]) == 2
+    assert {x["answers"] for x in s["screening"]} == {"yes", "no"}
+
+    def all_leak(messages, tag):
+        return {"results": [{"chunk_id": cid, "answers": "partly"} for cid in shown_ids(messages)]}
+    s = standin_passages({**WITHHELD, "uid": "u1"}, rag, FakeLLM(all_leak), full_config()["rag"]["eval"], 3)
+    assert s["passages"] == [] and s["excluded"].startswith("every candidate chunk")
+
+
+def test_withheld_figures_only_from_specific_numbers():
+    assert withheld_figures(["7.3 months"]) == {7.3}
+    assert withheld_figures(["153 patients (98.7%)", "134 patients (100%)"]) == {153.0, 98.7, 134.0, 100.0}
+    assert withheld_figures(["£52,681"]) == {52681.0}
+    assert withheld_figures(["robust phase 3 trial"]) == set() and withheld_figures(["10 RCTs"]) == set()
+    assert withheld_figures(["company"]) == set() and withheld_figures([]) == set()
+
+
+def test_a_chunk_stating_every_withheld_figure_is_dropped_whatever_the_judge_said():
+    restated = mk("c00011", (300, 300), "The EAG notes the FAKTION median PFS of 7.3 months in its own table.", title="EAG report")
+    rag = make_rag(small_model, CHUNKS + [restated])
+    s = standin_passages({**WITHHELD, "uid": "u1"}, rag, FakeLLM(passing_judge), full_config()["rag"]["eval"], 6)
+    verdicts = {x["chunk_id"]: x["answers"] for x in s["screening"]}
+    assert verdicts["c00011"] == "figures" and "c00011" not in [c.chunk_id for c in s["passages"]]
+    assert all(v == "no" for cid, v in verdicts.items() if cid != "c00011") and len(s["passages"]) == 3
+
+
+def test_standin_passages_ask_again_about_chunks_the_judge_skipped():
+    rag = make_rag(small_model)
+
+    def skips_the_clean_ones(messages, tag):   # first call: only the one it finds answering; second call: the rest, as asked
+        ids = shown_ids(messages)
+        if tag.startswith("screen2:"):
+            return {"results": [{"chunk_id": cid, "answers": "no"} for cid in ids]}
+        return {"results": [{"chunk_id": ids[0], "answers": "yes"}]}
+    screener = FakeLLM(skips_the_clean_ones)
+    s = standin_passages({**WITHHELD, "uid": "u1"}, rag, screener, full_config()["rag"]["eval"], 3)
+    assert [c[1] for c in screener.calls] == ["screen:u1", "screen2:u1"]
+    assert len(shown_ids(screener.calls[1][0])) == 2 and len(s["passages"]) == 2
+    assert [x["answers"] for x in s["screening"]] == ["yes", "no", "no"]
+    assert "every passage" in screener.calls[0][0][0]["content"]
+
+    def silent(messages, tag):
+        return {"results": []}
+    s = standin_passages({**WITHHELD, "uid": "u1"}, rag, FakeLLM(silent), full_config()["rag"]["eval"], 3)
+    assert s["excluded"].startswith("the judge gave no verdict") and all(x["answers"] == "unscreened" for x in s["screening"])
+
+
+def test_unanswerable_with_no_stand_in_left_is_not_scored(tmp_path):
+    items = load_items([write_dataset(tmp_path / "ds", [PFS, WITHHELD], tmp_path / "interim")])
+    rag = make_rag(small_model)
+
+    def judge_fn(messages, tag):
+        if tag.startswith("screen:"):
+            return {"results": [{"chunk_id": cid, "answers": "yes"} for cid in shown_ids(messages)]}
+        return passing_judge(messages, tag)
+    report = evaluate(items, rag, FakeLLM(judge_fn), full_config(), tmp_path / "run")
+    rows = [json.loads(line) for line in (tmp_path / "run" / "responses.jsonl").open()]
+    assert rows[1]["category"] == "excluded" and rows[1]["score"] is None and rows[1]["excluded"].startswith("every candidate")
+    assert rows[1]["gold_chunks"] == ["c00002"] and all(x["answers"] == "yes" for x in rows[1]["screening"])
+    assert rag.llm.stats["calls"] == 1                                   # the excluded item is never asked
+    assert report["items"] == 1 and report["excluded"] == ["unanswerable-001"] and report["unanswerable"]["items"] == 0
+    assert report["overall"]["categories"] == {"correct": 1} and "unanswerable-001" in report["warnings"][0]
+    assert report["standin_screening"]["answers"] == 3
+
+
+def test_without_a_judge_withheld_items_are_excluded(tmp_path):
+    items = load_items([write_dataset(tmp_path / "ds", [PFS, WITHHELD, PRICE], tmp_path / "interim")])
+    report = evaluate(items, make_rag(small_model), None, full_config(), tmp_path / "run")
+    assert report["excluded"] == ["unanswerable-001"] and report["items"] == 2 and report["overall"]["score"] == 1.0
 
 
 def test_eval_end_to_end(tmp_path):
     full = full_config()
     items = load_items([write_dataset(tmp_path / "ds", [PFS, WITHHELD, PRICE], tmp_path / "interim")])
-    assert interim_dir(items, None) is None and load_unit_texts(None) == {}
     judge = FakeLLM(passing_judge)
     rag = make_rag(small_model)
-    report = evaluate(items, rag, judge, full, tmp_path / "run", UNIT_TEXTS)
+    report = evaluate(items, rag, judge, full, tmp_path / "run")
 
     rows = [json.loads(line) for line in (tmp_path / "run" / "responses.jsonl").open()]
     assert [r["uid"] for r in rows] == ["numerical-001", "unanswerable-001", "unanswerable-002"]
@@ -142,11 +230,14 @@ def test_eval_end_to_end(tmp_path):
     assert pfs["retrieval"]["hit"] and pfs["retrieval"]["first_rank"] == 1 and pfs["faithfulness"] == 1.0
     assert pfs["retrieval"]["gold_prec"] == round(1 / 3, 3) and pfs["retrieval"]["candidate_recall"] == 1.0
     assert pfs["candidates"][0] == "c00002" and len(pfs["candidates"]) <= 10            # the fused pool, in fused order
-    assert "Median PFS (months) | 7.3 | 3.1" in judge.calls[0][0][1]["content"]   # the judge sees the passages the model saw
+    grading = [c for c in judge.calls if c[1].startswith("judge:")]
+    assert "Median PFS (months) | 7.3 | 3.1" in grading[0][0][1]["content"]   # the judge sees the passages the model saw
     assert withheld["context"] == "fixed" and withheld["category"] == "correct_abstention" and withheld["retrieval"] is None
     assert withheld["candidates"] is None and withheld["faithfulness"] is None            # no pool and no claims for a decline
-    assert [p["chunk_id"] for p in withheld["passages"]] == ["c00003", "c00001"]
-    assert "7.3" not in judge.calls[1][0][1]["content"].split("Passages shown")[1]
+    assert len(withheld["passages"]) == 3 and "c00002" not in [p["chunk_id"] for p in withheld["passages"]]
+    assert withheld["gold_chunks"] == ["c00002"] and len(withheld["screening"]) == 3
+    assert "7.3" not in grading[1][0][1]["content"].split("Passages shown")[1]
+    assert [c[1] for c in judge.calls if c[1].startswith("screen:")] == ["screen:unanswerable-001"]   # one screening call per item
     assert price["context"] == "retrieved" and price["category"] == "correct_abstention" and price["retrieved"][0]["score"] is not None
 
     assert report["items"] == 3 and set(report["per_type"]) == {"numerical", "unanswerable"} and report["fixed_context_items"] == 1
@@ -154,7 +245,8 @@ def test_eval_end_to_end(tmp_path):
     o = report["overall"]
     assert o["gold_prec"] == round(1 / 3, 3) and o["candidate_recall"] == 1.0 and o["faithfulness"] == 1.0
     assert report["judge_model"] == "fake" and report["rag"]["retrieval"]["mode"] == "bm25" and report["rag"]["chunks"] == 4
-    assert report["evidence_matching"] == {"page_only": 0, "quote_split": 0, "distractors_unmapped": 0} and not report["warnings"]
+    assert report["evidence_matching"] == {"page_only": 0, "quote_split": 0} and not report["warnings"]
+    assert report["standin_screening"] == {"items": 1, "candidates": 3, "answers": 0, "figures": 0, "unscreened": 0, "passages_mean": 3.0}
     assert json.loads((tmp_path / "run" / "eval_report.json").read_text())["items"] == 3
 
 
@@ -185,4 +277,5 @@ def test_several_datasets_get_prefixed_ids(tmp_path):
     b = write_dataset(tmp_path / "smoke_b", [PFS], tmp_path / "other")
     items = load_items([a, b])
     assert [it["uid"] for it in items] == ["smoke_a/numerical-001", "smoke_b/numerical-001"]
-    assert interim_dir(items, None) is None and interim_dir(items, tmp_path) == tmp_path
+    assert [it["item_id"] for it in load_items([write_dataset(tmp_path / "c", [PFS, WITHHELD, PRICE], tmp_path / "i")], types=["unanswerable"])] \
+        == ["unanswerable-001", "unanswerable-002"]

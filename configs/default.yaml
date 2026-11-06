@@ -276,7 +276,7 @@ generate:
     # answered by any passage on its theme, so no distractor set is clean.
     source_types: [factual, numerical, comparative, multihop, attribution]
     candidates: 12               # passages screened per item, by BM25 similarity to the withheld excerpts and to the question
-    distractors: 8               # passages kept; at least rag.retrieval.top_k, since chunks that also hold the evidence are dropped at evaluation
+    distractors: 8               # passages kept on the item, as the record of what the item was screened against; the evaluator builds its own stand-ins from the application's chunks
     min_distractors: 4           # fewer clean passages than this rejects the item (reason too_few_distractors)
     max_chars_per_passage: 1500  # shown to the screening judge
 
@@ -435,14 +435,21 @@ rag:
   eval:
     bootstrap: 1000                # resamples for the 95% intervals over items
     seed: 20251030
-    # Unanswerable items are read over their stored distractors, mapped to the
-    # application's chunks by page and text overlap. A distractor chunk that
-    # holds the withheld quote, or every withheld answer key, is dropped.
-    distractor_min_overlap: 0.3    # share of a benchmark unit's text shingles a chunk must hold to stand for it
-    distractor_chunks_per_unit: 2
+    # Unanswerable items are read over stand-in passages from the application's
+    # own chunks: the chunks nearest to each chunk holding the withheld quote,
+    # by the application's retrieval, screened by the judge against the question
+    # and the withheld answer (the generator's screening prompt). The first
+    # top_k screened as not answering are the context; an item with none left
+    # is run but not scored.
+    standin_search_k: 10           # neighbours fetched per gold chunk
+    standin_candidates: 12         # chunks shown to the screening judge per item
+    standin_max_chars: 6000        # per chunk, for the screening judge: whole chunks (the largest is ~5,700 chars). A 1,500 cut
+                                   # hid a table's lower rows, and a chunk holding the answer in row 30 passed as clean
     # A reply that declines. The prompt asks for "Not found in the documents."
     # but small models paraphrase; on an unanswerable item any of these counts
-    # as declining, on an answerable one only when no answer key is stated.
+    # as declining (and one must match, or the judge must say "abstained", for
+    # the item to score: a stated answer the judge calls "correct" is not a
+    # decline), on an answerable one only when no answer key is stated.
     abstain_patterns:
       - '\bnot found in the documents\b'
       - '\b(do|does|did) not (contain|provide|report|state|include|mention|specify|give|say)\b'

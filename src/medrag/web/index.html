@@ -610,6 +610,7 @@ const OUTCOMES = {
   false_abstention: {name: "False decline", desc: "evidence shown, it declined", color: "var(--warning)", ink: "#0b0b0b", glyph: "!"},
   reader_error: {name: "Reader error", desc: "evidence shown, answer wrong", color: "var(--serious)", ink: "#0b0b0b", glyph: "!"},
   hallucinated_answer: {name: "Hallucinated", desc: "evidence withheld, it answered anyway", color: "var(--critical)", ink: "#ffffff", glyph: "×"},
+  excluded: {name: "Not scored", desc: "no stand-in passage left, so the item was left out of the scores", color: "var(--line-strong)", ink: "#0b0b0b", glyph: "–"},
 };
 const OUTCOME_ORDER = Object.keys(OUTCOMES);
 const outcomeOf = (key) => OUTCOMES[key] || {name: key ? key.replaceAll("_", " ") : "Not scored", desc: "", color: "var(--line-strong)", ink: "#0b0b0b", glyph: "?"};

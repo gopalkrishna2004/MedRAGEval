@@ -164,6 +164,21 @@ def test_judge_score_and_keypoints():
     assert keypoint_stats(item, judge) == {"keypoints": 4, "completeness": 0.5, "hallucination": 0.25, "irrelevance": 0.25}
     assert judge_score({"answerable": False}, {"verdict": "abstained"}) == 1.0
     assert judge_score({"answerable": False}, {"verdict": "incorrect"}) == 0.0
+    assert judge_score({"answerable": False}, {"verdict": "correct"}) == 0.0                   # "correct" of a stated answer
+    assert judge_score({"answerable": False}, {"verdict": "correct"}, declined=True) == 1.0   # "correct" of a decline
+
+
+def test_unanswerable_needs_a_decline_as_well_as_the_judge():
+    item = {"type": "unanswerable", "answerable": False, "answer_keys": [], "evidence": []}
+    ok = {"verdict": "correct", "claims": [], "reason": "supported by passage 1"}
+    r = score_item(item, "The company called it a robust phase 3 trial [1].", [], ok, PATTERNS, SPEAKERS)
+    assert r["score"] == 0.0 and r["category"] == "hallucinated_answer" and r["abstained"] is False
+    r = score_item(item, "Not found in the documents.", [], ok, PATTERNS, SPEAKERS)
+    assert r["score"] == 1.0 and r["category"] == "correct_abstention" and r["abstained"] is True
+    r = score_item(item, "The figure is 1.79 [1]. Not found in the documents.", [], {"verdict": "incorrect"}, PATTERNS, SPEAKERS)
+    assert r["score"] == 0.0 and r["abstained"] is False and r["keys"]["abstained"] is True   # declined, then answered anyway
+    r = score_item(item, "The documents are silent on this.", [], {"verdict": "abstained"}, PATTERNS, SPEAKERS)
+    assert r["score"] == 1.0 and r["abstained"] is True                                        # an off-pattern decline the judge recognised
 
 
 def test_score_item_prefers_the_judge_and_agreement_lists_disagreements():

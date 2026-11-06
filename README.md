@@ -246,6 +246,7 @@ cache, so run the `demo.examples` once before presenting.
 ```bash
 uv run medrageval eval data/datasets/ta1063_smoke_v19b --out data/runs/smoke            # judge on OpenRouter
 uv run medrageval eval data/datasets/ta1063_smoke_v19b --no-judge --mode bm25           # keys only, no OpenRouter calls
+uv run medrageval eval data/datasets/ta1063 --types unanswerable --out data/runs/unans   # one type only (the rest are cached anyway)
 uv run medrageval ablate data/datasets/ta1063_smoke_v19b --chunk-tokens 256,400,512     # every mode x chunk size, summary table
 ```
 
@@ -268,14 +269,22 @@ counted as `page_only` and never credited; a quote found across two passages
 adjacent in the document is credited and counted as `quote_split`. Both counts
 are in the report under `evidence_matching`.
 
-**Unanswerable items are the one exception** to the application's independence.
-They are read over the benchmark's stored distractors, as the dataset was
-designed: each distractor is mapped to the application's chunks on its pages by
-shared text (from the benchmark's `elements.jsonl`, found through the items'
-provenance or `--interim`), else by its caption, else by page; any chunk that
-holds the withheld quote or every withheld answer key is dropped. `context` in
-`responses.jsonl` says which path an item took; `distractors_unmapped` counts the
-distractors with no chunk on their pages.
+**Unanswerable items are read over stand-in passages**, not a search, and the
+stand-ins come from the application's own chunks. The chunks holding the
+withheld quotes are found (`gold_chunks` in `responses.jsonl`), the
+application's retrieval is asked for the `standin_search_k` chunks nearest to
+each, the gold chunks are removed, and the judge screens the rest against the
+question and the withheld answer in one call (the generator's screening prompt;
+the verdicts are stored under `screening`). The first `top_k` it finds do not
+answer are the passages shown. Screening the exact text the reader sees means no
+string rule has to decide what "holds the answer"; an earlier version matched
+the stored distractors to chunks and dropped any holding an answer key, which
+emptied the context of attribution items whose key was a party named everywhere
+and let answers through in chunks wider than their unit. An item with no passage
+left is run but not scored (`excluded`, listed in the report), since an empty
+context makes a decline a free point; `--no-judge` excludes them all, as there
+is nothing to screen with. `context` in `responses.jsonl` says which path an
+item took.
 
 Outputs in the run directory:
 - `responses.jsonl`: per item, the reply, the passages shown (with BM25, dense, fused and rerank ranks), the candidate pool, and the scores below.
@@ -287,7 +296,7 @@ Outputs in the run directory:
 | `gold_prec` (`gold_prec@k`) | The share of the passages shown that hold gold evidence: how much of what reaches the model is irrelevant. Its ceiling is the evidence count over `top_k`, since an on-topic passage without the evidence counts as irrelevant. |
 | `candidate_recall` (`cand@n`) | Evidence recall over the fused candidate pool (`candidates` chunks) before the reranker and the top-k cut. Low `candidate_recall` means the retrievers never found it; high `candidate_recall` with low `evidence_recall` means the ordering lost it. Not computed for fixed-context items. |
 | `keys` | Deterministic: every answer key in the reply (numbers compared as numbers: "£52,681" = "52681", "0.50" = "0.5"), the party for attribution, a decline for unanswerable items. |
-| `score` | The judge's verdict (correct 1, partial 0.5, incorrect or declined 0; for unanswerable items a decline is correct). Keys when run with `--no-judge`. |
+| `score` | The judge's verdict (correct 1, partial 0.5, incorrect or declined 0). An unanswerable item scores 1 only when the reply declines (an abstain pattern, or the judge's "abstained" verdict) and the judge finds no answer stated: a judge "correct" on a reply that states a supported answer does not count. Keys when run with `--no-judge`. |
 | `grounded` | The judge: every claim of the reply is supported by the passages shown. |
 | `faithfulness` | The judge lists the reply's factual claims, each supported or not by the passages shown; this is the supported share (0 to 1). None when the judge lists no claims (a bare decline); a decline that goes on to describe the passages is scored on what it says. |
 | keypoints | Summaries: share of keypoints covered and contradicted (completeness and hallucination). |
@@ -296,5 +305,5 @@ Outputs in the run directory:
 
 Tests: `uv run pytest` covers the chunker, caption and continuation handling,
 BM25, retrieval and fusion over the in-memory store, the Postgres store (skipped
-without a database; it uses its own schema), evidence matching, distractor
-mapping and the evaluator end to end with a fake reader and judge.
+without a database; it uses its own schema), evidence matching, stand-in
+screening and the evaluator end to end with a fake reader and judge.
