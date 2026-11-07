@@ -33,6 +33,8 @@ Two variations help test the system:
 - **Missing evidence:** An answerable question is paired with related passages that do not contain the answer. A judge screens these passages. The model should say it cannot answer.
 - **Messy wording:** Each question gets a version with shorthand, typos or missing punctuation. Numbers stay unchanged. These rewrites are unchecked, so some may also change the meaning.
 
+With both versions, the dataset holds **284 questions (142 clean + 142 messy)**, 52 of them unanswerable (26 + 26).
+
 The dataset is saved as JSONL. Cached LLM responses let the same settings reproduce it without new calls.
 
 ## Part 2: Testing the RAG

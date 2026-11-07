@@ -169,7 +169,7 @@ uv run medrageval eval data/datasets/ta1063 --out data/runs/my-rerun
 
 ## Go deeper
 
-**[docs/WRITEUP.md](docs/WRITEUP.md)** covers the methodology, design decisions, dataset format, metrics and analysis of the results.
+**[docs/WRITEUP.md](docs/WRITEUP.md)** explains how the dataset is built and the RAG is tested, with metrics and results across the tested settings.
 
 ---
 

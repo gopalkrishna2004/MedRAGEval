@@ -8,6 +8,7 @@ docs/*
 !docs/workflow-dataset.png
 !docs/workflow-rag-eval.png
 
+
 # Under data/ only the source PDFs, TA1063's parse output and fact sheet, and the
 # delivered results are tracked: caches, archives and other runs stay local.
 data/*
