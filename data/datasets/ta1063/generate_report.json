@@ -1,0 +1,364 @@
+{
+  "interim_dir": "data/interim/ta1063",
+  "topic": "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+  "model": "openai/gpt-6-luna",
+  "judge_model": "z-ai/glm-5.3-flash",
+  "prompt_version": "20",
+  "seed": 20251030,
+  "items": 142,
+  "per_type": {
+    "factual": {
+      "target": 26,
+      "attempted": 34,
+      "accepted": 26,
+      "subtypes": {
+        "efficacy": 6,
+        "safety": 5,
+        "trial_design": 2,
+        "key_issues": 1,
+        "economic_model": 3,
+        "decision_problem": 3,
+        "indirect_comparison": 2,
+        "cost_effectiveness": 2,
+        "stakeholder_views": 2
+      },
+      "rejected_by_reason": {
+        "judge_failed": 2,
+        "answer_key_too_long": 1,
+        "skip": 1,
+        "question_length": 1,
+        "compound_question": 1,
+        "duplicate_question": 2
+      },
+      "rewrites": {
+        "tried": 19,
+        "accepted": 14,
+        "first_reasons": {
+          "answer_key_unsupported": 2,
+          "answer_key_in_question": 9,
+          "answer_key_too_long": 4,
+          "answer_key_has_label": 1,
+          "compound_question": 1,
+          "judge_failed": 4,
+          "judge": 3,
+          "question_length": 1
+        }
+      }
+    },
+    "numerical": {
+      "target": 26,
+      "attempted": 32,
+      "accepted": 26,
+      "subtypes": {
+        "trial_design": 6,
+        "efficacy": 9,
+        "cost_effectiveness": 4,
+        "safety": 5,
+        "economic_model": 2
+      },
+      "rejected_by_reason": {
+        "skip": 1,
+        "answer_key_unsupported": 1,
+        "duplicate_question": 4
+      },
+      "rewrites": {
+        "tried": 9,
+        "accepted": 6,
+        "first_reasons": {
+          "answer_key_too_long": 2,
+          "judge_failed": 4,
+          "question_echoes_quote": 2,
+          "judge": 3,
+          "answer_key_generic": 1
+        }
+      }
+    },
+    "comparative": {
+      "target": 20,
+      "attempted": 21,
+      "accepted": 16,
+      "subtypes": {
+        "facts": 2,
+        "arms": 14
+      },
+      "rejected_by_reason": {
+        "duplicate_question": 5
+      },
+      "rewrites": {
+        "tried": 3,
+        "accepted": 2,
+        "first_reasons": {
+          "question_lacks_compared_labels": 2,
+          "answer_key_too_long": 1
+        }
+      }
+    },
+    "multihop": {
+      "target": 10,
+      "attempted": 10,
+      "accepted": 10,
+      "subtypes": {
+        "described": 10
+      },
+      "rejected_by_reason": {},
+      "rewrites": {
+        "tried": 0,
+        "accepted": 0,
+        "first_reasons": {}
+      }
+    },
+    "attribution": {
+      "target": 20,
+      "attempted": 37,
+      "accepted": 20,
+      "subtypes": {
+        "stance": 15,
+        "form": 5
+      },
+      "rejected_by_reason": {
+        "skip": 7,
+        "judge_failed": 5,
+        "claim_restated_in": 2,
+        "answer_not_speaker": 1,
+        "quote_not_found": 1,
+        "quote_lacks_speaker": 1
+      },
+      "rewrites": {
+        "tried": 25,
+        "accepted": 10,
+        "first_reasons": {
+          "answer_not_speaker": 6,
+          "quote_lacks_speaker": 7,
+          "judge_failed": 6,
+          "judge": 4,
+          "speaker_named_in_question": 5,
+          "answer_key_too_long": 2,
+          "quote_length": 2
+        }
+      }
+    },
+    "summary": {
+      "target": 18,
+      "attempted": 19,
+      "accepted": 18,
+      "subtypes": {
+        "decision_problem": 5,
+        "indirect_comparison": 4,
+        "safety": 2,
+        "economic_model": 2,
+        "efficacy": 4,
+        "stakeholder_views": 1
+      },
+      "rejected_by_reason": {
+        "judge_failed": 1
+      },
+      "rewrites": {
+        "tried": 4,
+        "accepted": 3,
+        "first_reasons": {
+          "summary_answer_too_long": 1,
+          "keypoint_unsupported": 1,
+          "keypoints_missing": 1,
+          "judge_failed": 1,
+          "judge": 1
+        }
+      }
+    },
+    "unanswerable": {
+      "target": 26,
+      "attempted": 30,
+      "accepted": 26,
+      "subtypes": {
+        "withheld": 26
+      },
+      "rejected_by_reason": {
+        "too_few_distractors": 4
+      },
+      "rewrites": {
+        "tried": 0,
+        "accepted": 0,
+        "first_reasons": {}
+      }
+    }
+  },
+  "items_per_document": {
+    "d02": 70,
+    "d12": 79,
+    "d04": 34,
+    "d08": 1,
+    "d10": 1,
+    "d13": 13,
+    "d06": 1,
+    "d07": 3,
+    "d05": 4,
+    "d09": 2
+  },
+  "items_per_group": {
+    "efficacy": 32,
+    "safety": 20,
+    "trial_design": 14,
+    "key_issues": 19,
+    "economic_model": 10,
+    "decision_problem": 8,
+    "indirect_comparison": 7,
+    "cost_effectiveness": 22,
+    "stakeholder_views": 10
+  },
+  "group_mix": {
+    "cost_effectiveness": {
+      "target": 12.0,
+      "answerable": 17,
+      "items": 22
+    },
+    "decision_problem": {
+      "target": 9.6,
+      "answerable": 8,
+      "items": 8
+    },
+    "economic_model": {
+      "target": 9.6,
+      "answerable": 8,
+      "items": 10
+    },
+    "efficacy": {
+      "target": 28.8,
+      "answerable": 27,
+      "items": 32
+    },
+    "indirect_comparison": {
+      "target": 7.2,
+      "answerable": 6,
+      "items": 7
+    },
+    "key_issues": {
+      "target": 12.0,
+      "answerable": 16,
+      "items": 19
+    },
+    "safety": {
+      "target": 16.8,
+      "answerable": 14,
+      "items": 20
+    },
+    "stakeholder_views": {
+      "target": 9.6,
+      "answerable": 8,
+      "items": 10
+    },
+    "trial_design": {
+      "target": 14.4,
+      "answerable": 12,
+      "items": 14
+    }
+  },
+  "facts": {
+    "facts": 593,
+    "by_group": {
+      "cost_effectiveness": 96,
+      "decision_problem": 40,
+      "economic_model": 36,
+      "efficacy": 85,
+      "indirect_comparison": 72,
+      "key_issues": 25,
+      "safety": 87,
+      "stakeholder_views": 120,
+      "trial_design": 32
+    },
+    "redacted": 124,
+    "ambiguous": 28,
+    "respondents": {
+      "d05": "Make 2nds Count",
+      "d06": "Breast Cancer Now",
+      "d07": "METUPUK",
+      "d08": "Royal Marsden Hospital and Institute of Cancer Research",
+      "d10": "Breast Cancer Now",
+      "d11": "Breast Cancer Now"
+    }
+  },
+  "speakers": {
+    "the EAG": 6,
+    "the company": 9,
+    "the patient organisations": 4,
+    "the patient experts": 1
+  },
+  "corpus": {
+    "units": 1977,
+    "evidence_units": 1974,
+    "row_units": 142,
+    "noise": {
+      "short": 47,
+      "text": 25,
+      "section": 233,
+      "figure": 119,
+      "caption": 18,
+      "template": 85
+    },
+    "roles": {
+      "d01": "cover",
+      "d02": "company_submission",
+      "d03": "patient_summary",
+      "d04": "clarification",
+      "d05": "patient_org",
+      "d06": "patient_org",
+      "d07": "patient_org",
+      "d08": "clinical_expert",
+      "d09": "patient_expert",
+      "d10": "clinical_expert",
+      "d11": "patient_expert",
+      "d12": "eag_report",
+      "d13": "factual_accuracy"
+    },
+    "topic": "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]"
+  },
+  "llm": {
+    "generator": {
+      "calls": 333,
+      "prompt_tokens": 477920,
+      "completion_tokens": 137551,
+      "empty_responses": 2,
+      "bad_json": 2
+    },
+    "judge": {
+      "calls": 200,
+      "prompt_tokens": 302868,
+      "completion_tokens": 85880
+    }
+  },
+  "elapsed_seconds": 666.0,
+  "warnings": [
+    "comparative: 16/20 accepted"
+  ],
+  "messy": {
+    "items": 142,
+    "rewritten": 116,
+    "copied_from_source": 26,
+    "severity": {
+      "heavy": 59,
+      "medium": 55,
+      "light": 28
+    },
+    "habits": {
+      "keyword_query": 49,
+      "statement": 34,
+      "vague": 38,
+      "rambling": 48,
+      "shorthand": 32,
+      "lay_terms": 28,
+      "informal": 31,
+      "misspell_names": 37,
+      "fragment": 26,
+      "grammar": 26
+    },
+    "surface": {
+      "typo": 275,
+      "lowercase": 120,
+      "drop_punctuation": 125,
+      "textspeak": 103,
+      "join": 142
+    },
+    "errors": [],
+    "model": "openai/gpt-6-luna",
+    "seed": 20251030,
+    "retwinned_at": "2026-11-06T11:45:16+00:00"
+  }
+}

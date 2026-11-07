@@ -21,7 +21,7 @@ from itertools import combinations
 from random import Random
 
 from medrageval.facts.factsheet import NUMBER, Fact, FactSheet, content_tokens, jaccard_tokens, roots
-from medrageval.generate.corpus import REDACTED, Corpus, Unit, tokenize
+from medrageval.generate.corpus import REDACTED, Corpus, Unit
 from medrageval.text import normalize
 
 # A word mixing ASCII letters with two or more non-ASCII ones ("yéárs") is an OCR glyph error. One accent ("naïve") is a word.

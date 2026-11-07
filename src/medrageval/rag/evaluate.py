@@ -33,7 +33,6 @@ bootstrap intervals), and prints the summary.
 import argparse
 import copy
 import json
-import re
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -41,7 +40,7 @@ from pathlib import Path
 
 import yaml
 
-from medrag.app import App, collection_name
+from medrag.app import App
 from medrag.chunk import Chunk
 from medrag.generate import PROMPT_VERSION, RAG
 from medrag.llm import LLMError as RagLLMError
@@ -271,7 +270,7 @@ def make_row(it: dict, a: dict, judge: dict | None, patterns: list[str], speaker
 
 
 def build_report(rows: list[dict], items: list[dict], rag: RAG, judge, full: dict, elapsed: float, mode: str | None) -> dict:
-    rcfg, ecfg = full["rag"], full["rag"]["eval"]
+    ecfg = full["rag"]["eval"]
     app_cfg = rag.cfg
     n_boot, seed = ecfg["bootstrap"], ecfg["seed"]
     excluded = [r["uid"] for r in rows if r.get("excluded")]
@@ -315,7 +314,7 @@ def build_report(rows: list[dict], items: list[dict], rag: RAG, judge, full: dic
         "messy_missing": missing,
         "items": len(rows),
         "excluded": excluded,   # items run but not scored (see `excluded` in responses.jsonl)
-        "rag": {"model": rag.llm.model, "base_url": app_cfg["llm"]["base_url"], "temperature": app_cfg["llm"].get("temperature"),
+        "rag": {"model": rag.llm.model, "temperature": app_cfg["llm"].get("temperature"),
                 "embedding_model": app_cfg["embedding"]["model"] if rag.retriever.embedder else None,
                 "reranker": rag.retriever.reranker.model if rag.retriever.reranker else None,
                 "retrieval": {**app_cfg["retrieval"], "mode": mode or app_cfg["retrieval"]["mode"], "rerank": rag.retriever.reranker is not None},

@@ -1,0 +1,3690 @@
+[
+  {
+    "section_id": "d01-s001",
+    "doc_id": "d01",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single Technology Appraisal",
+    "page": 1
+  },
+  {
+    "section_id": "d01-s002",
+    "doc_id": "d01",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Committee Papers",
+    "page": 1
+  },
+  {
+    "section_id": "d01-s003",
+    "doc_id": "d01",
+    "parent_id": "d01-s002",
+    "depth": 2,
+    "title": "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
+    "page": 2
+  },
+  {
+    "section_id": "d01-s004",
+    "doc_id": "d01",
+    "parent_id": "d01-s002",
+    "depth": 2,
+    "title": "SINGLE TECHNOLOGY APPRAISAL",
+    "page": 2
+  },
+  {
+    "section_id": "d01-s005",
+    "doc_id": "d01",
+    "parent_id": "d01-s002",
+    "depth": 2,
+    "title": "4. Expert personal statements from:",
+    "page": 2
+  },
+  {
+    "section_id": "d02-s001",
+    "doc_id": "d02",
+    "parent_id": null,
+    "depth": 1,
+    "title": "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
+    "page": 4
+  },
+  {
+    "section_id": "d02-s002",
+    "doc_id": "d02",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single technology appraisal",
+    "page": 4
+  },
+  {
+    "section_id": "d02-s003",
+    "doc_id": "d02",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Document B Company evidence submission",
+    "page": 4
+  },
+  {
+    "section_id": "d02-s004",
+    "doc_id": "d02",
+    "parent_id": "d02-s003",
+    "depth": 2,
+    "title": "July 2024",
+    "page": 4
+  },
+  {
+    "section_id": "d02-s005",
+    "doc_id": "d02",
+    "parent_id": "d02-s003",
+    "depth": 2,
+    "title": "Contents",
+    "page": 5
+  },
+  {
+    "section_id": "d02-s006",
+    "doc_id": "d02",
+    "parent_id": "d02-s003",
+    "depth": 2,
+    "title": "Tables and figures",
+    "page": 8
+  },
+  {
+    "section_id": "d02-s007",
+    "doc_id": "d02",
+    "parent_id": "d02-s003",
+    "depth": 2,
+    "title": "Abbreviations",
+    "page": 11
+  },
+  {
+    "section_id": "d02-s008",
+    "doc_id": "d02",
+    "parent_id": "d02-s003",
+    "depth": 2,
+    "title": "B.1. Decision problem, description of the technology and clinical care pathway",
+    "page": 14
+  },
+  {
+    "section_id": "d02-s009",
+    "doc_id": "d02",
+    "parent_id": "d02-s008",
+    "depth": 3,
+    "title": "Disease overview",
+    "page": 14
+  },
+  {
+    "section_id": "d02-s010",
+    "doc_id": "d02",
+    "parent_id": "d02-s008",
+    "depth": 3,
+    "title": "Current treatment pathway based on NICE guidance and ESMO clinical guidelines",
+    "page": 14
+  },
+  {
+    "section_id": "d02-s011",
+    "doc_id": "d02",
+    "parent_id": "d02-s008",
+    "depth": 3,
+    "title": "Unmet needs",
+    "page": 14
+  },
+  {
+    "section_id": "d02-s012",
+    "doc_id": "d02",
+    "parent_id": "d02-s008",
+    "depth": 3,
+    "title": "Proposed positioning of capivasertib plus fulvestrant",
+    "page": 15
+  },
+  {
+    "section_id": "d02-s013",
+    "doc_id": "d02",
+    "parent_id": "d02-s008",
+    "depth": 3,
+    "title": "B.1.1. Decision problem",
+    "page": 15
+  },
+  {
+    "section_id": "d02-s014",
+    "doc_id": "d02",
+    "parent_id": "d02-s008",
+    "depth": 3,
+    "title": "B.1.2. Description of the technology being evaluated",
+    "page": 21
+  },
+  {
+    "section_id": "d02-s015",
+    "doc_id": "d02",
+    "parent_id": "d02-s008",
+    "depth": 3,
+    "title": "B.1.3. Health condition and position of the technology in the treatment pathway",
+    "page": 23
+  },
+  {
+    "section_id": "d02-s016",
+    "doc_id": "d02",
+    "parent_id": "d02-s015",
+    "depth": 4,
+    "title": "B.1.3.1. Disease overview",
+    "page": 23
+  },
+  {
+    "section_id": "d02-s017",
+    "doc_id": "d02",
+    "parent_id": "d02-s015",
+    "depth": 4,
+    "title": "B.1.3.2. Current treatment pathway and unmet needs",
+    "page": 25
+  },
+  {
+    "section_id": "d02-s018",
+    "doc_id": "d02",
+    "parent_id": "d02-s017",
+    "depth": 5,
+    "title": "B.1.3.2.1. Current treatment pathway",
+    "page": 25
+  },
+  {
+    "section_id": "d02-s019",
+    "doc_id": "d02",
+    "parent_id": "d02-s017",
+    "depth": 5,
+    "title": "B.1.3.2.2. Unmet needs",
+    "page": 28
+  },
+  {
+    "section_id": "d02-s020",
+    "doc_id": "d02",
+    "parent_id": "d02-s015",
+    "depth": 4,
+    "title": "B.1.3.3. Positioning of capivasertib plus fulvestrant in the treatment pathway",
+    "page": 30
+  },
+  {
+    "section_id": "d02-s021",
+    "doc_id": "d02",
+    "parent_id": "d02-s008",
+    "depth": 3,
+    "title": "B.1.4. Equality considerations",
+    "page": 30
+  },
+  {
+    "section_id": "d02-s022",
+    "doc_id": "d02",
+    "parent_id": "d02-s003",
+    "depth": 2,
+    "title": "B.2. Clinical effectiveness",
+    "page": 31
+  },
+  {
+    "section_id": "d02-s023",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "Summary of phase 3 RCT data",
+    "page": 31
+  },
+  {
+    "section_id": "d02-s024",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "Summary of indirect comparative evidence",
+    "page": 31
+  },
+  {
+    "section_id": "d02-s025",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "Conclusion",
+    "page": 32
+  },
+  {
+    "section_id": "d02-s026",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.1. Identification and selection of relevant studies",
+    "page": 32
+  },
+  {
+    "section_id": "d02-s027",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.2. List of relevant clinical effectiveness evidence",
+    "page": 32
+  },
+  {
+    "section_id": "d02-s028",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.3. Summary of methodology of the relevant clinical effectiveness evidence",
+    "page": 34
+  },
+  {
+    "section_id": "d02-s029",
+    "doc_id": "d02",
+    "parent_id": "d02-s028",
+    "depth": 4,
+    "title": "B.2.3.1. Methodology of pivotal trial",
+    "page": 34
+  },
+  {
+    "section_id": "d02-s030",
+    "doc_id": "d02",
+    "parent_id": "d02-s028",
+    "depth": 4,
+    "title": "B.2.3.2. Baseline characteristics",
+    "page": 36
+  },
+  {
+    "section_id": "d02-s031",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.4. Statistical analysis and definition of study groups in the relevant clinical effectiveness evidence",
+    "page": 38
+  },
+  {
+    "section_id": "d02-s032",
+    "doc_id": "d02",
+    "parent_id": "d02-s031",
+    "depth": 4,
+    "title": "B.2.4.1. Statistical analysis",
+    "page": 38
+  },
+  {
+    "section_id": "d02-s033",
+    "doc_id": "d02",
+    "parent_id": "d02-s031",
+    "depth": 4,
+    "title": "B.2.4.2. Patient disposition",
+    "page": 39
+  },
+  {
+    "section_id": "d02-s034",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.5. Critical appraisal of the relevant clinical effectiveness evidence",
+    "page": 40
+  },
+  {
+    "section_id": "d02-s035",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.6. Clinical effectiveness results of the relevant studies",
+    "page": 41
+  },
+  {
+    "section_id": "d02-s036",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.1. Primary endpoint: Progression free survival in PI3K/AKT-altered population",
+    "page": 41
+  },
+  {
+    "section_id": "d02-s037",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.2. Exploratory endpoint: Progression free survival in the PI3K/AKT pathway-altered population with prior CDK4/6 inhibitor use",
+    "page": 43
+  },
+  {
+    "section_id": "d02-s038",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.3. Secondary endpoint: Overall survival in PI3K/AKT pathway-altered population",
+    "page": 44
+  },
+  {
+    "section_id": "d02-s039",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.4. Exploratory endpoint: Overall survival in PI3K/AKT pathway-altered population with prior CDK4/6 inhibitor use",
+    "page": 45
+  },
+  {
+    "section_id": "d02-s040",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.5. Secondary endpoint: Second progression-free survival (PFS2) in PI3K/AKT pathway-altered population",
+    "page": 46
+  },
+  {
+    "section_id": "d02-s041",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.6. Secondary endpoint: Objective response rate in PI3K/AKT pathwayaltered population",
+    "page": 47
+  },
+  {
+    "section_id": "d02-s042",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.7. Secondary endpoint: EORTC QLQ-C30 and EORTC QLQ-BR23 in the PI3K/AKT pathway-altered population",
+    "page": 48
+  },
+  {
+    "section_id": "d02-s043",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.8. Secondary endpoint: Time to deterioration in ECOG performance status in the PI3K/AKT pathway-altered population",
+    "page": 50
+  },
+  {
+    "section_id": "d02-s044",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.9. Exploratory endpoint: Time to first subsequent chemotherapy or death in the PI3K/AKT pathway-altered population",
+    "page": 50
+  },
+  {
+    "section_id": "d02-s045",
+    "doc_id": "d02",
+    "parent_id": "d02-s035",
+    "depth": 4,
+    "title": "B.2.6.10. Exploratory endpoint: EQ-5D-5L in the PI3K/AKT pathway-altered population",
+    "page": 50
+  },
+  {
+    "section_id": "d02-s046",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.7. Subgroup analysis",
+    "page": 52
+  },
+  {
+    "section_id": "d02-s047",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.8. Meta-analysis",
+    "page": 54
+  },
+  {
+    "section_id": "d02-s048",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.9. Indirect and mixed treatment comparisons",
+    "page": 54
+  },
+  {
+    "section_id": "d02-s049",
+    "doc_id": "d02",
+    "parent_id": "d02-s048",
+    "depth": 4,
+    "title": "B.2.9.1. Results of the NMA",
+    "page": 55
+  },
+  {
+    "section_id": "d02-s050",
+    "doc_id": "d02",
+    "parent_id": "d02-s049",
+    "depth": 5,
+    "title": "B.2.9.1.1. PFS results",
+    "page": 56
+  },
+  {
+    "section_id": "d02-s051",
+    "doc_id": "d02",
+    "parent_id": "d02-s049",
+    "depth": 5,
+    "title": "B.2.9.1.2. OS results",
+    "page": 58
+  },
+  {
+    "section_id": "d02-s052",
+    "doc_id": "d02",
+    "parent_id": "d02-s048",
+    "depth": 4,
+    "title": "B.2.9.2. Uncertainties in the indirect and mixed treatment comparisons",
+    "page": 59
+  },
+  {
+    "section_id": "d02-s053",
+    "doc_id": "d02",
+    "parent_id": "d02-s048",
+    "depth": 4,
+    "title": "B.2.9.3. Conclusions from the NMA",
+    "page": 61
+  },
+  {
+    "section_id": "d02-s054",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.10. Adverse reactions",
+    "page": 62
+  },
+  {
+    "section_id": "d02-s055",
+    "doc_id": "d02",
+    "parent_id": "d02-s054",
+    "depth": 4,
+    "title": "B.2.10.1. Treatment exposure",
+    "page": 62
+  },
+  {
+    "section_id": "d02-s056",
+    "doc_id": "d02",
+    "parent_id": "d02-s054",
+    "depth": 4,
+    "title": "B.2.10.2. Overall adverse events",
+    "page": 63
+  },
+  {
+    "section_id": "d02-s057",
+    "doc_id": "d02",
+    "parent_id": "d02-s054",
+    "depth": 4,
+    "title": "B.2.10.3. Most common AEs",
+    "page": 64
+  },
+  {
+    "section_id": "d02-s058",
+    "doc_id": "d02",
+    "parent_id": "d02-s054",
+    "depth": 4,
+    "title": "B.2.10.4. AE causality",
+    "page": 65
+  },
+  {
+    "section_id": "d02-s059",
+    "doc_id": "d02",
+    "parent_id": "d02-s054",
+    "depth": 4,
+    "title": "B.2.10.5. Adverse events of special interest",
+    "page": 66
+  },
+  {
+    "section_id": "d02-s060",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.11. Ongoing studies",
+    "page": 66
+  },
+  {
+    "section_id": "d02-s061",
+    "doc_id": "d02",
+    "parent_id": "d02-s022",
+    "depth": 3,
+    "title": "B.2.12. Interpretation of clinical effectiveness and safety evidence",
+    "page": 66
+  },
+  {
+    "section_id": "d02-s062",
+    "doc_id": "d02",
+    "parent_id": "d02-s061",
+    "depth": 4,
+    "title": "B.2.12.1. Context and decision problem",
+    "page": 66
+  },
+  {
+    "section_id": "d02-s063",
+    "doc_id": "d02",
+    "parent_id": "d02-s061",
+    "depth": 4,
+    "title": "B.2.12.2. Summary of clinical evidence base",
+    "page": 67
+  },
+  {
+    "section_id": "d02-s064",
+    "doc_id": "d02",
+    "parent_id": "d02-s063",
+    "depth": 5,
+    "title": "B.2.12.2.1. Efficacy and safety data in CAPItello-291",
+    "page": 67
+  },
+  {
+    "section_id": "d02-s065",
+    "doc_id": "d02",
+    "parent_id": "d02-s063",
+    "depth": 5,
+    "title": "B.2.12.2.2. Comparative evidence",
+    "page": 68
+  },
+  {
+    "section_id": "d02-s066",
+    "doc_id": "d02",
+    "parent_id": "d02-s061",
+    "depth": 4,
+    "title": "B.2.12.3. Generalisability and relevance of clinical evidence base",
+    "page": 68
+  },
+  {
+    "section_id": "d02-s067",
+    "doc_id": "d02",
+    "parent_id": "d02-s066",
+    "depth": 5,
+    "title": "B.2.12.3.1. Patient populations",
+    "page": 68
+  },
+  {
+    "section_id": "d02-s068",
+    "doc_id": "d02",
+    "parent_id": "d02-s066",
+    "depth": 5,
+    "title": "B.2.12.3.2. Intervention and comparators",
+    "page": 69
+  },
+  {
+    "section_id": "d02-s069",
+    "doc_id": "d02",
+    "parent_id": "d02-s066",
+    "depth": 5,
+    "title": "B.2.12.3.3. Outcomes",
+    "page": 70
+  },
+  {
+    "section_id": "d02-s070",
+    "doc_id": "d02",
+    "parent_id": "d02-s061",
+    "depth": 4,
+    "title": "B.2.12.4. Strengths and limitations of clinical evidence",
+    "page": 70
+  },
+  {
+    "section_id": "d02-s071",
+    "doc_id": "d02",
+    "parent_id": "d02-s070",
+    "depth": 5,
+    "title": "B.2.12.4.1. CAPItello-291 trial of capivasertib plus fulvestrant",
+    "page": 70
+  },
+  {
+    "section_id": "d02-s072",
+    "doc_id": "d02",
+    "parent_id": "d02-s070",
+    "depth": 5,
+    "title": "B.2.12.4.2. Indirect comparison",
+    "page": 71
+  },
+  {
+    "section_id": "d02-s073",
+    "doc_id": "d02",
+    "parent_id": "d02-s061",
+    "depth": 4,
+    "title": "B.2.12.5. Conclusions from clinical evidence",
+    "page": 72
+  },
+  {
+    "section_id": "d02-s074",
+    "doc_id": "d02",
+    "parent_id": "d02-s003",
+    "depth": 2,
+    "title": "B.3. Cost effectiveness",
+    "page": 73
+  },
+  {
+    "section_id": "d02-s075",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "Summary of cost effectiveness",
+    "page": 73
+  },
+  {
+    "section_id": "d02-s076",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "Conclusion",
+    "page": 73
+  },
+  {
+    "section_id": "d02-s077",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.1. Published cost-effectiveness studies",
+    "page": 74
+  },
+  {
+    "section_id": "d02-s078",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.2. Economic analysis",
+    "page": 76
+  },
+  {
+    "section_id": "d02-s079",
+    "doc_id": "d02",
+    "parent_id": "d02-s078",
+    "depth": 4,
+    "title": "B.3.2.1. Patient population",
+    "page": 77
+  },
+  {
+    "section_id": "d02-s080",
+    "doc_id": "d02",
+    "parent_id": "d02-s078",
+    "depth": 4,
+    "title": "B.3.2.2. Model structure",
+    "page": 78
+  },
+  {
+    "section_id": "d02-s081",
+    "doc_id": "d02",
+    "parent_id": "d02-s078",
+    "depth": 4,
+    "title": "B.3.2.3. Intervention technology and comparators",
+    "page": 81
+  },
+  {
+    "section_id": "d02-s082",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.3. Clinical parameters and variables",
+    "page": 82
+  },
+  {
+    "section_id": "d02-s083",
+    "doc_id": "d02",
+    "parent_id": "d02-s082",
+    "depth": 4,
+    "title": "B.3.3.1. Overview of the clinical data sources and approach to survival modelling",
+    "page": 82
+  },
+  {
+    "section_id": "d02-s084",
+    "doc_id": "d02",
+    "parent_id": "d02-s082",
+    "depth": 4,
+    "title": "B.3.3.2. Progression-free survival modelling – fulvestrant monotherapy reference arm",
+    "page": 84
+  },
+  {
+    "section_id": "d02-s085",
+    "doc_id": "d02",
+    "parent_id": "d02-s082",
+    "depth": 4,
+    "title": "B.3.3.3. Overall survival modelling – fulvestrant monotherapy reference arm",
+    "page": 87
+  },
+  {
+    "section_id": "d02-s086",
+    "doc_id": "d02",
+    "parent_id": "d02-s082",
+    "depth": 4,
+    "title": "B.3.3.4. Overall survival and progression-free survival for capivasertib plus fulvestrant and external comparators",
+    "page": 91
+  },
+  {
+    "section_id": "d02-s087",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.4. Measurement and valuation of health effects",
+    "page": 93
+  },
+  {
+    "section_id": "d02-s088",
+    "doc_id": "d02",
+    "parent_id": "d02-s087",
+    "depth": 4,
+    "title": "B.3.4.1. Health-related quality of life data from literature",
+    "page": 93
+  },
+  {
+    "section_id": "d02-s089",
+    "doc_id": "d02",
+    "parent_id": "d02-s087",
+    "depth": 4,
+    "title": "B.3.4.2. Health-related quality of life data from clinical trial",
+    "page": 94
+  },
+  {
+    "section_id": "d02-s090",
+    "doc_id": "d02",
+    "parent_id": "d02-s087",
+    "depth": 4,
+    "title": "B.3.4.3. Mapping analysis",
+    "page": 96
+  },
+  {
+    "section_id": "d02-s091",
+    "doc_id": "d02",
+    "parent_id": "d02-s087",
+    "depth": 4,
+    "title": "B.3.4.4. Age-related utility",
+    "page": 97
+  },
+  {
+    "section_id": "d02-s092",
+    "doc_id": "d02",
+    "parent_id": "d02-s087",
+    "depth": 4,
+    "title": "B.3.4.5. Impact of adverse events on health state utility",
+    "page": 98
+  },
+  {
+    "section_id": "d02-s093",
+    "doc_id": "d02",
+    "parent_id": "d02-s087",
+    "depth": 4,
+    "title": "B.3.4.6. Summary of health state utilities used in the economic model",
+    "page": 100
+  },
+  {
+    "section_id": "d02-s094",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.5. Cost and healthcare resource use identification, measurement and valuation",
+    "page": 101
+  },
+  {
+    "section_id": "d02-s095",
+    "doc_id": "d02",
+    "parent_id": "d02-s094",
+    "depth": 4,
+    "title": "B.3.5.1. Intervention and comparator costs",
+    "page": 102
+  },
+  {
+    "section_id": "d02-s096",
+    "doc_id": "d02",
+    "parent_id": "d02-s095",
+    "depth": 5,
+    "title": "B.3.5.1.1. Time on treatment",
+    "page": 102
+  },
+  {
+    "section_id": "d02-s097",
+    "doc_id": "d02",
+    "parent_id": "d02-s095",
+    "depth": 5,
+    "title": "B.3.5.1.2. Acquisition costs",
+    "page": 103
+  },
+  {
+    "section_id": "d02-s098",
+    "doc_id": "d02",
+    "parent_id": "d02-s094",
+    "depth": 4,
+    "title": "B.3.5.2. Subsequent treatment costs",
+    "page": 104
+  },
+  {
+    "section_id": "d02-s099",
+    "doc_id": "d02",
+    "parent_id": "d02-s094",
+    "depth": 4,
+    "title": "B.3.5.3. Drug administration costs",
+    "page": 108
+  },
+  {
+    "section_id": "d02-s100",
+    "doc_id": "d02",
+    "parent_id": "d02-s094",
+    "depth": 4,
+    "title": "B.3.5.4. Health state costs and resource use",
+    "page": 108
+  },
+  {
+    "section_id": "d02-s101",
+    "doc_id": "d02",
+    "parent_id": "d02-s094",
+    "depth": 4,
+    "title": "B.3.5.5. Adverse event costs",
+    "page": 110
+  },
+  {
+    "section_id": "d02-s102",
+    "doc_id": "d02",
+    "parent_id": "d02-s094",
+    "depth": 4,
+    "title": "B.3.5.6. Miscellaneous unit costs",
+    "page": 112
+  },
+  {
+    "section_id": "d02-s103",
+    "doc_id": "d02",
+    "parent_id": "d02-s102",
+    "depth": 5,
+    "title": "B.3.5.6.1. End of life costs",
+    "page": 112
+  },
+  {
+    "section_id": "d02-s104",
+    "doc_id": "d02",
+    "parent_id": "d02-s102",
+    "depth": 5,
+    "title": "B.3.5.6.2. Genomic testing costs",
+    "page": 112
+  },
+  {
+    "section_id": "d02-s105",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.6. Severity",
+    "page": 113
+  },
+  {
+    "section_id": "d02-s106",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.7. Uncertainty",
+    "page": 114
+  },
+  {
+    "section_id": "d02-s107",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.8. Managed access proposal",
+    "page": 115
+  },
+  {
+    "section_id": "d02-s108",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.9. Summary of base-case analysis inputs and assumptions",
+    "page": 115
+  },
+  {
+    "section_id": "d02-s109",
+    "doc_id": "d02",
+    "parent_id": "d02-s108",
+    "depth": 4,
+    "title": "B.3.9.1. Summary of base-case analysis inputs",
+    "page": 115
+  },
+  {
+    "section_id": "d02-s110",
+    "doc_id": "d02",
+    "parent_id": "d02-s108",
+    "depth": 4,
+    "title": "B.3.9.2. Assumptions",
+    "page": 122
+  },
+  {
+    "section_id": "d02-s111",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.10. Base-case results",
+    "page": 124
+  },
+  {
+    "section_id": "d02-s112",
+    "doc_id": "d02",
+    "parent_id": "d02-s111",
+    "depth": 4,
+    "title": "B.3.10.1. Base-case incremental cost-effectiveness analysis results",
+    "page": 126
+  },
+  {
+    "section_id": "d02-s113",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.11. Exploring uncertainty",
+    "page": 128
+  },
+  {
+    "section_id": "d02-s114",
+    "doc_id": "d02",
+    "parent_id": "d02-s113",
+    "depth": 4,
+    "title": "B.3.11.1. Probabilistic sensitivity analysis",
+    "page": 128
+  },
+  {
+    "section_id": "d02-s115",
+    "doc_id": "d02",
+    "parent_id": "d02-s113",
+    "depth": 4,
+    "title": "B.3.11.2. Deterministic sensitivity analysis",
+    "page": 131
+  },
+  {
+    "section_id": "d02-s116",
+    "doc_id": "d02",
+    "parent_id": "d02-s113",
+    "depth": 4,
+    "title": "B.3.11.3. Scenario analysis",
+    "page": 136
+  },
+  {
+    "section_id": "d02-s117",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.12. Subgroup analysis",
+    "page": 138
+  },
+  {
+    "section_id": "d02-s118",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.13. Benefits not captured in the QALY calculation",
+    "page": 138
+  },
+  {
+    "section_id": "d02-s119",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.14. Validation",
+    "page": 138
+  },
+  {
+    "section_id": "d02-s120",
+    "doc_id": "d02",
+    "parent_id": "d02-s119",
+    "depth": 4,
+    "title": "B.3.14.1. Internal validation of modelled outcomes",
+    "page": 138
+  },
+  {
+    "section_id": "d02-s121",
+    "doc_id": "d02",
+    "parent_id": "d02-s119",
+    "depth": 4,
+    "title": "B.3.14.2. External validation against other data sources",
+    "page": 138
+  },
+  {
+    "section_id": "d02-s122",
+    "doc_id": "d02",
+    "parent_id": "d02-s119",
+    "depth": 4,
+    "title": "B.3.14.3. External validation by clinical experts",
+    "page": 138
+  },
+  {
+    "section_id": "d02-s123",
+    "doc_id": "d02",
+    "parent_id": "d02-s119",
+    "depth": 4,
+    "title": "B.3.14.4. Quality assurance of model",
+    "page": 140
+  },
+  {
+    "section_id": "d02-s124",
+    "doc_id": "d02",
+    "parent_id": "d02-s074",
+    "depth": 3,
+    "title": "B.3.15. Interpretation and conclusions of economic evidence",
+    "page": 140
+  },
+  {
+    "section_id": "d02-s125",
+    "doc_id": "d02",
+    "parent_id": "d02-s003",
+    "depth": 2,
+    "title": "B.4. References",
+    "page": 142
+  },
+  {
+    "section_id": "d03-s001",
+    "doc_id": "d03",
+    "parent_id": null,
+    "depth": 1,
+    "title": "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
+    "page": 150
+  },
+  {
+    "section_id": "d03-s002",
+    "doc_id": "d03",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single technology appraisal",
+    "page": 150
+  },
+  {
+    "section_id": "d03-s003",
+    "doc_id": "d03",
+    "parent_id": "d03-s002",
+    "depth": 2,
+    "title": "August 2024",
+    "page": 150
+  },
+  {
+    "section_id": "d03-s004",
+    "doc_id": "d03",
+    "parent_id": "d03-s002",
+    "depth": 2,
+    "title": "Summary of Information for Patients (SIP):",
+    "page": 151
+  },
+  {
+    "section_id": "d03-s005",
+    "doc_id": "d03",
+    "parent_id": "d03-s004",
+    "depth": 3,
+    "title": "The pharmaceutical company perspective",
+    "page": 151
+  },
+  {
+    "section_id": "d03-s006",
+    "doc_id": "d03",
+    "parent_id": "d03-s004",
+    "depth": 3,
+    "title": "What is the SIP?",
+    "page": 151
+  },
+  {
+    "section_id": "d03-s007",
+    "doc_id": "d03",
+    "parent_id": "d03-s004",
+    "depth": 3,
+    "title": "SECTION 1: Submission summary",
+    "page": 151
+  },
+  {
+    "section_id": "d03-s008",
+    "doc_id": "d03",
+    "parent_id": "d03-s004",
+    "depth": 3,
+    "title": "SECTION 2: Current landscape",
+    "page": 153
+  },
+  {
+    "section_id": "d03-s009",
+    "doc_id": "d03",
+    "parent_id": "d03-s008",
+    "depth": 4,
+    "title": "2a) The condition – clinical presentation and impact",
+    "page": 153
+  },
+  {
+    "section_id": "d03-s010",
+    "doc_id": "d03",
+    "parent_id": "d03-s008",
+    "depth": 4,
+    "title": "2b) Diagnosis of the condition (in relation to the medicine being evaluated)",
+    "page": 154
+  },
+  {
+    "section_id": "d03-s011",
+    "doc_id": "d03",
+    "parent_id": "d03-s008",
+    "depth": 4,
+    "title": "2c) Current treatment options:",
+    "page": 154
+  },
+  {
+    "section_id": "d03-s012",
+    "doc_id": "d03",
+    "parent_id": "d03-s008",
+    "depth": 4,
+    "title": "2d) Patient-based evidence (PBE) about living with the condition",
+    "page": 156
+  },
+  {
+    "section_id": "d03-s013",
+    "doc_id": "d03",
+    "parent_id": "d03-s012",
+    "depth": 5,
+    "title": "Context:",
+    "page": 156
+  },
+  {
+    "section_id": "d03-s014",
+    "doc_id": "d03",
+    "parent_id": "d03-s004",
+    "depth": 3,
+    "title": "SECTION 3: The treatment",
+    "page": 157
+  },
+  {
+    "section_id": "d03-s015",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3a) How does the new treatment work?",
+    "page": 157
+  },
+  {
+    "section_id": "d03-s016",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3b) Combinations with other medicines",
+    "page": 158
+  },
+  {
+    "section_id": "d03-s017",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3c) Administration and dosing",
+    "page": 158
+  },
+  {
+    "section_id": "d03-s018",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3d) Current clinical trials",
+    "page": 159
+  },
+  {
+    "section_id": "d03-s019",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3e) Efficacy",
+    "page": 159
+  },
+  {
+    "section_id": "d03-s020",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3f) Quality of life impact of the medicine and patient preference information",
+    "page": 161
+  },
+  {
+    "section_id": "d03-s021",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3g) Safety of the medicine and side effects",
+    "page": 161
+  },
+  {
+    "section_id": "d03-s022",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3h) Summary of key benefits of treatment for patients",
+    "page": 162
+  },
+  {
+    "section_id": "d03-s023",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3i) Summary of key disadvantages of treatment for patients",
+    "page": 162
+  },
+  {
+    "section_id": "d03-s024",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3i) Value and economic considerations",
+    "page": 163
+  },
+  {
+    "section_id": "d03-s025",
+    "doc_id": "d03",
+    "parent_id": "d03-s024",
+    "depth": 5,
+    "title": "Introduction for patients:",
+    "page": 163
+  },
+  {
+    "section_id": "d03-s026",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "The treatments compared in the model",
+    "page": 163
+  },
+  {
+    "section_id": "d03-s027",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "How the model reflects the condition",
+    "page": 163
+  },
+  {
+    "section_id": "d03-s028",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "Modelling how much a treatment extends life",
+    "page": 164
+  },
+  {
+    "section_id": "d03-s029",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "Modelling how much a treatment improves quality of life",
+    "page": 164
+  },
+  {
+    "section_id": "d03-s030",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "Modelling how the costs of treatment differ with the new treatment",
+    "page": 165
+  },
+  {
+    "section_id": "d03-s031",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "Uncertainty",
+    "page": 166
+  },
+  {
+    "section_id": "d03-s032",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "Cost effectiveness results",
+    "page": 166
+  },
+  {
+    "section_id": "d03-s033",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "Additional factors",
+    "page": 167
+  },
+  {
+    "section_id": "d03-s034",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3j) Innovation",
+    "page": 167
+  },
+  {
+    "section_id": "d03-s035",
+    "doc_id": "d03",
+    "parent_id": "d03-s014",
+    "depth": 4,
+    "title": "3k) Equalities",
+    "page": 168
+  },
+  {
+    "section_id": "d03-s036",
+    "doc_id": "d03",
+    "parent_id": "d03-s035",
+    "depth": 5,
+    "title": "SECTION 4: Further information, glossary and references",
+    "page": 168
+  },
+  {
+    "section_id": "d03-s037",
+    "doc_id": "d03",
+    "parent_id": "d03-s036",
+    "depth": 6,
+    "title": "4a) Further information",
+    "page": 168
+  },
+  {
+    "section_id": "d03-s038",
+    "doc_id": "d03",
+    "parent_id": "d03-s036",
+    "depth": 6,
+    "title": "4b) Glossary of terms",
+    "page": 169
+  },
+  {
+    "section_id": "d03-s039",
+    "doc_id": "d03",
+    "parent_id": "d03-s036",
+    "depth": 6,
+    "title": "4c) References",
+    "page": 170
+  },
+  {
+    "section_id": "d04-s001",
+    "doc_id": "d04",
+    "parent_id": null,
+    "depth": 1,
+    "title": "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE Single technology appraisal",
+    "page": 175
+  },
+  {
+    "section_id": "d04-s002",
+    "doc_id": "d04",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Clarification questions",
+    "page": 175
+  },
+  {
+    "section_id": "d04-s003",
+    "doc_id": "d04",
+    "parent_id": "d04-s002",
+    "depth": 2,
+    "title": "August 2024",
+    "page": 175
+  },
+  {
+    "section_id": "d04-s004",
+    "doc_id": "d04",
+    "parent_id": "d04-s003",
+    "depth": 3,
+    "title": "Notes for company",
+    "page": 176
+  },
+  {
+    "section_id": "d04-s005",
+    "doc_id": "d04",
+    "parent_id": "d04-s003",
+    "depth": 3,
+    "title": "Highlighting in the template",
+    "page": 176
+  },
+  {
+    "section_id": "d04-s006",
+    "doc_id": "d04",
+    "parent_id": "d04-s002",
+    "depth": 2,
+    "title": "Section A: Clarification on effectiveness data",
+    "page": 176
+  },
+  {
+    "section_id": "d04-s007",
+    "doc_id": "d04",
+    "parent_id": "d04-s006",
+    "depth": 3,
+    "title": "HTA institutions",
+    "page": 179
+  },
+  {
+    "section_id": "d04-s008",
+    "doc_id": "d04",
+    "parent_id": "d04-s006",
+    "depth": 3,
+    "title": "Abstracts from scientific conferences",
+    "page": 180
+  },
+  {
+    "section_id": "d04-s009",
+    "doc_id": "d04",
+    "parent_id": "d04-s006",
+    "depth": 3,
+    "title": "Decision problem",
+    "page": 182
+  },
+  {
+    "section_id": "d04-s010",
+    "doc_id": "d04",
+    "parent_id": "d04-s009",
+    "depth": 4,
+    "title": "A 7. Priority question: The company’s decision problem excluded retreatment with CDK4/6 inhibitors as a relevant comparator as the company stated that retreatment with CDK4/6 inhibitors is not routinely an option per ESMO and NCCN guidelines and is not reimbursed by the NHS. Please provide further justification on the exclusion of retreatment with CDK4/6 inhibitors as a relevant comparator on the basis of guidelines in England and Wales.",
+    "page": 183
+  },
+  {
+    "section_id": "d04-s011",
+    "doc_id": "d04",
+    "parent_id": "d04-s009",
+    "depth": 4,
+    "title": "comparators that are used in UK clinical practice.",
+    "page": 185
+  },
+  {
+    "section_id": "d04-s012",
+    "doc_id": "d04",
+    "parent_id": "d04-s006",
+    "depth": 3,
+    "title": "Systematic review",
+    "page": 187
+  },
+  {
+    "section_id": "d04-s013",
+    "doc_id": "d04",
+    "parent_id": "d04-s012",
+    "depth": 4,
+    "title": "A 10. Please revise the PRISMA flow diagram accordingly after providing the details of excluded studies with reasons for exclusion.",
+    "page": 188
+  },
+  {
+    "section_id": "d04-s014",
+    "doc_id": "d04",
+    "parent_id": "d04-s006",
+    "depth": 3,
+    "title": "Clinical effectiveness evidence",
+    "page": 189
+  },
+  {
+    "section_id": "d04-s015",
+    "doc_id": "d04",
+    "parent_id": "d04-s014",
+    "depth": 4,
+    "title": "A 12. Priority question: Please provide results of subgroup analyses for the overall survival outcome in the PI3K/AKT pathway-altered population of the CAPItello-291 trial.",
+    "page": 189
+  },
+  {
+    "section_id": "d04-s016",
+    "doc_id": "d04",
+    "parent_id": "d04-s014",
+    "depth": 4,
+    "title": "A 13. Priority question: Please provide subgroup analyses for the overall survival outcome by the specific tumour alteration in the PI3K/AKT pathway-altered population of the CAPItello-291 trial.",
+    "page": 190
+  },
+  {
+    "section_id": "d04-s017",
+    "doc_id": "d04",
+    "parent_id": "d04-s016",
+    "depth": 5,
+    "title": "A 16. In the CAPItello-291 trial, only [REDACTED] patients were recruited from the UK.",
+    "page": 196
+  },
+  {
+    "section_id": "d04-s018",
+    "doc_id": "d04",
+    "parent_id": "d04-s006",
+    "depth": 3,
+    "title": "Indirect treatment comparison (ITC)",
+    "page": 196
+  },
+  {
+    "section_id": "d04-s019",
+    "doc_id": "d04",
+    "parent_id": "d04-s018",
+    "depth": 4,
+    "title": "OS results",
+    "page": 203
+  },
+  {
+    "section_id": "d04-s020",
+    "doc_id": "d04",
+    "parent_id": "d04-s018",
+    "depth": 4,
+    "title": "cost-effectiveness results.",
+    "page": 206
+  },
+  {
+    "section_id": "d04-s021",
+    "doc_id": "d04",
+    "parent_id": "d04-s006",
+    "depth": 3,
+    "title": "Adverse events",
+    "page": 214
+  },
+  {
+    "section_id": "d04-s022",
+    "doc_id": "d04",
+    "parent_id": "d04-s021",
+    "depth": 4,
+    "title": "A 19. Please provide a table that summarizes overall adverse events in the",
+    "page": 214
+  },
+  {
+    "section_id": "d04-s023",
+    "doc_id": "d04",
+    "parent_id": "d04-s021",
+    "depth": 4,
+    "title": "A 20. Please provide data of serious adverse events and treatment discontinuation due to adverse events in the PI3K/AKT pathway-altered population from the FAKTION trial.",
+    "page": 215
+  },
+  {
+    "section_id": "d04-s024",
+    "doc_id": "d04",
+    "parent_id": "d04-s002",
+    "depth": 2,
+    "title": "Section B: Clarification on cost-effectiveness data",
+    "page": 216
+  },
+  {
+    "section_id": "d04-s025",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Literature reviews",
+    "page": 217
+  },
+  {
+    "section_id": "d04-s026",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Model structure",
+    "page": 221
+  },
+  {
+    "section_id": "d04-s027",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Intervention and comparators",
+    "page": 222
+  },
+  {
+    "section_id": "d04-s028",
+    "doc_id": "d04",
+    "parent_id": "d04-s027",
+    "depth": 4,
+    "title": "b. Please provide an updated economic model that includes all comparators listed in the final scope and provide all model analyses, including all sensitivity and scenario analyses.",
+    "page": 222
+  },
+  {
+    "section_id": "d04-s029",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Treatment effectiveness",
+    "page": 224
+  },
+  {
+    "section_id": "d04-s030",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "a. Tables with numbers of patients at risk, in 3 months intervals.",
+    "page": 224
+  },
+  {
+    "section_id": "d04-s031",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "b. To examine the proportional hazard assumption, provide the plotted scaled Schoenfeld residuals versus time and log cumulative hazard versus log time (as discussed in Appendix D).",
+    "page": 225
+  },
+  {
+    "section_id": "d04-s032",
+    "doc_id": "d04",
+    "parent_id": "d04-s031",
+    "depth": 5,
+    "title": "Overall survival",
+    "page": 225
+  },
+  {
+    "section_id": "d04-s033",
+    "doc_id": "d04",
+    "parent_id": "d04-s031",
+    "depth": 5,
+    "title": "Progression-free survival",
+    "page": 227
+  },
+  {
+    "section_id": "d04-s034",
+    "doc_id": "d04",
+    "parent_id": "d04-s031",
+    "depth": 5,
+    "title": "Progression free survival:",
+    "page": 229
+  },
+  {
+    "section_id": "d04-s035",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "1. Plot the cumulative hazard versus time",
+    "page": 230
+  },
+  {
+    "section_id": "d04-s036",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "2. Plot the log smoothed hazard versus time",
+    "page": 232
+  },
+  {
+    "section_id": "d04-s037",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "3. Plot the standard normal quartiles versus log time",
+    "page": 233
+  },
+  {
+    "section_id": "d04-s038",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "4. Plot the log survival odds versus log time",
+    "page": 235
+  },
+  {
+    "section_id": "d04-s039",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "models and provide an updated economic model as well as scenario analyses enabling the use of these spline models.",
+    "page": 237
+  },
+  {
+    "section_id": "d04-s040",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "[REDACTED] [REDACTED] ” . Please provide more detailed clinical expert comments.",
+    "page": 238
+  },
+  {
+    "section_id": "d04-s041",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "g. In addition to clinical expert validation, please also examine the validity of the extrapolations beyond the Kaplan-Meier data with supporting evidence that the extrapolations are consistent with relevant external data.",
+    "page": 239
+  },
+  {
+    "section_id": "d04-s042",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "h. Please justify the selection of the approaches to estimate and extrapolate PFS and OS, taking into account the responses to the preceding questions as",
+    "page": 239
+  },
+  {
+    "section_id": "d04-s043",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "well as the \"Survival Model Selection Process Algorithm\" provided in NICE DSU TSD 14.",
+    "page": 240
+  },
+  {
+    "section_id": "d04-s044",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "fulvestrant, alpelisib plus fulvestrant, and everolimus plus exemestane using a time-varying hazards approach.",
+    "page": 241
+  },
+  {
+    "section_id": "d04-s045",
+    "doc_id": "d04",
+    "parent_id": "d04-s044",
+    "depth": 5,
+    "title": "Overall survival",
+    "page": 248
+  },
+  {
+    "section_id": "d04-s046",
+    "doc_id": "d04",
+    "parent_id": "d04-s029",
+    "depth": 4,
+    "title": "a. Please justify the assumption of pragmatically applying the same HR for all three treatment options, despite the observed treatment discontinuation differences in the corresponding trials.",
+    "page": 254
+  },
+  {
+    "section_id": "d04-s047",
+    "doc_id": "d04",
+    "parent_id": "d04-s046",
+    "depth": 5,
+    "title": "Fulvestrant (capivasertib plus fulvestrant arm)",
+    "page": 261
+  },
+  {
+    "section_id": "d04-s048",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Health-related quality of life",
+    "page": 265
+  },
+  {
+    "section_id": "d04-s049",
+    "doc_id": "d04",
+    "parent_id": "d04-s048",
+    "depth": 4,
+    "title": "population and the subgroup) and justify the assumption that these data are missing at random, particularly provided that compliance deteriorates overtime within the CAPItello-291 study.",
+    "page": 266
+  },
+  {
+    "section_id": "d04-s050",
+    "doc_id": "d04",
+    "parent_id": "d04-s048",
+    "depth": 4,
+    "title": "Accounting for nested effects",
+    "page": 268
+  },
+  {
+    "section_id": "d04-s051",
+    "doc_id": "d04",
+    "parent_id": "d04-s048",
+    "depth": 4,
+    "title": "The best-fitting model was assessed by AIC",
+    "page": 269
+  },
+  {
+    "section_id": "d04-s052",
+    "doc_id": "d04",
+    "parent_id": "d04-s051",
+    "depth": 5,
+    "title": "𝐲𝐢 = 𝐗𝐢𝛃+ 𝛜𝐢",
+    "page": 269
+  },
+  {
+    "section_id": "d04-s053",
+    "doc_id": "d04",
+    "parent_id": "d04-s048",
+    "depth": 4,
+    "title": "Results of all models",
+    "page": 269
+  },
+  {
+    "section_id": "d04-s054",
+    "doc_id": "d04",
+    "parent_id": "d04-s048",
+    "depth": 4,
+    "title": "d. Please provide an updated model and scenario analysis informing the health state utilities based on the PI3K/AKT pathway-altered subgroup (with prior treatment with CDK 4/6i therapy), using the best fitting model from question c.",
+    "page": 271
+  },
+  {
+    "section_id": "d04-s055",
+    "doc_id": "d04",
+    "parent_id": "d04-s048",
+    "depth": 4,
+    "title": "e. Please outline the differences in HSUVs between the overall trial population and the PI3K/AKT pathway-altered population that received prior CDK 4/6 inhibitor therapy. Please discuss the impact of utilising utilities derived from the overall population on modelled results, as compared with the specified subgroup.",
+    "page": 272
+  },
+  {
+    "section_id": "d04-s056",
+    "doc_id": "d04",
+    "parent_id": "d04-s048",
+    "depth": 4,
+    "title": "a. Please discuss the plausibility of the relatively small utility decrement from the pre- to post-progression health state.",
+    "page": 272
+  },
+  {
+    "section_id": "d04-s057",
+    "doc_id": "d04",
+    "parent_id": "d04-s048",
+    "depth": 4,
+    "title": "b. Please compare the identified HSUVs with those utilised in the CS base case and discuss differences in the absolute values as well as the respective decrements between PF and PD HSUVs.",
+    "page": 273
+  },
+  {
+    "section_id": "d04-s058",
+    "doc_id": "d04",
+    "parent_id": "d04-s048",
+    "depth": 4,
+    "title": "ii. Utilising PF utility from the CS base case and informing the PD decrement from TA421 (i.e., utility decrement of 0.302 from PF to PD HSUV).",
+    "page": 276
+  },
+  {
+    "section_id": "d04-s059",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Adverse Events",
+    "page": 278
+  },
+  {
+    "section_id": "d04-s060",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Costs and resource use",
+    "page": 281
+  },
+  {
+    "section_id": "d04-s061",
+    "doc_id": "d04",
+    "parent_id": "d04-s060",
+    "depth": 4,
+    "title": "a) Please justify why modelling the median RDI for alpelisib plus fulvestrant was deemed unsuitable for the company base-case analysis.",
+    "page": 281
+  },
+  {
+    "section_id": "d04-s062",
+    "doc_id": "d04",
+    "parent_id": "d04-s060",
+    "depth": 4,
+    "title": "b) Please provide an updated economic model and scenario analysis also using the median RDI for capivasertib plus fulvestrant.",
+    "page": 281
+  },
+  {
+    "section_id": "d04-s063",
+    "doc_id": "d04",
+    "parent_id": "d04-s060",
+    "depth": 4,
+    "title": "B 15: Priority question: Patients experiencing disease progression in the economic model were assumed to receive subsequent treatments.",
+    "page": 281
+  },
+  {
+    "section_id": "d04-s064",
+    "doc_id": "d04",
+    "parent_id": "d04-s060",
+    "depth": 4,
+    "title": "According to the company, the proportion of patients receiving subsequent treatments and the distribution of subsequent treatments received were not",
+    "page": 281
+  },
+  {
+    "section_id": "d04-s065",
+    "doc_id": "d04",
+    "parent_id": "d04-s060",
+    "depth": 4,
+    "title": "c) For capivasertib plus fulvestrant, alpelisib plus fulvestrant, and everolimus plus exemestane, please provide an updated economic model and scenario analysis modelling the types of subsequent treatments and proportions of patients according to what was observed in the corresponding clinical trials.",
+    "page": 285
+  },
+  {
+    "section_id": "d04-s066",
+    "doc_id": "d04",
+    "parent_id": "d04-s060",
+    "depth": 4,
+    "title": "b) As testing for AKT1 and PEN alteration status is currently not common, please provide the base case results as well as all sensitivity and scenario analysis including the costs of genomic testing.",
+    "page": 287
+  },
+  {
+    "section_id": "d04-s067",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Severity and uncertainty",
+    "page": 290
+  },
+  {
+    "section_id": "d04-s068",
+    "doc_id": "d04",
+    "parent_id": "d04-s067",
+    "depth": 4,
+    "title": "QALY SHORTFALL CALCULATOR",
+    "page": 291
+  },
+  {
+    "section_id": "d04-s069",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Results",
+    "page": 292
+  },
+  {
+    "section_id": "d04-s070",
+    "doc_id": "d04",
+    "parent_id": "d04-s069",
+    "depth": 4,
+    "title": "b. Please elaborate on the plausibility of the differences between observed and modelled outcomes (proportion accumulated beyond observed data) for:",
+    "page": 294
+  },
+  {
+    "section_id": "d04-s071",
+    "doc_id": "d04",
+    "parent_id": "d04-s069",
+    "depth": 4,
+    "title": "i. Capivasertib + fulvestrant",
+    "page": 294
+  },
+  {
+    "section_id": "d04-s072",
+    "doc_id": "d04",
+    "parent_id": "d04-s069",
+    "depth": 4,
+    "title": "ii. Alepelisib + fulvestrant",
+    "page": 294
+  },
+  {
+    "section_id": "d04-s073",
+    "doc_id": "d04",
+    "parent_id": "d04-s069",
+    "depth": 4,
+    "title": "iii. Everolimus + exemestane",
+    "page": 294
+  },
+  {
+    "section_id": "d04-s074",
+    "doc_id": "d04",
+    "parent_id": "d04-s069",
+    "depth": 4,
+    "title": "iv. The increment",
+    "page": 294
+  },
+  {
+    "section_id": "d04-s075",
+    "doc_id": "d04",
+    "parent_id": "d04-s069",
+    "depth": 4,
+    "title": "B 20. Priority question: CS Appendix J Table 16 provides the clinical",
+    "page": 296
+  },
+  {
+    "section_id": "d04-s076",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Sensitivity and scenario analyses",
+    "page": 297
+  },
+  {
+    "section_id": "d04-s077",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Validation",
+    "page": 298
+  },
+  {
+    "section_id": "d04-s078",
+    "doc_id": "d04",
+    "parent_id": "d04-s077",
+    "depth": 4,
+    "title": "B 23. Priority question: Please complete the TECH-VER checklist (Büyükkaramikli et al. 2019, https://pubmed.ncbi.nlm.nih.gov/31705406/) and provide the results.",
+    "page": 299
+  },
+  {
+    "section_id": "d04-s079",
+    "doc_id": "d04",
+    "parent_id": "d04-s078",
+    "depth": 5,
+    "title": "iii. Costs",
+    "page": 299
+  },
+  {
+    "section_id": "d04-s080",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "References",
+    "page": 305
+  },
+  {
+    "section_id": "d04-s081",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Appendix I Complete search string for literature databases",
+    "page": 312
+  },
+  {
+    "section_id": "d04-s082",
+    "doc_id": "d04",
+    "parent_id": "d04-s081",
+    "depth": 4,
+    "title": "A. PubMed",
+    "page": 312
+  },
+  {
+    "section_id": "d04-s083",
+    "doc_id": "d04",
+    "parent_id": "d04-s081",
+    "depth": 4,
+    "title": "B. Embase",
+    "page": 319
+  },
+  {
+    "section_id": "d04-s084",
+    "doc_id": "d04",
+    "parent_id": "d04-s081",
+    "depth": 4,
+    "title": "C. Cochrane Library",
+    "page": 320
+  },
+  {
+    "section_id": "d04-s085",
+    "doc_id": "d04",
+    "parent_id": "d04-s081",
+    "depth": 4,
+    "title": "D. Epistemonikos",
+    "page": 320
+  },
+  {
+    "section_id": "d04-s086",
+    "doc_id": "d04",
+    "parent_id": "d04-s081",
+    "depth": 4,
+    "title": "E. Number of hits per line of search for update 1 (20 November 2023)",
+    "page": 321
+  },
+  {
+    "section_id": "d04-s087",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Appendix II Clinical SLR – summary of excluded studies",
+    "page": 322
+  },
+  {
+    "section_id": "d04-s088",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Appendix III PFS KM curves for studies included in the NMA",
+    "page": 323
+  },
+  {
+    "section_id": "d04-s089",
+    "doc_id": "d04",
+    "parent_id": "d04-s088",
+    "depth": 4,
+    "title": "F. CAPItello-291",
+    "page": 323
+  },
+  {
+    "section_id": "d04-s090",
+    "doc_id": "d04",
+    "parent_id": "d04-s088",
+    "depth": 4,
+    "title": "G. FAKTION",
+    "page": 323
+  },
+  {
+    "section_id": "d04-s091",
+    "doc_id": "d04",
+    "parent_id": "d04-s088",
+    "depth": 4,
+    "title": "H. BOLERO-2",
+    "page": 324
+  },
+  {
+    "section_id": "d04-s092",
+    "doc_id": "d04",
+    "parent_id": "d04-s088",
+    "depth": 4,
+    "title": "I. BOLERO-5",
+    "page": 324
+  },
+  {
+    "section_id": "d04-s093",
+    "doc_id": "d04",
+    "parent_id": "d04-s088",
+    "depth": 4,
+    "title": "J. EFECT",
+    "page": 325
+  },
+  {
+    "section_id": "d04-s094",
+    "doc_id": "d04",
+    "parent_id": "d04-s088",
+    "depth": 4,
+    "title": "L. CONFIRM",
+    "page": 326
+  },
+  {
+    "section_id": "d04-s095",
+    "doc_id": "d04",
+    "parent_id": "d04-s088",
+    "depth": 4,
+    "title": "M. FRIEND",
+    "page": 326
+  },
+  {
+    "section_id": "d04-s096",
+    "doc_id": "d04",
+    "parent_id": "d04-s088",
+    "depth": 4,
+    "title": "N. NCT01300351 (Zhang 2016)",
+    "page": 327
+  },
+  {
+    "section_id": "d04-s097",
+    "doc_id": "d04",
+    "parent_id": "d04-s088",
+    "depth": 4,
+    "title": "O. SOLAR-1",
+    "page": 327
+  },
+  {
+    "section_id": "d04-s098",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Appendix IV Overview of the incidence rates for grade ≥3 AEs recorded in CAPItello-291",
+    "page": 329
+  },
+  {
+    "section_id": "d04-s099",
+    "doc_id": "d04",
+    "parent_id": "d04-s024",
+    "depth": 3,
+    "title": "Appendix V List of model changes",
+    "page": 332
+  },
+  {
+    "section_id": "d05-s001",
+    "doc_id": "d05",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single Technology Appraisal",
+    "page": 333
+  },
+  {
+    "section_id": "d05-s002",
+    "doc_id": "d05",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Patient Organisation Submission",
+    "page": 333
+  },
+  {
+    "section_id": "d05-s003",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "About you",
+    "page": 334
+  },
+  {
+    "section_id": "d05-s004",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "Living with the condition",
+    "page": 336
+  },
+  {
+    "section_id": "d05-s005",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "Current treatment of the condition in the NHS",
+    "page": 338
+  },
+  {
+    "section_id": "d05-s006",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "Advantages of the technology",
+    "page": 339
+  },
+  {
+    "section_id": "d05-s007",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "Disadvantages of the technology",
+    "page": 339
+  },
+  {
+    "section_id": "d05-s008",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "Patient population",
+    "page": 340
+  },
+  {
+    "section_id": "d05-s009",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "Equality",
+    "page": 340
+  },
+  {
+    "section_id": "d05-s010",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "Other issues",
+    "page": 341
+  },
+  {
+    "section_id": "d05-s011",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "Key messages",
+    "page": 342
+  },
+  {
+    "section_id": "d05-s012",
+    "doc_id": "d05",
+    "parent_id": "d05-s002",
+    "depth": 2,
+    "title": "Your privacy",
+    "page": 343
+  },
+  {
+    "section_id": "d06-s001",
+    "doc_id": "d06",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single Technology Appraisal",
+    "page": 344
+  },
+  {
+    "section_id": "d06-s002",
+    "doc_id": "d06",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Patient Organisation Submission",
+    "page": 344
+  },
+  {
+    "section_id": "d06-s003",
+    "doc_id": "d06",
+    "parent_id": "d06-s002",
+    "depth": 2,
+    "title": "About you",
+    "page": 345
+  },
+  {
+    "section_id": "d06-s004",
+    "doc_id": "d06",
+    "parent_id": "d06-s002",
+    "depth": 2,
+    "title": "Current treatment of the condition in the NHS",
+    "page": 350
+  },
+  {
+    "section_id": "d06-s005",
+    "doc_id": "d06",
+    "parent_id": "d06-s002",
+    "depth": 2,
+    "title": "Advantages of the technology",
+    "page": 351
+  },
+  {
+    "section_id": "d06-s006",
+    "doc_id": "d06",
+    "parent_id": "d06-s002",
+    "depth": 2,
+    "title": "Disadvantages of the technology",
+    "page": 352
+  },
+  {
+    "section_id": "d06-s007",
+    "doc_id": "d06",
+    "parent_id": "d06-s002",
+    "depth": 2,
+    "title": "Patient population",
+    "page": 352
+  },
+  {
+    "section_id": "d06-s008",
+    "doc_id": "d06",
+    "parent_id": "d06-s002",
+    "depth": 2,
+    "title": "Equality",
+    "page": 353
+  },
+  {
+    "section_id": "d06-s009",
+    "doc_id": "d06",
+    "parent_id": "d06-s002",
+    "depth": 2,
+    "title": "Other issues",
+    "page": 353
+  },
+  {
+    "section_id": "d06-s010",
+    "doc_id": "d06",
+    "parent_id": "d06-s002",
+    "depth": 2,
+    "title": "Key messages",
+    "page": 354
+  },
+  {
+    "section_id": "d06-s011",
+    "doc_id": "d06",
+    "parent_id": "d06-s002",
+    "depth": 2,
+    "title": "Your privacy",
+    "page": 354
+  },
+  {
+    "section_id": "d07-s001",
+    "doc_id": "d07",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single Technology Appraisal",
+    "page": 356
+  },
+  {
+    "section_id": "d07-s002",
+    "doc_id": "d07",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Patient Organisation Submission",
+    "page": 356
+  },
+  {
+    "section_id": "d07-s003",
+    "doc_id": "d07",
+    "parent_id": "d07-s002",
+    "depth": 2,
+    "title": "About you",
+    "page": 357
+  },
+  {
+    "section_id": "d07-s004",
+    "doc_id": "d07",
+    "parent_id": "d07-s002",
+    "depth": 2,
+    "title": "Living with the condition",
+    "page": 358
+  },
+  {
+    "section_id": "d07-s005",
+    "doc_id": "d07",
+    "parent_id": "d07-s002",
+    "depth": 2,
+    "title": "Current treatment of the condition in the NHS",
+    "page": 360
+  },
+  {
+    "section_id": "d07-s006",
+    "doc_id": "d07",
+    "parent_id": "d07-s002",
+    "depth": 2,
+    "title": "Advantages of the technology",
+    "page": 363
+  },
+  {
+    "section_id": "d07-s007",
+    "doc_id": "d07",
+    "parent_id": "d07-s002",
+    "depth": 2,
+    "title": "Disadvantages of the technology",
+    "page": 364
+  },
+  {
+    "section_id": "d07-s008",
+    "doc_id": "d07",
+    "parent_id": "d07-s002",
+    "depth": 2,
+    "title": "Patient population",
+    "page": 365
+  },
+  {
+    "section_id": "d07-s009",
+    "doc_id": "d07",
+    "parent_id": "d07-s002",
+    "depth": 2,
+    "title": "Other issues",
+    "page": 365
+  },
+  {
+    "section_id": "d07-s010",
+    "doc_id": "d07",
+    "parent_id": "d07-s002",
+    "depth": 2,
+    "title": "Key messages",
+    "page": 366
+  },
+  {
+    "section_id": "d07-s011",
+    "doc_id": "d07",
+    "parent_id": "d07-s002",
+    "depth": 2,
+    "title": "Your privacy",
+    "page": 366
+  },
+  {
+    "section_id": "d08-s001",
+    "doc_id": "d08",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single Technology Appraisal",
+    "page": 367
+  },
+  {
+    "section_id": "d08-s002",
+    "doc_id": "d08",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Clinical expert statement",
+    "page": 367
+  },
+  {
+    "section_id": "d08-s003",
+    "doc_id": "d08",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Information on completing this form",
+    "page": 367
+  },
+  {
+    "section_id": "d08-s004",
+    "doc_id": "d08",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Part 1: Treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment – current treatment options",
+    "page": 369
+  },
+  {
+    "section_id": "d08-s005",
+    "doc_id": "d08",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Part 2: Key messages",
+    "page": 379
+  },
+  {
+    "section_id": "d08-s006",
+    "doc_id": "d08",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Your privacy",
+    "page": 379
+  },
+  {
+    "section_id": "d09-s001",
+    "doc_id": "d09",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single Technology Appraisal",
+    "page": 381
+  },
+  {
+    "section_id": "d09-s002",
+    "doc_id": "d09",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+    "page": 381
+  },
+  {
+    "section_id": "d09-s003",
+    "doc_id": "d09",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Patient expert statement",
+    "page": 381
+  },
+  {
+    "section_id": "d09-s004",
+    "doc_id": "d09",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Information on completing this form",
+    "page": 381
+  },
+  {
+    "section_id": "d09-s005",
+    "doc_id": "d09",
+    "parent_id": "d09-s004",
+    "depth": 2,
+    "title": "Help with completing this form",
+    "page": 381
+  },
+  {
+    "section_id": "d09-s006",
+    "doc_id": "d09",
+    "parent_id": "d09-s005",
+    "depth": 3,
+    "title": "Part 1: Living with this condition or caring for a patient with hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment",
+    "page": 383
+  },
+  {
+    "section_id": "d09-s007",
+    "doc_id": "d09",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Part 2: Key messages",
+    "page": 397
+  },
+  {
+    "section_id": "d09-s008",
+    "doc_id": "d09",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Your privacy",
+    "page": 397
+  },
+  {
+    "section_id": "d10-s001",
+    "doc_id": "d10",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single Technology Appraisal",
+    "page": 399
+  },
+  {
+    "section_id": "d10-s002",
+    "doc_id": "d10",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Clinical expert statement",
+    "page": 399
+  },
+  {
+    "section_id": "d10-s003",
+    "doc_id": "d10",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Information on completing this form",
+    "page": 399
+  },
+  {
+    "section_id": "d10-s004",
+    "doc_id": "d10",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Part 1: Treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment – current treatment options",
+    "page": 401
+  },
+  {
+    "section_id": "d10-s005",
+    "doc_id": "d10",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Part 2: Key messages",
+    "page": 409
+  },
+  {
+    "section_id": "d10-s006",
+    "doc_id": "d10",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Your privacy",
+    "page": 409
+  },
+  {
+    "section_id": "d11-s001",
+    "doc_id": "d11",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single Technology Appraisal",
+    "page": 411
+  },
+  {
+    "section_id": "d11-s002",
+    "doc_id": "d11",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+    "page": 411
+  },
+  {
+    "section_id": "d11-s003",
+    "doc_id": "d11",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Patient expert statement",
+    "page": 411
+  },
+  {
+    "section_id": "d11-s004",
+    "doc_id": "d11",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Information on completing this form",
+    "page": 411
+  },
+  {
+    "section_id": "d11-s005",
+    "doc_id": "d11",
+    "parent_id": "d11-s004",
+    "depth": 2,
+    "title": "Help with completing this form",
+    "page": 411
+  },
+  {
+    "section_id": "d11-s006",
+    "doc_id": "d11",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Part 1: Living with this condition or caring for a patient with hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment",
+    "page": 413
+  },
+  {
+    "section_id": "d11-s007",
+    "doc_id": "d11",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Part 2: Key messages",
+    "page": 417
+  },
+  {
+    "section_id": "d11-s008",
+    "doc_id": "d11",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Your privacy",
+    "page": 417
+  },
+  {
+    "section_id": "d12-s001",
+    "doc_id": "d12",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Capivasertib in combination with fulvestrant for second-line treatment in unresectable or metastatic HR-positive, HER2-negative breast cancer [ID6370]",
+    "page": 418
+  },
+  {
+    "section_id": "d12-s002",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "Produced by",
+    "page": 418
+  },
+  {
+    "section_id": "d12-s003",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "Rider on responsibility for report",
+    "page": 419
+  },
+  {
+    "section_id": "d12-s004",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "This report should be referenced as follows:",
+    "page": 419
+  },
+  {
+    "section_id": "d12-s005",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "Contributions of authors:",
+    "page": 419
+  },
+  {
+    "section_id": "d12-s006",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "Table of Contents",
+    "page": 423
+  },
+  {
+    "section_id": "d12-s007",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "Table of Tables",
+    "page": 425
+  },
+  {
+    "section_id": "d12-s008",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "Table of Figures",
+    "page": 427
+  },
+  {
+    "section_id": "d12-s009",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "1. Executive summary",
+    "page": 428
+  },
+  {
+    "section_id": "d12-s010",
+    "doc_id": "d12",
+    "parent_id": "d12-s009",
+    "depth": 3,
+    "title": "1.1 Overview of the EAG’s key issues",
+    "page": 428
+  },
+  {
+    "section_id": "d12-s011",
+    "doc_id": "d12",
+    "parent_id": "d12-s009",
+    "depth": 3,
+    "title": "1.2 Overview of key model outcomes",
+    "page": 429
+  },
+  {
+    "section_id": "d12-s012",
+    "doc_id": "d12",
+    "parent_id": "d12-s009",
+    "depth": 3,
+    "title": "1.3 The decision problem: summary of the EAG’s key issues",
+    "page": 430
+  },
+  {
+    "section_id": "d12-s013",
+    "doc_id": "d12",
+    "parent_id": "d12-s009",
+    "depth": 3,
+    "title": "1.4 The clinical effectiveness evidence: summary of the EAG’s key issues",
+    "page": 431
+  },
+  {
+    "section_id": "d12-s014",
+    "doc_id": "d12",
+    "parent_id": "d12-s009",
+    "depth": 3,
+    "title": "1.5 The cost effectiveness evidence: summary of the EAG’s key issues",
+    "page": 432
+  },
+  {
+    "section_id": "d12-s015",
+    "doc_id": "d12",
+    "parent_id": "d12-s009",
+    "depth": 3,
+    "title": "1.6 Summary of the EAG’s view",
+    "page": 434
+  },
+  {
+    "section_id": "d12-s016",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "2. Critique of company’s definition of decision problem",
+    "page": 437
+  },
+  {
+    "section_id": "d12-s017",
+    "doc_id": "d12",
+    "parent_id": "d12-s016",
+    "depth": 3,
+    "title": "2.1 Population",
+    "page": 442
+  },
+  {
+    "section_id": "d12-s018",
+    "doc_id": "d12",
+    "parent_id": "d12-s016",
+    "depth": 3,
+    "title": "2.2 Intervention",
+    "page": 442
+  },
+  {
+    "section_id": "d12-s019",
+    "doc_id": "d12",
+    "parent_id": "d12-s016",
+    "depth": 3,
+    "title": "2.3 Comparators",
+    "page": 443
+  },
+  {
+    "section_id": "d12-s020",
+    "doc_id": "d12",
+    "parent_id": "d12-s016",
+    "depth": 3,
+    "title": "2.4 Outcomes",
+    "page": 445
+  },
+  {
+    "section_id": "d12-s021",
+    "doc_id": "d12",
+    "parent_id": "d12-s016",
+    "depth": 3,
+    "title": "2.5 Other relevant factors",
+    "page": 445
+  },
+  {
+    "section_id": "d12-s022",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "3. Clinical effectiveness",
+    "page": 446
+  },
+  {
+    "section_id": "d12-s023",
+    "doc_id": "d12",
+    "parent_id": "d12-s022",
+    "depth": 3,
+    "title": "3.1 Critique of the methods of review(s)",
+    "page": 446
+  },
+  {
+    "section_id": "d12-s024",
+    "doc_id": "d12",
+    "parent_id": "d12-s023",
+    "depth": 4,
+    "title": "3.1.1 Searches",
+    "page": 446
+  },
+  {
+    "section_id": "d12-s025",
+    "doc_id": "d12",
+    "parent_id": "d12-s023",
+    "depth": 4,
+    "title": "EAG comment:",
+    "page": 447
+  },
+  {
+    "section_id": "d12-s026",
+    "doc_id": "d12",
+    "parent_id": "d12-s023",
+    "depth": 4,
+    "title": "3.1.2 Inclusion criteria",
+    "page": 448
+  },
+  {
+    "section_id": "d12-s027",
+    "doc_id": "d12",
+    "parent_id": "d12-s023",
+    "depth": 4,
+    "title": "3.1.3 Critique of data extraction",
+    "page": 450
+  },
+  {
+    "section_id": "d12-s028",
+    "doc_id": "d12",
+    "parent_id": "d12-s023",
+    "depth": 4,
+    "title": "3.1.4 Quality assessment",
+    "page": 450
+  },
+  {
+    "section_id": "d12-s029",
+    "doc_id": "d12",
+    "parent_id": "d12-s023",
+    "depth": 4,
+    "title": "3.1.5 Evidence synthesis",
+    "page": 451
+  },
+  {
+    "section_id": "d12-s030",
+    "doc_id": "d12",
+    "parent_id": "d12-s022",
+    "depth": 3,
+    "title": "3.2 Critique of trials of the technology of interest, their analysis and interpretation (and any standard meta-analyses of these)",
+    "page": 451
+  },
+  {
+    "section_id": "d12-s031",
+    "doc_id": "d12",
+    "parent_id": "d12-s030",
+    "depth": 4,
+    "title": "3.2.1 Study retrieval",
+    "page": 451
+  },
+  {
+    "section_id": "d12-s032",
+    "doc_id": "d12",
+    "parent_id": "d12-s030",
+    "depth": 4,
+    "title": "3.2.2 Details of included trials",
+    "page": 454
+  },
+  {
+    "section_id": "d12-s033",
+    "doc_id": "d12",
+    "parent_id": "d12-s032",
+    "depth": 5,
+    "title": "3.2.2.1 Details of the CAPItello-291 trial",
+    "page": 454
+  },
+  {
+    "section_id": "d12-s034",
+    "doc_id": "d12",
+    "parent_id": "d12-s032",
+    "depth": 5,
+    "title": "3.2.2.2 Baseline characteristics",
+    "page": 458
+  },
+  {
+    "section_id": "d12-s035",
+    "doc_id": "d12",
+    "parent_id": "d12-s032",
+    "depth": 5,
+    "title": "3.2.2.3 Risk of Bias Assessment",
+    "page": 463
+  },
+  {
+    "section_id": "d12-s036",
+    "doc_id": "d12",
+    "parent_id": "d12-s032",
+    "depth": 5,
+    "title": "3.2.2.4 External validity",
+    "page": 465
+  },
+  {
+    "section_id": "d12-s037",
+    "doc_id": "d12",
+    "parent_id": "d12-s030",
+    "depth": 4,
+    "title": "3.2.3 Statistical analysis for the CAPItello-291 trial",
+    "page": 465
+  },
+  {
+    "section_id": "d12-s038",
+    "doc_id": "d12",
+    "parent_id": "d12-s030",
+    "depth": 4,
+    "title": "3.2.4 Efficacy results of the CAPItello-291 trial",
+    "page": 466
+  },
+  {
+    "section_id": "d12-s039",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.1 Progression free survival in PI3K/AKT-altered population",
+    "page": 466
+  },
+  {
+    "section_id": "d12-s040",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.2 Progression free survival in the PI3K/AKT pathway-altered population with prior CDK4/6i use",
+    "page": 468
+  },
+  {
+    "section_id": "d12-s041",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.3 Overall survival in PI3K/AKT pathway-altered population",
+    "page": 469
+  },
+  {
+    "section_id": "d12-s042",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.4 Overall survival in PI3K/AKT pathway-altered population with prior CDK4/6i use",
+    "page": 469
+  },
+  {
+    "section_id": "d12-s043",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.5 Second progression-free survival (PFS2) in PI3K/AKT pathway-altered population",
+    "page": 470
+  },
+  {
+    "section_id": "d12-s044",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.6 Objective response rate in PI3K/AKT pathway-altered population",
+    "page": 471
+  },
+  {
+    "section_id": "d12-s045",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.7 EORTC QLQ-C30 and EORTC QLQ-BR23 in the PI3K/AKT pathway-altered population",
+    "page": 471
+  },
+  {
+    "section_id": "d12-s046",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.8 Time to deterioration in ECOG PS in the PI3K/AKT pathway-altered population",
+    "page": 472
+  },
+  {
+    "section_id": "d12-s047",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.9 Time to first subsequent chemotherapy or death in the PI3K/AKT pathway-altered population",
+    "page": 472
+  },
+  {
+    "section_id": "d12-s048",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.10 EQ-5D-5L in the PI3K/AKT pathway-altered population",
+    "page": 472
+  },
+  {
+    "section_id": "d12-s049",
+    "doc_id": "d12",
+    "parent_id": "d12-s038",
+    "depth": 5,
+    "title": "3.2.4.11 Subgroup analyses",
+    "page": 474
+  },
+  {
+    "section_id": "d12-s050",
+    "doc_id": "d12",
+    "parent_id": "d12-s030",
+    "depth": 4,
+    "title": "3.2.5 Adverse events",
+    "page": 476
+  },
+  {
+    "section_id": "d12-s051",
+    "doc_id": "d12",
+    "parent_id": "d12-s050",
+    "depth": 5,
+    "title": "3.2.5.1 Overall adverse events",
+    "page": 476
+  },
+  {
+    "section_id": "d12-s052",
+    "doc_id": "d12",
+    "parent_id": "d12-s050",
+    "depth": 5,
+    "title": "3.2.5.2 Most common AEs",
+    "page": 477
+  },
+  {
+    "section_id": "d12-s053",
+    "doc_id": "d12",
+    "parent_id": "d12-s050",
+    "depth": 5,
+    "title": "3.2.5.3 Adverse events causality",
+    "page": 478
+  },
+  {
+    "section_id": "d12-s054",
+    "doc_id": "d12",
+    "parent_id": "d12-s050",
+    "depth": 5,
+    "title": "3.2.5.4 Adverse events of special interest",
+    "page": 478
+  },
+  {
+    "section_id": "d12-s055",
+    "doc_id": "d12",
+    "parent_id": "d12-s022",
+    "depth": 3,
+    "title": "3.3 Critique of trials identified and included in the indirect comparison and/or multiple treatment comparison",
+    "page": 481
+  },
+  {
+    "section_id": "d12-s056",
+    "doc_id": "d12",
+    "parent_id": "d12-s022",
+    "depth": 3,
+    "title": "3.4 Critique of the indirect comparison and/or multiple treatment comparison",
+    "page": 487
+  },
+  {
+    "section_id": "d12-s057",
+    "doc_id": "d12",
+    "parent_id": "d12-s056",
+    "depth": 4,
+    "title": "3.4.1 Results of progression free survival",
+    "page": 488
+  },
+  {
+    "section_id": "d12-s058",
+    "doc_id": "d12",
+    "parent_id": "d12-s056",
+    "depth": 4,
+    "title": "3.4.2 Results of overall survival",
+    "page": 491
+  },
+  {
+    "section_id": "d12-s059",
+    "doc_id": "d12",
+    "parent_id": "d12-s056",
+    "depth": 4,
+    "title": "EAG comment:",
+    "page": 493
+  },
+  {
+    "section_id": "d12-s060",
+    "doc_id": "d12",
+    "parent_id": "d12-s022",
+    "depth": 3,
+    "title": "3.5 Additional work on clinical effectiveness undertaken by the EAG",
+    "page": 495
+  },
+  {
+    "section_id": "d12-s061",
+    "doc_id": "d12",
+    "parent_id": "d12-s022",
+    "depth": 3,
+    "title": "3.6 Conclusions of the clinical effectiveness section",
+    "page": 495
+  },
+  {
+    "section_id": "d12-s062",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "4. Cost effectiveness",
+    "page": 498
+  },
+  {
+    "section_id": "d12-s063",
+    "doc_id": "d12",
+    "parent_id": "d12-s062",
+    "depth": 3,
+    "title": "4.1 EAG comment on company’s review of cost effectiveness evidence",
+    "page": 498
+  },
+  {
+    "section_id": "d12-s064",
+    "doc_id": "d12",
+    "parent_id": "d12-s063",
+    "depth": 4,
+    "title": "4.1.1 Searches performed for cost effectiveness Section",
+    "page": 498
+  },
+  {
+    "section_id": "d12-s065",
+    "doc_id": "d12",
+    "parent_id": "d12-s063",
+    "depth": 4,
+    "title": "EAG comment:",
+    "page": 499
+  },
+  {
+    "section_id": "d12-s066",
+    "doc_id": "d12",
+    "parent_id": "d12-s063",
+    "depth": 4,
+    "title": "4.1.2 Inclusion/exclusion criteria",
+    "page": 500
+  },
+  {
+    "section_id": "d12-s067",
+    "doc_id": "d12",
+    "parent_id": "d12-s063",
+    "depth": 4,
+    "title": "4.1.3 Findings of the CE review",
+    "page": 500
+  },
+  {
+    "section_id": "d12-s068",
+    "doc_id": "d12",
+    "parent_id": "d12-s063",
+    "depth": 4,
+    "title": "4.1.4 Conclusions of the CE review",
+    "page": 500
+  },
+  {
+    "section_id": "d12-s069",
+    "doc_id": "d12",
+    "parent_id": "d12-s062",
+    "depth": 3,
+    "title": "4.2 Summary and critique of company’s submitted economic evaluation by the EAG",
+    "page": 500
+  },
+  {
+    "section_id": "d12-s070",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.1 NICE reference case checklist",
+    "page": 500
+  },
+  {
+    "section_id": "d12-s071",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.2 Model structure",
+    "page": 501
+  },
+  {
+    "section_id": "d12-s072",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.3 Population",
+    "page": 502
+  },
+  {
+    "section_id": "d12-s073",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.4 Interventions and comparators",
+    "page": 503
+  },
+  {
+    "section_id": "d12-s074",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.5 Perspective, time horizon and discounting",
+    "page": 504
+  },
+  {
+    "section_id": "d12-s075",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.6 Treatment effectiveness and extrapolation",
+    "page": 504
+  },
+  {
+    "section_id": "d12-s076",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.7 Adverse events",
+    "page": 509
+  },
+  {
+    "section_id": "d12-s077",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.8 Health-related quality of life",
+    "page": 511
+  },
+  {
+    "section_id": "d12-s078",
+    "doc_id": "d12",
+    "parent_id": "d12-s077",
+    "depth": 5,
+    "title": "4.2.8.1 Health-related quality of life data identified in the literature review",
+    "page": 511
+  },
+  {
+    "section_id": "d12-s079",
+    "doc_id": "d12",
+    "parent_id": "d12-s077",
+    "depth": 5,
+    "title": "4.2.8.2 Health state utility values",
+    "page": 511
+  },
+  {
+    "section_id": "d12-s080",
+    "doc_id": "d12",
+    "parent_id": "d12-s077",
+    "depth": 5,
+    "title": "4.2.8.3 Disutility values",
+    "page": 512
+  },
+  {
+    "section_id": "d12-s081",
+    "doc_id": "d12",
+    "parent_id": "d12-s080",
+    "depth": 6,
+    "title": "4.2.8.3.1 Age-related utility decrements",
+    "page": 512
+  },
+  {
+    "section_id": "d12-s082",
+    "doc_id": "d12",
+    "parent_id": "d12-s080",
+    "depth": 6,
+    "title": "HSU = intercept + Gender (reference value = female) + Age + Age[2]",
+    "page": 512
+  },
+  {
+    "section_id": "d12-s083",
+    "doc_id": "d12",
+    "parent_id": "d12-s080",
+    "depth": 6,
+    "title": "4.2.8.3.2 Adverse event disutility",
+    "page": 512
+  },
+  {
+    "section_id": "d12-s084",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.9 Resources and costs",
+    "page": 515
+  },
+  {
+    "section_id": "d12-s085",
+    "doc_id": "d12",
+    "parent_id": "d12-s084",
+    "depth": 5,
+    "title": "4.2.9.1 Resource use and costs data identified in the literature review",
+    "page": 516
+  },
+  {
+    "section_id": "d12-s086",
+    "doc_id": "d12",
+    "parent_id": "d12-s084",
+    "depth": 5,
+    "title": "4.2.9.2 Treatment costs (with PAS)",
+    "page": 516
+  },
+  {
+    "section_id": "d12-s087",
+    "doc_id": "d12",
+    "parent_id": "d12-s084",
+    "depth": 5,
+    "title": "4.2.9.3 Health state costs",
+    "page": 516
+  },
+  {
+    "section_id": "d12-s088",
+    "doc_id": "d12",
+    "parent_id": "d12-s084",
+    "depth": 5,
+    "title": "4.2.9.4 Adverse event costs",
+    "page": 517
+  },
+  {
+    "section_id": "d12-s089",
+    "doc_id": "d12",
+    "parent_id": "d12-s084",
+    "depth": 5,
+    "title": "4.2.9.5 Subsequent treatment costs",
+    "page": 517
+  },
+  {
+    "section_id": "d12-s090",
+    "doc_id": "d12",
+    "parent_id": "d12-s084",
+    "depth": 5,
+    "title": "4.2.9.6 End of life costs",
+    "page": 517
+  },
+  {
+    "section_id": "d12-s091",
+    "doc_id": "d12",
+    "parent_id": "d12-s084",
+    "depth": 5,
+    "title": "4.2.9.7 Genomic testing costs",
+    "page": 518
+  },
+  {
+    "section_id": "d12-s092",
+    "doc_id": "d12",
+    "parent_id": "d12-s069",
+    "depth": 4,
+    "title": "4.2.10 Disease severity",
+    "page": 519
+  },
+  {
+    "section_id": "d12-s093",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "5. Cost effectiveness results",
+    "page": 521
+  },
+  {
+    "section_id": "d12-s094",
+    "doc_id": "d12",
+    "parent_id": "d12-s093",
+    "depth": 3,
+    "title": "5.1 Company’s cost effectiveness results",
+    "page": 521
+  },
+  {
+    "section_id": "d12-s095",
+    "doc_id": "d12",
+    "parent_id": "d12-s093",
+    "depth": 3,
+    "title": "5.2 Company’s sensitivity analyses",
+    "page": 523
+  },
+  {
+    "section_id": "d12-s096",
+    "doc_id": "d12",
+    "parent_id": "d12-s093",
+    "depth": 3,
+    "title": "5.3 Model validation and face validity check",
+    "page": 524
+  },
+  {
+    "section_id": "d12-s097",
+    "doc_id": "d12",
+    "parent_id": "d12-s096",
+    "depth": 4,
+    "title": "5.3.1 Internal validation of modelled outcomes",
+    "page": 524
+  },
+  {
+    "section_id": "d12-s098",
+    "doc_id": "d12",
+    "parent_id": "d12-s096",
+    "depth": 4,
+    "title": "5.3.2 External validation against external data sources",
+    "page": 524
+  },
+  {
+    "section_id": "d12-s099",
+    "doc_id": "d12",
+    "parent_id": "d12-s096",
+    "depth": 4,
+    "title": "5.3.3 External validation by experts",
+    "page": 525
+  },
+  {
+    "section_id": "d12-s100",
+    "doc_id": "d12",
+    "parent_id": "d12-s096",
+    "depth": 4,
+    "title": "5.3.4 Quality assurance of the model",
+    "page": 525
+  },
+  {
+    "section_id": "d12-s101",
+    "doc_id": "d12",
+    "parent_id": "d12-s001",
+    "depth": 2,
+    "title": "6. Evidence Assessment Group’s Additional Analyses",
+    "page": 526
+  },
+  {
+    "section_id": "d12-s102",
+    "doc_id": "d12",
+    "parent_id": "d12-s101",
+    "depth": 3,
+    "title": "6.1 Exploratory and sensitivity analyses undertaken by the EAG",
+    "page": 526
+  },
+  {
+    "section_id": "d12-s103",
+    "doc_id": "d12",
+    "parent_id": "d12-s102",
+    "depth": 4,
+    "title": "6.1.1 EAG base-case",
+    "page": 526
+  },
+  {
+    "section_id": "d12-s104",
+    "doc_id": "d12",
+    "parent_id": "d12-s103",
+    "depth": 5,
+    "title": "6.1.1.1 Fixing errors",
+    "page": 526
+  },
+  {
+    "section_id": "d12-s105",
+    "doc_id": "d12",
+    "parent_id": "d12-s103",
+    "depth": 5,
+    "title": "6.1.1.2 Fixing violations",
+    "page": 526
+  },
+  {
+    "section_id": "d12-s106",
+    "doc_id": "d12",
+    "parent_id": "d12-s103",
+    "depth": 5,
+    "title": "6.1.1.3 Matters of judgement",
+    "page": 526
+  },
+  {
+    "section_id": "d12-s107",
+    "doc_id": "d12",
+    "parent_id": "d12-s102",
+    "depth": 4,
+    "title": "6.1.2 EAG exploratory scenario analyses",
+    "page": 527
+  },
+  {
+    "section_id": "d12-s108",
+    "doc_id": "d12",
+    "parent_id": "d12-s107",
+    "depth": 5,
+    "title": "6.1.2.1 Exploratory scenario analyses",
+    "page": 527
+  },
+  {
+    "section_id": "d12-s109",
+    "doc_id": "d12",
+    "parent_id": "d12-s102",
+    "depth": 4,
+    "title": "6.1.3 EAG subgroup analyses",
+    "page": 527
+  },
+  {
+    "section_id": "d12-s110",
+    "doc_id": "d12",
+    "parent_id": "d12-s102",
+    "depth": 4,
+    "title": "6.1.4 EAG confidential prices analyses",
+    "page": 527
+  },
+  {
+    "section_id": "d12-s111",
+    "doc_id": "d12",
+    "parent_id": "d12-s101",
+    "depth": 3,
+    "title": "6.2 Impact on the ICER of additional clinical and economic analyses undertaken by the EAG",
+    "page": 529
+  },
+  {
+    "section_id": "d12-s112",
+    "doc_id": "d12",
+    "parent_id": "d12-s101",
+    "depth": 3,
+    "title": "6.3 EAG’s preferred assumptions",
+    "page": 537
+  },
+  {
+    "section_id": "d12-s113",
+    "doc_id": "d12",
+    "parent_id": "d12-s101",
+    "depth": 3,
+    "title": "6.4 Conclusions of the cost effectiveness section",
+    "page": 537
+  },
+  {
+    "section_id": "d12-s114",
+    "doc_id": "d12",
+    "parent_id": "d12-s113",
+    "depth": 4,
+    "title": "References",
+    "page": 539
+  },
+  {
+    "section_id": "d13-s001",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Single Technology Appraisal",
+    "page": 542
+  },
+  {
+    "section_id": "d13-s002",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+    "page": 542
+  },
+  {
+    "section_id": "d13-s003",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 1 Comparators - EAG suggest that no evidence was provided to rule out the use of other treatments recommended in the ESMO guidelines",
+    "page": 543
+  },
+  {
+    "section_id": "d13-s004",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 2 Baseline characteristics of the CAPItello-291 trial – distribution across arms",
+    "page": 546
+  },
+  {
+    "section_id": "d13-s005",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 3 Comparability of populations in trials included in ITC and exchangeability (EAG Key issues 3 and 4)",
+    "page": 549
+  },
+  {
+    "section_id": "d13-s006",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 4 Clinical validation interviews and generalisability to UK clinical practice",
+    "page": 555
+  },
+  {
+    "section_id": "d13-s007",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 5 Systematic literature reviews",
+    "page": 559
+  },
+  {
+    "section_id": "d13-s008",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 6 Survival extrapolations",
+    "page": 560
+  },
+  {
+    "section_id": "d13-s009",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 7 Comments on the PSA",
+    "page": 561
+  },
+  {
+    "section_id": "d13-s010",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 8 Network meta-analysis commentary",
+    "page": 562
+  },
+  {
+    "section_id": "d13-s011",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 9 Treatment waning",
+    "page": 563
+  },
+  {
+    "section_id": "d13-s012",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 10 Adverse event calculations",
+    "page": 565
+  },
+  {
+    "section_id": "d13-s013",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 11 Utility analysis",
+    "page": 568
+  },
+  {
+    "section_id": "d13-s014",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 12 Discontinuation is related to progression",
+    "page": 572
+  },
+  {
+    "section_id": "d13-s015",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 13 Severity calculation",
+    "page": 574
+  },
+  {
+    "section_id": "d13-s016",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "Issue 14 Incorrect confidentiality marking",
+    "page": 575
+  },
+  {
+    "section_id": "d13-s017",
+    "doc_id": "d13",
+    "parent_id": null,
+    "depth": 1,
+    "title": "References",
+    "page": 578
+  }
+]

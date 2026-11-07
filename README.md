@@ -1,6 +1,7 @@
 # MedRAGEval
 
-Builds RAG evaluation datasets from medical PDF documents.
+Builds RAG evaluation datasets from medical PDF documents (`medrageval`), and a
+RAG application to evaluate with them (`medrag`).
 
 ## Setup
 
@@ -46,9 +47,6 @@ Conversion (a few minutes) is cached on the PDF hash, settings and parser versio
 the other steps rerun in about a second. `--force` re-converts. Outputs in the
 directory: `elements.jsonl` (the element store), `sections.json`, `documents.json`,
 `parse_report.json`, and `pages_clean.md` for reading the cleaned text.
-
-Tests: `uv run pytest` (unit, fast) and `uv run pytest -m regression` (end to end
-on the PDFs in `data/raw`, checking facts verified by hand).
 
 The individual steps can also be run on their own (each reads the previous step's output):
 
@@ -100,6 +98,11 @@ uv run medrageval extract data/interim/ta1063              # factsheet.jsonl, fa
 uv run medrageval schema draft data/interim/ta1063 data/interim/document2 --out configs/schema/draft.yaml   # new family only
 ```
 
+TA1063's parse output and fact sheet are committed in `data/interim/ta1063/`, so
+`generate` runs from a fresh clone without paying for `extract` again. The dataset
+cites them: an item's `facts` are ids in `factsheet.jsonl`, and its evidence
+`element_id`s are in `elements.jsonl`.
+
 The fact sheet knows every fact of a slot. When two facts of a slot differ
 (the DCO1 and DCO2 medians, the company's and the EAG's ICER), it works out
 which terms a question must name to mean only one of them. A term contained in
@@ -112,7 +115,7 @@ is never used.
 ```bash
 uv run medrageval generate data/interim/ta1063 --dry-run     # facts per group and candidates per type; no LLM calls
 uv run medrageval generate data/interim/ta1063 --per-type 2  # smoke run: 2 items per type
-uv run medrageval generate data/interim/ta1063               # full run: 146 items into data/datasets/ta1063/
+uv run medrageval generate data/interim/ta1063               # full run: 146 items targeted, 142 for TA1063, into data/datasets/ta1063/
 ```
 
 Outputs:
@@ -157,9 +160,6 @@ rewrite is checked again in full.
 Document roles (company submission, EAG report, clarification, expert
 statements...) are detected from headings and front matter with the patterns
 under `generate.roles`.
-
-Run the tests with `uv run pytest` (unit, synthetic) and `uv run pytest -m regression`
-(the real PDFs, including hand-verified facts when a fact sheet exists).
 
 ## Part 2: the RAG application, and evaluating it with the dataset
 
@@ -258,12 +258,16 @@ cache, so run the `demo.examples` once before presenting.
 ### Evaluating it
 
 ```bash
-uv run medrageval eval data/datasets/ta1063_smoke_v19b --out data/runs/smoke            # judge on OpenRouter
-uv run medrageval eval data/datasets/ta1063_smoke_v19b --no-judge --mode bm25           # keys only, no OpenRouter calls
-uv run medrageval eval data/datasets/ta1063 --types unanswerable --out data/runs/unans   # one type only (the rest are cached anyway)
-uv run medrageval ablate data/datasets/ta1063_smoke_v19b --chunk-tokens 256,400,512     # every mode x chunk size, summary table
-uv run medrageval eval data/datasets/ta1063 --question messy                             # the user-typed twins, into data/runs/ta1063-messy
+uv run medrageval eval data/datasets/ta1063 --limit 10 --out data/runs/smoke              # a few items; judge on OpenRouter
+uv run medrageval eval data/datasets/ta1063 --limit 10 --no-judge --mode bm25 --out data/runs/smoke-bm25   # keys only, no OpenRouter calls
+uv run medrageval eval data/datasets/ta1063 --types unanswerable --out data/runs/unans    # one type only (the rest are cached anyway)
+uv run medrageval ablate data/datasets/ta1063 --limit 10 --chunk-tokens 256,400,512 --out-root data/runs/ablation-smoke   # every mode x chunk size, summary table
+uv run medrageval eval data/datasets/ta1063                                               # full run, into data/runs/ta1063
+uv run medrageval eval data/datasets/ta1063 --question messy                              # the user-typed twins, into data/runs/ta1063-messy
 ```
+
+Without `--out`, a run writes to `data/runs/<dataset>` and `ablate` to
+`data/runs/ablation`, replacing what is there, so give a partial run its own directory.
 
 `eval` builds the application from `configs/rag.yaml` (`--rag-config`) and asks
 it each question through its Python interface. Options: `--mode`, `--top-k`,
@@ -332,7 +336,14 @@ Outputs in the run directory:
 | outcome | `correct`; `retrieval_miss` (wrong, evidence not shown); `reader_error` (wrong, evidence shown); `false_abstention` (declined, evidence shown); `correct_abstention` / `hallucinated_answer` for unanswerable items. |
 | judge vs keys | Agreement on items both can decide, with the disagreeing ids: a check on the scorer, and a pointer to keys or items worth a look. |
 
-Tests: `uv run pytest` covers the chunker, caption and continuation handling,
-BM25, retrieval and fusion over the in-memory store, the Postgres store (skipped
-without a database; it uses its own schema), evidence matching, stand-in
-screening and the evaluator end to end with a fake reader and judge.
+## Tests
+
+`uv run pytest` runs the fast tests on synthetic documents: the parser, fact sheet
+and generator; the application's chunker, caption and continuation handling, BM25,
+retrieval and fusion over the in-memory store, and the Postgres store (skipped
+without a database; it uses its own schema); evidence matching, stand-in screening
+and the evaluator end to end with a fake reader and judge.
+
+`uv run pytest -m regression` runs end to end on the real PDFs in `data/raw`
+(minutes on the first run), checking facts verified by hand, including the fact
+sheet when one exists.

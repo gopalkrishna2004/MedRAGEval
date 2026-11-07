@@ -1,0 +1,123 @@
+{
+  "datasets": [
+    "ta1063"
+  ],
+  "question_setting": "clean",
+  "runs": [
+    {
+      "run": "bm25",
+      "chunk_tokens": null,
+      "mode": "bm25",
+      "rerank": false,
+      "items": 142,
+      "score": 0.528,
+      "ci95": [
+        0.458,
+        0.599
+      ],
+      "hit": 0.569,
+      "all_evidence": 0.491,
+      "evidence_recall": 0.523,
+      "mrr": 0.414,
+      "gold_prec": 0.097,
+      "candidate_recall": 0.742,
+      "key_recall": 0.628,
+      "grounded": 0.583,
+      "faithfulness": 0.793,
+      "categories": {
+        "correct": 51,
+        "retrieval_miss": 46,
+        "reader_error": 17,
+        "false_abstention": 2,
+        "correct_abstention": 10,
+        "hallucinated_answer": 16
+      }
+    },
+    {
+      "run": "dense",
+      "chunk_tokens": null,
+      "mode": "dense",
+      "rerank": false,
+      "items": 142,
+      "score": 0.496,
+      "ci95": [
+        0.426,
+        0.57
+      ],
+      "hit": 0.448,
+      "all_evidence": 0.414,
+      "evidence_recall": 0.428,
+      "mrr": 0.268,
+      "gold_prec": 0.076,
+      "candidate_recall": 0.605,
+      "key_recall": 0.59,
+      "grounded": 0.439,
+      "faithfulness": 0.734,
+      "categories": {
+        "reader_error": 21,
+        "retrieval_miss": 51,
+        "correct": 44,
+        "correct_abstention": 12,
+        "hallucinated_answer": 14
+      }
+    },
+    {
+      "run": "hybrid",
+      "chunk_tokens": null,
+      "mode": "hybrid",
+      "rerank": false,
+      "items": 142,
+      "score": 0.514,
+      "ci95": [
+        0.44,
+        0.588
+      ],
+      "hit": 0.517,
+      "all_evidence": 0.483,
+      "evidence_recall": 0.497,
+      "mrr": 0.36,
+      "gold_prec": 0.088,
+      "candidate_recall": 0.729,
+      "key_recall": 0.628,
+      "grounded": 0.524,
+      "faithfulness": 0.739,
+      "categories": {
+        "correct": 48,
+        "retrieval_miss": 45,
+        "reader_error": 22,
+        "false_abstention": 1,
+        "correct_abstention": 11,
+        "hallucinated_answer": 15
+      }
+    },
+    {
+      "run": "hybrid+rerank",
+      "chunk_tokens": null,
+      "mode": "hybrid",
+      "rerank": true,
+      "items": 142,
+      "score": 0.542,
+      "ci95": [
+        0.468,
+        0.616
+      ],
+      "hit": 0.603,
+      "all_evidence": 0.526,
+      "evidence_recall": 0.559,
+      "mrr": 0.398,
+      "gold_prec": 0.109,
+      "candidate_recall": 0.729,
+      "key_recall": 0.673,
+      "grounded": 0.562,
+      "faithfulness": 0.762,
+      "categories": {
+        "correct": 53,
+        "retrieval_miss": 41,
+        "reader_error": 20,
+        "false_abstention": 2,
+        "correct_abstention": 11,
+        "hallucinated_answer": 15
+      }
+    }
+  ]
+}

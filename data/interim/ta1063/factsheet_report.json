@@ -1,0 +1,199 @@
+{
+  "interim_dir": "data/interim/ta1063",
+  "topic": "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+  "schema": {
+    "name": "NICE single technology appraisal",
+    "version": 1,
+    "path": "configs/schema/nice_sta.yaml"
+  },
+  "prompt_version": "3",
+  "model": "openai/gpt-6-luna",
+  "batches": 96,
+  "facts": 593,
+  "redacted": 124,
+  "with_copies": 225,
+  "per_group": {
+    "decision_problem": {
+      "batches": 8,
+      "failed_batches": 0,
+      "facts_raw": 42,
+      "accepted": 41,
+      "facts": 40,
+      "by_doc": {
+        "d02": 18,
+        "d12": 22
+      },
+      "rejected": {
+        "quote_not_found": 1
+      }
+    },
+    "trial_design": {
+      "batches": 11,
+      "failed_batches": 0,
+      "facts_raw": 43,
+      "accepted": 32,
+      "facts": 32,
+      "by_doc": {
+        "d02": 14,
+        "d04": 8,
+        "d12": 10
+      },
+      "rejected": {
+        "quote_not_found": 6,
+        "value_not_grounded": 1,
+        "unit_unknown": 4
+      }
+    },
+    "efficacy": {
+      "batches": 10,
+      "failed_batches": 0,
+      "facts_raw": 86,
+      "accepted": 85,
+      "facts": 85,
+      "by_doc": {
+        "d02": 37,
+        "d04": 13,
+        "d12": 35
+      },
+      "rejected": {
+        "quote_length": 1
+      }
+    },
+    "safety": {
+      "batches": 11,
+      "failed_batches": 0,
+      "facts_raw": 97,
+      "accepted": 88,
+      "facts": 87,
+      "by_doc": {
+        "d02": 34,
+        "d04": 26,
+        "d12": 27
+      },
+      "rejected": {
+        "value_without_number": 1,
+        "value_not_in_quote": 8
+      }
+    },
+    "indirect_comparison": {
+      "batches": 10,
+      "failed_batches": 0,
+      "facts_raw": 84,
+      "accepted": 76,
+      "facts": 72,
+      "by_doc": {
+        "d02": 9,
+        "d04": 35,
+        "d12": 28
+      },
+      "rejected": {
+        "value_not_grounded": 8
+      }
+    },
+    "economic_model": {
+      "batches": 12,
+      "failed_batches": 0,
+      "facts_raw": 41,
+      "accepted": 36,
+      "facts": 36,
+      "by_doc": {
+        "d02": 24,
+        "d04": 3,
+        "d12": 9
+      },
+      "rejected": {
+        "value_not_grounded": 5
+      }
+    },
+    "cost_effectiveness": {
+      "batches": 11,
+      "failed_batches": 0,
+      "facts_raw": 99,
+      "accepted": 96,
+      "facts": 96,
+      "by_doc": {
+        "d02": 35,
+        "d04": 17,
+        "d12": 44
+      },
+      "rejected": {
+        "quote_length": 1,
+        "value_not_in_quote": 1,
+        "quote_not_found": 1
+      }
+    },
+    "key_issues": {
+      "batches": 11,
+      "failed_batches": 0,
+      "facts_raw": 33,
+      "accepted": 25,
+      "facts": 25,
+      "by_doc": {
+        "d12": 12,
+        "d13": 13
+      },
+      "rejected": {
+        "quote_length": 4,
+        "quote_not_found": 4
+      }
+    },
+    "stakeholder_views": {
+      "batches": 12,
+      "failed_batches": 0,
+      "facts_raw": 128,
+      "accepted": 121,
+      "facts": 120,
+      "by_doc": {
+        "d05": 14,
+        "d06": 22,
+        "d07": 28,
+        "d08": 26,
+        "d09": 10,
+        "d10": 19,
+        "d11": 1
+      },
+      "rejected": {
+        "quote_not_found": 6,
+        "value_not_grounded": 1
+      }
+    }
+  },
+  "per_slot": {
+    "decision_problem.population": 10,
+    "decision_problem.positioning": 9,
+    "decision_problem.comparator_choice": 17,
+    "decision_problem.dosing": 4,
+    "trial_design.primary_endpoint": 5,
+    "safety.safety_finding": 17,
+    "trial_design.design": 4,
+    "trial_design.enrolment": 5,
+    "trial_design.baseline_characteristic": 13,
+    "trial_design.data_cut": 5,
+    "efficacy.treatment_effect": 23,
+    "efficacy.endpoint_result": 18,
+    "efficacy.finding": 44,
+    "indirect_comparison.method": 22,
+    "indirect_comparison.comparison_result": 50,
+    "safety.adverse_event_rate": 70,
+    "economic_model.model_structure": 13,
+    "economic_model.extrapolation": 10,
+    "cost_effectiveness.severity": 6,
+    "cost_effectiveness.icer": 20,
+    "cost_effectiveness.scenario_definition": 22,
+    "economic_model.cost_input": 8,
+    "economic_model.utility_value": 5,
+    "cost_effectiveness.total_outcomes": 48,
+    "stakeholder_views.respondent": 6,
+    "stakeholder_views.view": 114,
+    "key_issues.eag_preference": 3,
+    "key_issues.issue": 22
+  },
+  "llm": {
+    "calls": 96,
+    "prompt_tokens": 374330,
+    "completion_tokens": 194515
+  },
+  "elapsed_seconds": 297.3,
+  "generated_at": "2026-11-06T06:38:15+00:00",
+  "warnings": []
+}

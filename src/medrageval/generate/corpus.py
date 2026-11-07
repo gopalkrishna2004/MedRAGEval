@@ -31,9 +31,6 @@ than then so such but if also any all each both into onto over under between abo
 """.split())
 
 CAPTION_RE = re.compile(r"^[\W_]*(Table|Figure)\s+([A-Z]?\d+(?:\.\d+)?)\b", re.I)   # "_Table 14: ..._": an italic caption
-YEAR_RE = re.compile(r"^(?:19|20)\d\d$")
-NUMBER_RE = re.compile(r"[£$€]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?%|\d+\.\d+|\d[\d,]{2,}")
-RANGE_RE = re.compile(r"[£$€]?\s?(\d[\d,]*(?:\.\d+)?\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?)(?=\s?%|\s?(?:months?|years?|weeks?|days?|mg|patients|participants)\b)|[£$€]\s?(\d[\d,]*(?:\.\d+)?\s?[-–‒—]\s?\d[\d,]*(?:\.\d+)?)")
 REDACTED = "[REDACTED]"
 _NUMBERING = re.compile(r"^(?:appendix\s+)?[A-Z]?\d*(?:\.\d+)*\.?\s+(?=\S)", re.I)
 
@@ -71,7 +68,6 @@ class Document:
     start_page: int
     end_page: int
     n_units: int = 0
-    role_scores: dict = field(default_factory=dict)
 
 
 def tokenize(text: str) -> list[str]:
@@ -246,43 +242,19 @@ def corpus_topic(titles: list[str]) -> str:
     return best
 
 
-def split_ranges(plain: str) -> tuple[set[str], str]:
-    """Ranges with a unit ("40-50%", "£1,000-2,000", "3-6 months") as single values, and the text with them blanked out."""
-    out = set()
-
-    def take(m: re.Match) -> str:
-        out.add(re.sub(r"[\s,]", "", m.group(1) or m.group(2)).translate(_RANGE_DASHES))
-        return " "
-    return out, RANGE_RE.sub(take, plain)
-
-
-_RANGE_DASHES = str.maketrans({c: "-" for c in "–‒—"})
-
-
-def significant_numbers(plain: str) -> set[str]:
-    """Numbers that identify a figure: money, percentages, decimals, integers of 3+ digits (not years), ranges as one value."""
-    out, plain = split_ranges(plain)
-    for m in NUMBER_RE.findall(plain):
-        n = re.sub(r"[£$€%,\s]", "", m)
-        if n and not YEAR_RE.match(n):
-            out.add(n)
-    return out
-
-
 class Corpus:
     def __init__(self, interim_dir: Path, docs: list[dict], sections: list[dict], elements: list[dict], cfg: dict):
         self.interim_dir = interim_dir
         self.cfg = cfg
         self.sections = {s["section_id"]: s for s in sections}
         self.elements = {e["element_id"]: e for e in elements}
-        self.element_order = [e["element_id"] for e in elements]
 
         roles = detect_roles(docs, elements, cfg)
         self.docs: dict[str, Document] = {}
         for d in docs:
-            role, scores = roles[d["doc_id"]]
+            role, _ = roles[d["doc_id"]]
             self.docs[d["doc_id"]] = Document(d["doc_id"], role, cfg["roles"]["labels"].get(role, role),
-                                              document_title(d), d["start_page"], d["end_page"], role_scores=scores)
+                                              document_title(d), d["start_page"], d["end_page"])
         self.topic = corpus_topic([d.title for d in self.docs.values()])
 
         self.noise = Counter()
@@ -310,10 +282,6 @@ class Corpus:
 
         self.bm25 = BM25({uid: u.tokens for uid, u in self.units.items()})
         self.df = self.bm25.df
-
-    def rare_tokens(self, unit: Unit) -> set[str]:
-        limit = self.cfg["attribution"]["rare_df_max"] * len(self.units)
-        return {t for t in set(unit.tokens) if len(t) >= 3 and self.df[t] <= limit}
 
     def neighbours(self, unit: Unit, n: int) -> list[Unit]:
         sibs = self.by_section.get(unit.section_id, [])

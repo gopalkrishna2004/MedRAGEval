@@ -1,0 +1,444 @@
+{
+  "datasets": [
+    "ta1063"
+  ],
+  "question_setting": "clean",
+  "messy_missing": [],
+  "items": 142,
+  "excluded": [],
+  "rag": {
+    "model": "Qwen/Qwen2.5-3B-Instruct",
+    "temperature": 0.0,
+    "embedding_model": "BAAI/bge-m3",
+    "reranker": null,
+    "retrieval": {
+      "mode": "hybrid",
+      "top_k": 6,
+      "candidates": 30,
+      "rrf_k": 60,
+      "rerank": false,
+      "rerank_model": "BAAI/bge-reranker-v2-m3",
+      "rerank_candidates": 30,
+      "max_context_chars": 12000
+    },
+    "chunking": {
+      "target_tokens": 400,
+      "max_tokens": 512,
+      "overlap_sentences": 1,
+      "max_table_tokens": 1500,
+      "min_body_chars": 15,
+      "tokenizer": "BAAI/bge-m3"
+    },
+    "collection": "source_document-c5e2d60e03-a45ebae7-bge-m3",
+    "chunks": 1097,
+    "prompt_version": "4",
+    "config": "configs/rag.yaml"
+  },
+  "judge_model": "openai/gpt-6-luna",
+  "judge_version": "4",
+  "fixed_context_items": 26,
+  "standin_screening": {
+    "items": 26,
+    "candidates": 276,
+    "answers": 24,
+    "figures": 26,
+    "unscreened": 0,
+    "passages_mean": 5.73
+  },
+  "overall": {
+    "items": 142,
+    "score": 0.514,
+    "ci95": [
+      0.44,
+      0.588
+    ],
+    "hit": 0.517,
+    "all_evidence": 0.483,
+    "evidence_recall": 0.497,
+    "mrr": 0.36,
+    "gold_prec": 0.088,
+    "candidate_recall": 0.729,
+    "candidate_all_evidence": 0.681,
+    "evidence_page_only": 22,
+    "evidence_quote_split": 0,
+    "key_recall": 0.628,
+    "grounded": 0.524,
+    "faithfulness": 0.739,
+    "abstained": 0.127,
+    "keypoint_completeness": 0.361,
+    "keypoint_hallucination": 0.051,
+    "verdicts": {
+      "correct": 59,
+      "incorrect": 48,
+      "partial": 28,
+      "abstained": 7
+    },
+    "categories": {
+      "correct": 48,
+      "retrieval_miss": 45,
+      "reader_error": 22,
+      "false_abstention": 1,
+      "correct_abstention": 11,
+      "hallucinated_answer": 15
+    },
+    "errors": 0
+  },
+  "answerable": {
+    "items": 116,
+    "score": 0.534,
+    "ci95": [
+      0.457,
+      0.616
+    ],
+    "hit": 0.517,
+    "all_evidence": 0.483,
+    "evidence_recall": 0.497,
+    "mrr": 0.36,
+    "gold_prec": 0.088,
+    "candidate_recall": 0.729,
+    "candidate_all_evidence": 0.681,
+    "evidence_page_only": 22,
+    "evidence_quote_split": 0,
+    "key_recall": 0.628,
+    "grounded": 0.569,
+    "faithfulness": 0.778,
+    "abstained": 0.06,
+    "keypoint_completeness": 0.361,
+    "keypoint_hallucination": 0.051,
+    "verdicts": {
+      "correct": 48,
+      "incorrect": 33,
+      "partial": 28,
+      "abstained": 7
+    },
+    "categories": {
+      "correct": 48,
+      "retrieval_miss": 45,
+      "reader_error": 22,
+      "false_abstention": 1
+    },
+    "errors": 0
+  },
+  "unanswerable": {
+    "items": 26,
+    "score": 0.423,
+    "ci95": [
+      0.231,
+      0.615
+    ],
+    "hit": null,
+    "all_evidence": null,
+    "evidence_recall": null,
+    "mrr": null,
+    "gold_prec": null,
+    "candidate_recall": null,
+    "candidate_all_evidence": null,
+    "evidence_page_only": 0,
+    "evidence_quote_split": 0,
+    "key_recall": null,
+    "grounded": 0.235,
+    "faithfulness": 0.486,
+    "abstained": 0.423,
+    "keypoint_completeness": null,
+    "keypoint_hallucination": null,
+    "verdicts": {
+      "correct": 11,
+      "incorrect": 15
+    },
+    "categories": {
+      "correct_abstention": 11,
+      "hallucinated_answer": 15
+    },
+    "errors": 0
+  },
+  "per_type": {
+    "factual": {
+      "items": 26,
+      "score": 0.5,
+      "ci95": [
+        0.346,
+        0.654
+      ],
+      "hit": 0.423,
+      "all_evidence": 0.423,
+      "evidence_recall": 0.423,
+      "mrr": 0.231,
+      "gold_prec": 0.071,
+      "candidate_recall": 0.731,
+      "candidate_all_evidence": 0.731,
+      "evidence_page_only": 2,
+      "evidence_quote_split": 0,
+      "key_recall": 0.619,
+      "grounded": 0.522,
+      "faithfulness": 0.732,
+      "abstained": 0.115,
+      "keypoint_completeness": null,
+      "keypoint_hallucination": null,
+      "verdicts": {
+        "correct": 8,
+        "incorrect": 5,
+        "partial": 10,
+        "abstained": 3
+      },
+      "categories": {
+        "correct": 8,
+        "retrieval_miss": 10,
+        "reader_error": 7,
+        "false_abstention": 1
+      },
+      "errors": 0
+    },
+    "numerical": {
+      "items": 26,
+      "score": 0.577,
+      "ci95": [
+        0.404,
+        0.75
+      ],
+      "hit": 0.769,
+      "all_evidence": 0.769,
+      "evidence_recall": 0.769,
+      "mrr": 0.49,
+      "gold_prec": 0.128,
+      "candidate_recall": 0.808,
+      "candidate_all_evidence": 0.808,
+      "evidence_page_only": 1,
+      "evidence_quote_split": 0,
+      "key_recall": 0.615,
+      "grounded": 0.667,
+      "faithfulness": 0.767,
+      "abstained": 0.038,
+      "keypoint_completeness": null,
+      "keypoint_hallucination": null,
+      "verdicts": {
+        "correct": 13,
+        "incorrect": 8,
+        "partial": 4,
+        "abstained": 1
+      },
+      "categories": {
+        "correct": 13,
+        "retrieval_miss": 4,
+        "reader_error": 9
+      },
+      "errors": 0
+    },
+    "comparative": {
+      "items": 16,
+      "score": 0.625,
+      "ci95": [
+        0.406,
+        0.812
+      ],
+      "hit": 0.5,
+      "all_evidence": 0.5,
+      "evidence_recall": 0.5,
+      "mrr": 0.37,
+      "gold_prec": 0.084,
+      "candidate_recall": 0.688,
+      "candidate_all_evidence": 0.688,
+      "evidence_page_only": 2,
+      "evidence_quote_split": 0,
+      "key_recall": 0.719,
+      "grounded": 0.667,
+      "faithfulness": 0.839,
+      "abstained": 0.062,
+      "keypoint_completeness": null,
+      "keypoint_hallucination": null,
+      "verdicts": {
+        "partial": 4,
+        "incorrect": 3,
+        "correct": 8,
+        "abstained": 1
+      },
+      "categories": {
+        "reader_error": 3,
+        "retrieval_miss": 5,
+        "correct": 8
+      },
+      "errors": 0
+    },
+    "multihop": {
+      "items": 10,
+      "score": 0.2,
+      "ci95": [
+        0.0,
+        0.5
+      ],
+      "hit": 0.2,
+      "all_evidence": 0.0,
+      "evidence_recall": 0.1,
+      "mrr": 0.15,
+      "gold_prec": 0.033,
+      "candidate_recall": 0.55,
+      "candidate_all_evidence": 0.2,
+      "evidence_page_only": 2,
+      "evidence_quote_split": 0,
+      "key_recall": 0.2,
+      "grounded": 0.222,
+      "faithfulness": 0.517,
+      "abstained": 0.2,
+      "keypoint_completeness": null,
+      "keypoint_hallucination": null,
+      "verdicts": {
+        "correct": 2,
+        "incorrect": 6,
+        "abstained": 2
+      },
+      "categories": {
+        "correct": 2,
+        "retrieval_miss": 8
+      },
+      "errors": 0
+    },
+    "attribution": {
+      "items": 20,
+      "score": 0.8,
+      "ci95": [
+        0.6,
+        0.95
+      ],
+      "hit": 0.75,
+      "all_evidence": 0.75,
+      "evidence_recall": 0.75,
+      "mrr": 0.604,
+      "gold_prec": 0.125,
+      "candidate_recall": 0.9,
+      "candidate_all_evidence": 0.9,
+      "evidence_page_only": 1,
+      "evidence_quote_split": 0,
+      "key_recall": 0.8,
+      "grounded": 0.8,
+      "faithfulness": 0.875,
+      "abstained": 0.0,
+      "keypoint_completeness": null,
+      "keypoint_hallucination": null,
+      "verdicts": {
+        "correct": 16,
+        "incorrect": 4
+      },
+      "categories": {
+        "correct": 16,
+        "retrieval_miss": 2,
+        "reader_error": 2
+      },
+      "errors": 0
+    },
+    "summary": {
+      "items": 18,
+      "score": 0.333,
+      "ci95": [
+        0.194,
+        0.472
+      ],
+      "hit": 0.222,
+      "all_evidence": 0.111,
+      "evidence_recall": 0.148,
+      "mrr": 0.194,
+      "gold_prec": 0.046,
+      "candidate_recall": 0.559,
+      "candidate_all_evidence": 0.444,
+      "evidence_page_only": 14,
+      "evidence_quote_split": 0,
+      "key_recall": null,
+      "grounded": 0.333,
+      "faithfulness": 0.825,
+      "abstained": 0.0,
+      "keypoint_completeness": 0.361,
+      "keypoint_hallucination": 0.051,
+      "verdicts": {
+        "partial": 10,
+        "incorrect": 7,
+        "correct": 1
+      },
+      "categories": {
+        "retrieval_miss": 16,
+        "correct": 1,
+        "reader_error": 1
+      },
+      "errors": 0
+    },
+    "unanswerable": {
+      "items": 26,
+      "score": 0.423,
+      "ci95": [
+        0.231,
+        0.615
+      ],
+      "hit": null,
+      "all_evidence": null,
+      "evidence_recall": null,
+      "mrr": null,
+      "gold_prec": null,
+      "candidate_recall": null,
+      "candidate_all_evidence": null,
+      "evidence_page_only": 0,
+      "evidence_quote_split": 0,
+      "key_recall": null,
+      "grounded": 0.235,
+      "faithfulness": 0.486,
+      "abstained": 0.423,
+      "keypoint_completeness": null,
+      "keypoint_hallucination": null,
+      "verdicts": {
+        "correct": 11,
+        "incorrect": 15
+      },
+      "categories": {
+        "correct_abstention": 11,
+        "hallucinated_answer": 15
+      },
+      "errors": 0
+    }
+  },
+  "agreement": {
+    "items": 124,
+    "agree": 0.879,
+    "keys_only": [
+      "factual-004",
+      "factual-009",
+      "factual-010",
+      "factual-011",
+      "factual-016",
+      "numerical-017",
+      "numerical-024",
+      "comparative-001",
+      "comparative-006",
+      "comparative-010",
+      "attribution-015",
+      "unanswerable-002",
+      "unanswerable-008"
+    ],
+    "judge_only": [
+      "factual-001",
+      "attribution-006"
+    ]
+  },
+  "evidence_matching": {
+    "page_only": 22,
+    "quote_split": 0
+  },
+  "usage": {
+    "prompt_tokens_max": 5030,
+    "prompt_tokens_mean": 2407,
+    "latency_s_mean": 1.08
+  },
+  "llm": {
+    "rag": {
+      "calls": 397,
+      "prompt_tokens": 946809,
+      "completion_tokens": 40612,
+      "cache_hits": 29
+    },
+    "judge": {
+      "calls": 449,
+      "prompt_tokens": 1369318,
+      "completion_tokens": 214259,
+      "cache_hits": 55
+    }
+  },
+  "elapsed_seconds": 204.9,
+  "warnings": [
+    "2 unanswerable items had no chunk holding a withheld quote; the quotes were the search queries: unanswerable-006, unanswerable-017"
+  ]
+}

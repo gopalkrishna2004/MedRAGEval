@@ -112,3 +112,8 @@ def test_reports_have_no_unexpected_warnings(ta1063, ta1074):
     assert ta1063["report"]["segmentation_vs_bookmarks"]["recall"] == 1.0
     assert ta1074["report"]["segmentation_vs_bookmarks"]["recall"] == 1.0
     assert all("no headings" not in w for w in ta1063["report"]["warnings"] + ta1074["report"]["warnings"])
+
+
+def test_parse_report_names_the_file_not_its_path(ta1063):
+    # The fixture passes an absolute path; committed outputs must not carry it.
+    assert ta1063["report"]["pdf"] == "source_document.pdf"

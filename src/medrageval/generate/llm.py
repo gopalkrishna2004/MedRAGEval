@@ -129,7 +129,7 @@ class LLM:
             self._count(bad_json=1)
             retry = messages + [{"role": "assistant", "content": text},
                                 {"role": "user", "content": "That was not valid JSON. Return only the JSON object."}]
-            text, usage2 = self._call(retry)
+            text, usage = self._call(retry)
             try:
                 obj = parse_json_object(text)
             except (json.JSONDecodeError, ValueError) as e:
@@ -180,16 +180,6 @@ def make_llm(section: dict, cfg: dict, use_cache: bool = True) -> LLM:
     cache = Path(cfg["cache_dir"]) if use_cache and cfg.get("cache_dir") else None
     return LLM(section.get("model") or cfg["model"], section.get("base_url") or cfg["base_url"], key,
                section["temperature"], section["max_tokens"], cache, reasoning=section.get("reasoning"))
-
-
-def make_local_llm(section: dict, cache_dir: str | Path | None, use_cache: bool = True) -> LLM:
-    """A client for a local OpenAI-compatible server (vLLM): the key is read from `api_key_env` when the
-    server was started with --api-key, and is the placeholder vLLM accepts otherwise."""
-    load_dotenv()
-    key = os.environ.get(section.get("api_key_env") or "", "").strip() or "EMPTY"
-    cache = Path(cache_dir) if use_cache and cache_dir else None
-    return LLM(section["model"], section["base_url"], key, section["temperature"], section["max_tokens"], cache,
-               timeout=section.get("timeout", 120.0))
 
 
 def make_llms(cfg: dict, use_cache: bool = True) -> tuple[LLM, LLM]:

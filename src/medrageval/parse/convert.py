@@ -209,7 +209,7 @@ def write_pages(pdf: Path, records: list[dict], out: Path, settings: dict) -> No
     with pymupdf.open(pdf) as doc:
         outline = [{"level": lvl, "title": title, "page": page} for lvl, title, page in doc.get_toc()]
     meta = {
-        "pdf": str(pdf),
+        "pdf": Path(pdf).name,   # the file, not where it sits on this machine: these outputs are committed
         "sha256": _sha256(pdf),
         "settings": settings,
         "versions": parser_versions(),

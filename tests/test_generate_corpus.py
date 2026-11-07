@@ -1,7 +1,7 @@
 import pytest
-from synthetic import ELEMENTS, EXTRA_ELEMENTS, TABLE7, _el, build_corpus, config
+from synthetic import ELEMENTS, EXTRA_ELEMENTS, _el, build_corpus, config
 
-from medrageval.generate.corpus import BM25, corpus_topic, detect_roles, is_noise, make_units, significant_numbers, template_elements, tokenize
+from medrageval.generate.corpus import BM25, corpus_topic, detect_roles, is_noise, make_units, template_elements, tokenize
 from medrageval.text import contains_quote
 
 CFG = config()
@@ -81,11 +81,6 @@ def test_topic_is_the_common_prefix_of_the_most_shared_title():
         "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
     ]
     assert corpus_topic(titles) == "Capivasertib with fulvestrant for treating advanced breast cancer [ID6370]"
-
-
-def test_significant_numbers():
-    assert significant_numbers("£24,567 per QALY in 2023 with 0.61 QALYs and 50% of 155 patients, n=12") == {"24567", "0.61", "50", "155"}
-    assert significant_numbers("Around 40-50% of people (aged 34-90) pay £1,000–2,000") == {"40-50", "1000-2000"}   # a range is one value
 
 
 def test_bm25_ranks_rare_number_first_and_respects_filters():

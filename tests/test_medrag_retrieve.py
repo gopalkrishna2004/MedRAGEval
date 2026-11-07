@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import re
 import zlib
 
 from medrag.chunk import Chunk
@@ -150,3 +151,11 @@ def test_rewrite_fuses_the_restated_queries():
 def test_parse_queries():
     from medrag.retrieve import parse_queries
     assert parse_queries("Q one here\n\n2) Q one here\n“Q two here”\nno", "Q ONE here", 5) == ["Q two here"]
+
+
+def test_document_hint_patterns_match_what_they_name():
+    # A double-quoted YAML "\\b" is a backspace, which silently never matches.
+    from medrag.config import load_config
+    hints = {h["title"]: re.compile(h["query"], re.I) for h in load_config()["retrieval"]["document_hints"]}
+    assert hints["Document B"].search("What does Document B say?")
+    assert hints["EAG Report"].search("the EAG preferred")

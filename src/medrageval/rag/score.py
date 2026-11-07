@@ -109,12 +109,6 @@ def quote_split_pair(ev: dict, passages: list[Chunk]) -> tuple[int, int] | None:
     return None
 
 
-def quote_split_rank(ev: dict, passages: list[Chunk]) -> int | None:
-    """Rank of the first passage of an adjacent pair whose joined text holds the quote, when neither does alone."""
-    pair = quote_split_pair(ev, passages)
-    return min(pair) + 1 if pair else None
-
-
 def gold_evidence(item: dict) -> list[dict]:
     """The item's distinct evidence entries that can be matched (a quote or pages); [] for unanswerable items."""
     if not item.get("answerable", True):

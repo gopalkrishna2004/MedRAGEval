@@ -1,0 +1,841 @@
+{
+  "pdf": "data/raw/source_document.pdf",
+  "sha256": "c5e2d60e03b0d63f803bdb9be6c953a31d8dcafcae7833a8bcfd888c506e2929",
+  "settings": {
+    "table_output": "html",
+    "ocr": {
+      "enabled": true,
+      "engine": "rapidocr",
+      "dpi": 300
+    }
+  },
+  "versions": {
+    "pymupdf": "2.0",
+    "pymupdf4llm": "2.0",
+    "pymupdf-layout": "2.0",
+    "rapidocr": "3.10.0",
+    "onnxruntime": "1.31.1"
+  },
+  "outline": [
+    {
+      "level": 1,
+      "title": "0. Covering Page",
+      "page": 1
+    },
+    {
+      "level": 2,
+      "title": "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+      "page": 1
+    },
+    {
+      "level": 2,
+      "title": "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "SINGLE TECHNOLOGY APPRAISAL",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "1. Company submission from AstraZeneca",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "a. Full submission",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "b. Summary of Information for Patients (SIP)",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "2. Clarification questions and company responses",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "3. Patient group, professional group, and NHS organisation submissions from:",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "a. Make 2nds Count, Patient organisation submission",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "b. Breast Cancer Now, Patient organisation submission",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "c. METUPUK, Patient organisation submission",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "4. Expert personal statements from:",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "a. Prof. Nicholas Turner, nominated by AZ, Clinical expert",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "b. Dr Katie Spencer nominated by METUPUK, Patient expert",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "c. Dr Charlotte Moss nominated by Breast Cancer Now, Clinical expert",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "d. Eleanor Pearce Willis nominated by Breast Cancer Now, Patient expert",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "5. External Assessment Report prepared by Kleijnen Systematic Reviews (KSR) Ltd.",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "6. External Assessment Report \u2013 factual accuracy check",
+      "page": 2
+    },
+    {
+      "level": 2,
+      "title": "Any information supplied to NICE which has been marked as confidential, has been redacted. All personal information has also been redacted.",
+      "page": 2
+    },
+    {
+      "level": 1,
+      "title": "1a. ID6370 Capivasertib_CAPItello291 Document B v0.1 23Jul24 [CIC_REDACTED]",
+      "page": 4
+    },
+    {
+      "level": 2,
+      "title": "Tables and figures",
+      "page": 8
+    },
+    {
+      "level": 2,
+      "title": "Abbreviations",
+      "page": 11
+    },
+    {
+      "level": 2,
+      "title": "B.1. Decision problem, description of the technology and clinical care pathway",
+      "page": 14
+    },
+    {
+      "level": 3,
+      "title": "B.1.1.  Decision problem",
+      "page": 15
+    },
+    {
+      "level": 3,
+      "title": "B.1.2.  Description of the technology being evaluated",
+      "page": 21
+    },
+    {
+      "level": 3,
+      "title": "B.1.3. Health condition and position of the technology in the treatment pathway",
+      "page": 23
+    },
+    {
+      "level": 3,
+      "title": "B.1.3.1. Disease overview",
+      "page": 23
+    },
+    {
+      "level": 3,
+      "title": "B.1.3.2. Current treatment pathway and unmet needs",
+      "page": 25
+    },
+    {
+      "level": 4,
+      "title": "B.1.3.2.1. Current treatment pathway",
+      "page": 25
+    },
+    {
+      "level": 4,
+      "title": "B.1.3.2.2. Unmet needs",
+      "page": 28
+    },
+    {
+      "level": 3,
+      "title": "B.1.3.3. Positioning of capivasertib plus fulvestrant in the treatment pathway",
+      "page": 30
+    },
+    {
+      "level": 3,
+      "title": "B.1.4.  Equality considerations",
+      "page": 30
+    },
+    {
+      "level": 2,
+      "title": "B.2.  Clinical effectiveness",
+      "page": 31
+    },
+    {
+      "level": 3,
+      "title": "B.2.1.  Identification and selection of relevant studies",
+      "page": 32
+    },
+    {
+      "level": 3,
+      "title": "B.2.2.  List of relevant clinical effectiveness evidence",
+      "page": 32
+    },
+    {
+      "level": 3,
+      "title": "B.2.3.  Summary of methodology of the relevant clinical effectiveness evidence",
+      "page": 34
+    },
+    {
+      "level": 3,
+      "title": "B.2.3.1.  Methodology of pivotal trial",
+      "page": 34
+    },
+    {
+      "level": 3,
+      "title": "B.2.3.2. Baseline characteristics",
+      "page": 36
+    },
+    {
+      "level": 3,
+      "title": "B.2.4.  Statistical analysis and definition of study groups in the relevant clinical effectiveness evidence",
+      "page": 38
+    },
+    {
+      "level": 3,
+      "title": "B.2.4.1. Statistical analysis",
+      "page": 38
+    },
+    {
+      "level": 3,
+      "title": "B.2.4.2. Patient disposition",
+      "page": 39
+    },
+    {
+      "level": 3,
+      "title": "B.2.5.  Critical appraisal of the relevant clinical effectiveness evidence",
+      "page": 40
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.  Clinical effectiveness results of the relevant studies",
+      "page": 41
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.1. Primary endpoint: Progression free survival in PI3K/AKT-altered population",
+      "page": 41
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.2. Exploratory endpoint: Progression free survival in the PI3K/AKT pathway-altered population with prior CDK4/6 inhibitor use",
+      "page": 43
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.3. Secondary endpoint: Overall survival in PI3K/AKT pathway-altered population",
+      "page": 44
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.4. Exploratory endpoint: Overall survival in PI3K/AKT pathway-altered population with prior CDK4/6 inhibitor use",
+      "page": 45
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.5. Secondary endpoint: Second progression-free survival (PFS2) in PI3K/AKT pathway-altered population",
+      "page": 46
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.6. Secondary endpoint: Objective response rate in PI3K/AKT pathway-altered population",
+      "page": 47
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.7. Secondary endpoint: EORTC QLQ-C30 and EORTC QLQ-BR23 in the PI3K/AKT pathway-altered population",
+      "page": 48
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.8. Secondary endpoint: Time to deterioration in ECOG performance status in the PI3K/AKT pathway-altered population",
+      "page": 50
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.9. Exploratory endpoint: Time to first subsequent chemotherapy or death in the PI3K/AKT pathway-altered population",
+      "page": 50
+    },
+    {
+      "level": 3,
+      "title": "B.2.6.10. Exploratory endpoint: EQ-5D-5L in the PI3K/AKT pathway-altered population",
+      "page": 50
+    },
+    {
+      "level": 3,
+      "title": "B.2.7.  Subgroup analysis",
+      "page": 52
+    },
+    {
+      "level": 3,
+      "title": "B.2.8.  Meta-analysis",
+      "page": 54
+    },
+    {
+      "level": 3,
+      "title": "B.2.9.  Indirect and mixed treatment comparisons",
+      "page": 54
+    },
+    {
+      "level": 3,
+      "title": "B.2.9.1. Results of the NMA",
+      "page": 55
+    },
+    {
+      "level": 4,
+      "title": "B.2.9.1.1. PFS results",
+      "page": 56
+    },
+    {
+      "level": 4,
+      "title": "B.2.9.1.2. OS results",
+      "page": 58
+    },
+    {
+      "level": 3,
+      "title": "B.2.9.2. Uncertainties in the indirect and mixed treatment comparisons",
+      "page": 59
+    },
+    {
+      "level": 3,
+      "title": "B.2.9.3. Conclusions from the NMA",
+      "page": 61
+    },
+    {
+      "level": 3,
+      "title": "B.2.10.  Adverse reactions",
+      "page": 62
+    },
+    {
+      "level": 3,
+      "title": "B.2.10.1. Treatment exposure",
+      "page": 62
+    },
+    {
+      "level": 3,
+      "title": "B.2.10.2. Overall adverse events",
+      "page": 63
+    },
+    {
+      "level": 3,
+      "title": "B.2.10.3. Most common AEs",
+      "page": 64
+    },
+    {
+      "level": 3,
+      "title": "B.2.10.4. AE causality",
+      "page": 65
+    },
+    {
+      "level": 3,
+      "title": "B.2.10.5. Adverse events of special interest",
+      "page": 66
+    },
+    {
+      "level": 3,
+      "title": "B.2.11.  Ongoing studies",
+      "page": 66
+    },
+    {
+      "level": 3,
+      "title": "B.2.12.  Interpretation of clinical effectiveness and safety evidence",
+      "page": 66
+    },
+    {
+      "level": 3,
+      "title": "B.2.12.1. Context and decision problem",
+      "page": 66
+    },
+    {
+      "level": 3,
+      "title": "B.2.12.2. Summary of clinical evidence base",
+      "page": 67
+    },
+    {
+      "level": 4,
+      "title": "B.2.12.2.1.  Efficacy and safety data in CAPItello-291",
+      "page": 67
+    },
+    {
+      "level": 4,
+      "title": "B.2.12.2.2.  Comparative evidence",
+      "page": 68
+    },
+    {
+      "level": 3,
+      "title": "B.2.12.3. Generalisability and relevance of clinical evidence base",
+      "page": 68
+    },
+    {
+      "level": 4,
+      "title": "B.2.12.3.1.  Patient populations",
+      "page": 68
+    },
+    {
+      "level": 4,
+      "title": "B.2.12.3.2.  Intervention and comparators",
+      "page": 69
+    },
+    {
+      "level": 4,
+      "title": "B.2.12.3.3.  Outcomes",
+      "page": 70
+    },
+    {
+      "level": 3,
+      "title": "B.2.12.4. Strengths and limitations of clinical evidence",
+      "page": 70
+    },
+    {
+      "level": 4,
+      "title": "B.2.12.4.1.  CAPItello-291 trial of capivasertib plus fulvestrant",
+      "page": 70
+    },
+    {
+      "level": 4,
+      "title": "B.2.12.4.2.  Indirect comparison",
+      "page": 71
+    },
+    {
+      "level": 3,
+      "title": "B.2.12.5. Conclusions from clinical evidence",
+      "page": 72
+    },
+    {
+      "level": 2,
+      "title": "B.3.  Cost effectiveness",
+      "page": 73
+    },
+    {
+      "level": 3,
+      "title": "B.3.1. Published cost-effectiveness studies",
+      "page": 74
+    },
+    {
+      "level": 3,
+      "title": "B.3.2.  Economic analysis",
+      "page": 76
+    },
+    {
+      "level": 3,
+      "title": "B.3.2.1. Patient population",
+      "page": 77
+    },
+    {
+      "level": 3,
+      "title": "B.3.2.2. Model structure",
+      "page": 78
+    },
+    {
+      "level": 3,
+      "title": "B.3.2.3. Intervention technology and comparators",
+      "page": 81
+    },
+    {
+      "level": 3,
+      "title": "B.3.3.  Clinical parameters and variables",
+      "page": 82
+    },
+    {
+      "level": 3,
+      "title": "B.3.3.1. Overview of the clinical data sources and approach to survival modelling",
+      "page": 82
+    },
+    {
+      "level": 3,
+      "title": "B.3.3.2. Progression-free survival modelling \u2013 fulvestrant monotherapy reference arm",
+      "page": 84
+    },
+    {
+      "level": 3,
+      "title": "B.3.3.3. Overall survival modelling \u2013 fulvestrant monotherapy reference arm",
+      "page": 87
+    },
+    {
+      "level": 3,
+      "title": "B.3.3.4. Overall survival and progression-free survival for capivasertib plus fulvestrant and external comparators",
+      "page": 91
+    },
+    {
+      "level": 3,
+      "title": "B.3.4.  Measurement and valuation of health effects",
+      "page": 93
+    },
+    {
+      "level": 3,
+      "title": "B.3.4.1. Health-related quality of life data from literature",
+      "page": 93
+    },
+    {
+      "level": 3,
+      "title": "B.3.4.2. Health-related quality of life data from clinical trial",
+      "page": 94
+    },
+    {
+      "level": 3,
+      "title": "B.3.4.3. Mapping analysis",
+      "page": 96
+    },
+    {
+      "level": 3,
+      "title": "B.3.4.4. Age-related utility",
+      "page": 97
+    },
+    {
+      "level": 3,
+      "title": "B.3.4.5. Impact of adverse events on health state utility",
+      "page": 98
+    },
+    {
+      "level": 3,
+      "title": "B.3.4.6. Summary of health state utilities used in the economic model",
+      "page": 100
+    },
+    {
+      "level": 3,
+      "title": "B.3.5.  Cost and healthcare resource use identification, measurement and valuation",
+      "page": 101
+    },
+    {
+      "level": 3,
+      "title": "B.3.5.1. Intervention and comparator costs",
+      "page": 102
+    },
+    {
+      "level": 4,
+      "title": "B.3.5.1.1. Time on treatment",
+      "page": 102
+    },
+    {
+      "level": 4,
+      "title": "B.3.5.1.2. Acquisition costs",
+      "page": 103
+    },
+    {
+      "level": 3,
+      "title": "B.3.5.2. Subsequent treatment costs",
+      "page": 104
+    },
+    {
+      "level": 3,
+      "title": "B.3.5.3. Drug administration costs",
+      "page": 108
+    },
+    {
+      "level": 3,
+      "title": "B.3.5.4. Health state costs and resource use",
+      "page": 108
+    },
+    {
+      "level": 3,
+      "title": "B.3.5.5. Adverse event costs",
+      "page": 110
+    },
+    {
+      "level": 3,
+      "title": "B.3.5.6. Miscellaneous unit costs",
+      "page": 112
+    },
+    {
+      "level": 4,
+      "title": "B.3.5.6.1. End of life costs",
+      "page": 112
+    },
+    {
+      "level": 4,
+      "title": "B.3.5.6.2. Genomic testing costs",
+      "page": 112
+    },
+    {
+      "level": 3,
+      "title": "B.3.6.  Severity",
+      "page": 113
+    },
+    {
+      "level": 3,
+      "title": "B.3.7.  Uncertainty",
+      "page": 114
+    },
+    {
+      "level": 3,
+      "title": "B.3.8.  Managed access proposal",
+      "page": 115
+    },
+    {
+      "level": 3,
+      "title": "B.3.9.  Summary of base-case analysis inputs and assumptions",
+      "page": 115
+    },
+    {
+      "level": 3,
+      "title": "B.3.9.1. Summary of base-case analysis inputs",
+      "page": 115
+    },
+    {
+      "level": 3,
+      "title": "B.3.9.2. Assumptions",
+      "page": 122
+    },
+    {
+      "level": 3,
+      "title": "B.3.10.  Base-case results",
+      "page": 124
+    },
+    {
+      "level": 3,
+      "title": "B.3.10.1. Base-case incremental cost-effectiveness analysis results",
+      "page": 126
+    },
+    {
+      "level": 3,
+      "title": "B.3.11. Exploring uncertainty",
+      "page": 128
+    },
+    {
+      "level": 3,
+      "title": "B.3.11.1. Probabilistic sensitivity analysis",
+      "page": 128
+    },
+    {
+      "level": 3,
+      "title": "B.3.11.2. Deterministic sensitivity analysis",
+      "page": 131
+    },
+    {
+      "level": 3,
+      "title": "B.3.11.3. Scenario analysis",
+      "page": 136
+    },
+    {
+      "level": 3,
+      "title": "B.3.12.  Subgroup analysis",
+      "page": 138
+    },
+    {
+      "level": 3,
+      "title": "B.3.13.  Benefits not captured in the QALY calculation",
+      "page": 138
+    },
+    {
+      "level": 3,
+      "title": "B.3.14. Validation",
+      "page": 138
+    },
+    {
+      "level": 3,
+      "title": "B.3.14.1. Internal validation of modelled outcomes",
+      "page": 138
+    },
+    {
+      "level": 3,
+      "title": "B.3.14.2. External validation against other data sources",
+      "page": 138
+    },
+    {
+      "level": 3,
+      "title": "B.3.14.3. External validation by clinical experts",
+      "page": 138
+    },
+    {
+      "level": 3,
+      "title": "B.3.14.4. Quality assurance of model",
+      "page": 140
+    },
+    {
+      "level": 3,
+      "title": "B.3.15. Interpretation and conclusions of economic evidence",
+      "page": 140
+    },
+    {
+      "level": 2,
+      "title": "B.4. References",
+      "page": 142
+    },
+    {
+      "level": 1,
+      "title": "1b. ID6370 Capivasertib CAPItello291 SIP 7Aug24 [NoCON]",
+      "page": 150
+    },
+    {
+      "level": 1,
+      "title": "2. ID6370 Clarification Letter [CIC] - EAG Final_AZ response_REDACTED (1)",
+      "page": 175
+    },
+    {
+      "level": 1,
+      "title": "3a. ID6370 Capivasertib_CAPltello291 Patient organisation submission_Make 2nds Count (2) (1)_Redacted",
+      "page": 333
+    },
+    {
+      "level": 2,
+      "title": "Single Technology Appraisal",
+      "page": 333
+    },
+    {
+      "level": 2,
+      "title": "Patient Organisation Submission",
+      "page": 333
+    },
+    {
+      "level": 1,
+      "title": "3b. ID6370 Capivasertib_CAPltello291 Breast Cancer Now v0.1160724 [NoCON] (1)_Redacted",
+      "page": 344
+    },
+    {
+      "level": 1,
+      "title": "3c. D6370 Capivasertib_CAPltello291 Patient organisation METUPUK",
+      "page": 356
+    },
+    {
+      "level": 1,
+      "title": "4a. ID6370 Clinical expert statement templated NTurner",
+      "page": 367
+    },
+    {
+      "level": 2,
+      "title": "Single Technology Appraisal",
+      "page": 367
+    },
+    {
+      "level": 2,
+      "title": "Clinical expert statement",
+      "page": 367
+    },
+    {
+      "level": 2,
+      "title": "Information on completing this form",
+      "page": 367
+    },
+    {
+      "level": 2,
+      "title": "Part 1: Treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment \u2013 current treatment options",
+      "page": 369
+    },
+    {
+      "level": 2,
+      "title": "Your privacy",
+      "page": 379
+    },
+    {
+      "level": 1,
+      "title": "4b. ID6370 Patient expert statement KS Redacted",
+      "page": 381
+    },
+    {
+      "level": 1,
+      "title": "4c. ID6370 Clinical expert statement CMoss V0.1 5.11.24 MM (2)",
+      "page": 399
+    },
+    {
+      "level": 2,
+      "title": "Single Technology Appraisal",
+      "page": 399
+    },
+    {
+      "level": 2,
+      "title": "Clinical expert statement",
+      "page": 399
+    },
+    {
+      "level": 2,
+      "title": "Information on completing this form",
+      "page": 399
+    },
+    {
+      "level": 2,
+      "title": "Part 1: Treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment \u2013 current treatment options",
+      "page": 401
+    },
+    {
+      "level": 2,
+      "title": "Your privacy",
+      "page": 409
+    },
+    {
+      "level": 1,
+      "title": "4d. ID6370 Patient expert statement EPW",
+      "page": 411
+    },
+    {
+      "level": 2,
+      "title": "Single Technology Appraisal",
+      "page": 411
+    },
+    {
+      "level": 2,
+      "title": "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+      "page": 411
+    },
+    {
+      "level": 2,
+      "title": "Patient expert statement",
+      "page": 411
+    },
+    {
+      "level": 2,
+      "title": "Information on completing this form",
+      "page": 411
+    },
+    {
+      "level": 3,
+      "title": "Help with completing this form",
+      "page": 411
+    },
+    {
+      "level": 2,
+      "title": "Part 1: Living with this condition or caring for a patient with hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment",
+      "page": 413
+    },
+    {
+      "level": 2,
+      "title": "Part 2: Key messages",
+      "page": 417
+    },
+    {
+      "level": 2,
+      "title": "Your privacy",
+      "page": 417
+    },
+    {
+      "level": 1,
+      "title": "5. ID6370 Capivasertib for breast cancer - EAG Report [redacted] - postFAC_18102024 (1)",
+      "page": 418
+    },
+    {
+      "level": 1,
+      "title": "6. ID6370 Capivasertib for breast cancer FAC response_EAG_Final [redacted] (1)",
+      "page": 542
+    }
+  ]
+}

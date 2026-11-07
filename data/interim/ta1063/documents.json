@@ -1,0 +1,221 @@
+[
+  {
+    "doc_id": "d01",
+    "start_page": 1,
+    "end_page": 3,
+    "n_pages": 3,
+    "signals": [
+      "title_page",
+      "outline"
+    ],
+    "headings": [
+      "Committee Papers",
+      "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
+      "SINGLE TECHNOLOGY APPRAISAL"
+    ],
+    "running_text": "> © National Institute for Health and Care Excellence 2025. All rights reserved. See Notice of Rights. The content in this publication is owned by multiple parties and may not be re-used without the permission of the relevant copyright owner."
+  },
+  {
+    "doc_id": "d02",
+    "start_page": 4,
+    "end_page": 149,
+    "n_pages": 146,
+    "signals": [
+      "page_reset",
+      "footer_change",
+      "outline"
+    ],
+    "headings": [
+      "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
+      "Single technology appraisal",
+      "Document B Company evidence submission",
+      "July 2024"
+    ],
+    "running_text": "Company evidence submission: Capivasertib with fulvestrant for treating HR-positive, HER2negative advanced breast cancer after endocrine therapy [ID6370]"
+  },
+  {
+    "doc_id": "d03",
+    "start_page": 150,
+    "end_page": 174,
+    "n_pages": 25,
+    "signals": [
+      "page_reset",
+      "outline"
+    ],
+    "headings": [
+      "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
+      "Single technology appraisal",
+      "August 2024",
+      "Summary of Information for Patients (SIP):"
+    ],
+    "running_text": null
+  },
+  {
+    "doc_id": "d04",
+    "start_page": 175,
+    "end_page": 332,
+    "n_pages": 158,
+    "signals": [
+      "page_reset",
+      "title_page",
+      "outline"
+    ],
+    "headings": [
+      "NATIONAL INSTITUTE FOR HEALTH AND CARE EXCELLENCE",
+      "Single technology appraisal",
+      "Clarification questions",
+      "August 2024"
+    ],
+    "running_text": null
+  },
+  {
+    "doc_id": "d05",
+    "start_page": 333,
+    "end_page": 343,
+    "n_pages": 11,
+    "signals": [
+      "page_reset",
+      "title_page",
+      "outline"
+    ],
+    "headings": [
+      "Patient Organisation Submission",
+      "About you"
+    ],
+    "running_text": "## NICENational Institute for Health and Care Excellence"
+  },
+  {
+    "doc_id": "d06",
+    "start_page": 344,
+    "end_page": 355,
+    "n_pages": 12,
+    "signals": [
+      "page_reset",
+      "title_page",
+      "outline"
+    ],
+    "headings": [
+      "Patient Organisation Submission",
+      "About you"
+    ],
+    "running_text": "Patient organisation submission"
+  },
+  {
+    "doc_id": "d07",
+    "start_page": 356,
+    "end_page": 366,
+    "n_pages": 11,
+    "signals": [
+      "page_reset",
+      "title_page",
+      "outline"
+    ],
+    "headings": [
+      "Patient Organisation Submission",
+      "About you"
+    ],
+    "running_text": "## NICENational Institute for Health and Care Excellence"
+  },
+  {
+    "doc_id": "d08",
+    "start_page": 367,
+    "end_page": 380,
+    "n_pages": 14,
+    "signals": [
+      "page_reset",
+      "title_page",
+      "footer_change",
+      "outline"
+    ],
+    "headings": [
+      "Clinical expert statement",
+      "Information on completing this form"
+    ],
+    "running_text": "###### **Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]**"
+  },
+  {
+    "doc_id": "d09",
+    "start_page": 381,
+    "end_page": 398,
+    "n_pages": 18,
+    "signals": [
+      "page_reset",
+      "title_page",
+      "footer_change",
+      "outline"
+    ],
+    "headings": [
+      "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+      "Patient expert statement",
+      "Information on completing this form"
+    ],
+    "running_text": "###### Patient expert statement"
+  },
+  {
+    "doc_id": "d10",
+    "start_page": 399,
+    "end_page": 410,
+    "n_pages": 12,
+    "signals": [
+      "page_reset",
+      "title_page",
+      "footer_change",
+      "outline"
+    ],
+    "headings": [
+      "Clinical expert statement",
+      "Information on completing this form"
+    ],
+    "running_text": "Clinical expert statement"
+  },
+  {
+    "doc_id": "d11",
+    "start_page": 411,
+    "end_page": 417,
+    "n_pages": 7,
+    "signals": [
+      "page_reset",
+      "title_page",
+      "outline"
+    ],
+    "headings": [
+      "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+      "Patient expert statement",
+      "Information on completing this form"
+    ],
+    "running_text": "###### Patient expert statement"
+  },
+  {
+    "doc_id": "d12",
+    "start_page": 418,
+    "end_page": 541,
+    "n_pages": 124,
+    "signals": [
+      "page_reset",
+      "outline"
+    ],
+    "headings": [
+      "Capivasertib in combination with fulvestrant for second-line treatment in unresectable or metastatic HR-positive, HER2-negative breast cancer [ID6370]",
+      "Produced by",
+      "Rider on responsibility for report",
+      "This report should be referenced as follows:"
+    ],
+    "running_text": "CONFIDENTIAL UNTIL PUBLISHED"
+  },
+  {
+    "doc_id": "d13",
+    "start_page": 542,
+    "end_page": 578,
+    "n_pages": 37,
+    "signals": [
+      "page_reset",
+      "title_page",
+      "outline"
+    ],
+    "headings": [
+      "Capivasertib with fulvestrant for treating hormone receptor-positive HER2-negative advanced breast cancer after endocrine treatment [ID6370]",
+      "Issue 1 Comparators - EAG suggest that no evidence was provided to rule out the use of other treatments recommended in the ESMO guidelines"
+    ],
+    "running_text": null
+  }
+]

@@ -285,13 +285,6 @@ def build(pages: list[dict], docs: list[dict]) -> tuple[list[dict], list[dict]]:
     return all_sections, all_elements
 
 
-def outline_text(sections: list[dict], doc_id: str, max_depth: int = 3) -> str:
-    return "\n".join(
-        f"{'  ' * (s['depth'] - 1)}{s['title'][:90]}  (p{s['page']})"
-        for s in sections if s["doc_id"] == doc_id and s["depth"] <= max_depth
-    )
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build section trees and the element list.")
     ap.add_argument("pages", type=Path, help="output of medrageval.parse.clean")

@@ -308,3 +308,24 @@ def test_messy_setting_asks_the_twin_and_grades_against_the_clean_question(tmp_p
     assert all(it["question_asked"] == it["question"] and it["question_setting"] == "clean" for it in clean)
     with pytest.raises(ValueError):
         load_items([ds], question="sloppy")
+
+
+def test_run_report_leaves_out_the_answering_server_address(tmp_path):
+    items = load_items([write_dataset(tmp_path / "ds", [PFS], tmp_path / "interim")])
+    evaluate(items, make_rag(small_model), None, full_config(), tmp_path / "run")
+    assert "http://fake" not in (tmp_path / "run" / "eval_report.json").read_text()
+
+
+def test_reader_errors_leave_out_the_server_address():
+    # The error text is saved on the item's row, so it must not name the machine.
+    import httpx
+    from medrag.llm import ChatLLM
+    from openai import APIConnectionError
+    llm = ChatLLM("m", "http://10.0.0.1:9/v1", "k", max_retries=0)
+
+    def refuse(**_):
+        raise APIConnectionError(request=httpx.Request("POST", "http://10.0.0.1:9/v1/chat/completions"))
+    llm.client.chat.completions.create = refuse
+    with pytest.raises(RagLLMError) as e:
+        llm.complete([{"role": "user", "content": "q"}])
+    assert "10.0.0.1" not in str(e.value)

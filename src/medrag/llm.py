@@ -23,7 +23,7 @@ class ChatLLM:
     def __init__(self, model: str, base_url: str, api_key: str, temperature: float = 0.0, max_tokens: int = 512,
                  cache_dir: str | Path | None = None, timeout: float = 300.0, max_retries: int = 3):
         from openai import OpenAI
-        self.model, self.temperature, self.max_tokens, self.base_url = model, temperature, max_tokens, base_url
+        self.model, self.temperature, self.max_tokens = model, temperature, max_tokens
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout, max_retries=max_retries)
         self.stats: Counter = Counter()
@@ -38,7 +38,7 @@ class ChatLLM:
         try:
             r = self.client.chat.completions.create(model=self.model, messages=messages, temperature=self.temperature, max_tokens=self.max_tokens)
         except APIError as e:
-            raise LLMError(f"{self.model} at {self.base_url}: {e}") from e
+            raise LLMError(f"{self.model}: {e}") from e   # no server address: this text is saved in run files
         text = (r.choices[0].message.content or "") if r.choices else ""
         usage = {"prompt_tokens": getattr(r.usage, "prompt_tokens", 0) or 0,
                  "completion_tokens": getattr(r.usage, "completion_tokens", 0) or 0} if r.usage else {}

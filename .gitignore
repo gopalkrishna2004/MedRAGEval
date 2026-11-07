@@ -2,9 +2,23 @@
 __pycache__/
 *.pyc
 .DS_Store
-data/interim/
-CLAUDE.md
 .env
-data/cache/
-data/rag/
-data/ 
+CLAUDE.md
+docs/*.pdf
+
+# Under data/ only the source PDFs, TA1063's parse output and fact sheet, and the
+# delivered results are tracked: caches, archives and other runs stay local.
+data/*
+!data/raw/
+!data/interim/
+data/interim/*
+!data/interim/ta1063/
+!data/datasets/
+data/datasets/*
+!data/datasets/ta1063/
+!data/runs/
+data/runs/*
+!data/runs/ta1063/
+!data/runs/ta1063-messy/
+!data/runs/ablation/
+!data/runs/ablation-boosted/

@@ -152,6 +152,6 @@ def serve(app: App, run: str | Path | None = None, host: str = "127.0.0.1", port
     app.cfg["llm"]["max_retries"] = demo.get("llm_max_retries", 0)
     print("loading models...", flush=True)
     app.retriever().retrieve("warm up")
-    api = create_app(app, run or demo.get("run", "data/runs/ta1063_baseline"))
+    api = create_app(app, run or demo.get("run", "data/runs/ta1063"))
     print(f"demo ready: http://{host}:{port}", flush=True)
     uvicorn.run(api, host=host, port=port, log_level="warning")

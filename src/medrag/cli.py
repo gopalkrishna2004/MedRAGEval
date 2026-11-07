@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from medrag.app import App, collection_name
+from medrag.app import App
 from medrag.retrieve import MODES
 
 

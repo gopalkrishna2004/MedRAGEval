@@ -90,7 +90,7 @@ def build_report(pdf, pages, docs, sections, elements, outline) -> dict:
         warnings.append(f"{unlabelled}/{len(pages)} pages have no printed page number; document splitting is weaker")
 
     report = {
-        "pdf": str(pdf),
+        "pdf": Path(pdf).name,   # the file, not where it sits on this machine: these outputs are committed
         "pages": len(pages),
         "documents": len(docs),
         "sections": len(sections),

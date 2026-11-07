@@ -53,7 +53,7 @@ retrieval:
 
   # Settings for the ways a bundle of committee papers defeats plain retrieval.
   # All off here, so this file is the baseline; an ablation turns them on with
-  # `medrageval rag-eval ... --set retrieval.<key>=<value>`.
+  # `medrageval eval ... --set retrieval.<key>=<value>`.
   #
   # Every chunk is about the same drug, so dense similarity tells sections
   # apart poorly: on the first 142-item run its top 30 held the evidence for
@@ -70,7 +70,7 @@ retrieval:
   hint_boost: 0.0
   document_hints:                    # query: pattern in the question; title: pattern in the chunk's document title
     - {query: '\bEAG\b|assessment group', title: 'EAG Report'}
-    - {query: "company('s)? (evidence )?submission|\bDocument B\b", title: 'Document B'}
+    - {query: "company('s)? (evidence )?submission|\\bDocument B\\b", title: 'Document B'}
     - {query: 'clarification', title: 'Clarification'}
     - {query: 'patient organisation', title: 'Patient organisation|Breast Cancer Now|Make 2nds|METUPUK'}
     - {query: 'summary (of information )?for patients|lay summary', title: '\bSIP\b'}
@@ -115,7 +115,7 @@ llm:
 demo:
   # `medrag serve`: the evaluation run the page shows, and a reader that fails in
   # front of an audience within a minute rather than after 20 of retries.
-  run: data/runs/ta1063_baseline
+  run: data/runs/ta1063
   llm_timeout: 60
   llm_max_retries: 0
   examples:                          # each checked live against its cited PDF page; rerun after a retrieval or prompt change

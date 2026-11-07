@@ -51,7 +51,7 @@ generate:
   # The judge's reply cap, reasoning included, so it must leave room for the
   # verdict above judge_reasoning.max_tokens (four GLM calls spent all of 2,000
   # on reasoning and returned nothing). null: uses max_tokens.
-  judge_max_tokens: 4000
+  judge_max_tokens: 7000   # 4,000 of reasoning + 3,000 for the verdict
   base_url: https://openrouter.ai/api/v1
   # Generation samples (varied phrasing across items). Reproducibility comes
   # from the seed (which evidence is picked) and the response cache, not from
@@ -92,7 +92,8 @@ generate:
   min_share_of_target: 0.5
   abort_after_consecutive_failures: 5   # five bad calls in a row means a wrong key or model
 
-  # Items per type; the sum is the dataset size (146). Every item is built
+  # Items per type; the sum is the target size (146, fewer when a type runs out
+  # of candidates: TA1063 gives 142). Every item is built
   # from facts of the fact sheet (`medrageval extract`), drawn across schema
   # groups in proportion to their weights, held over the whole dataset: each
   # type continues the group rotation from what earlier types accepted, and
@@ -453,14 +454,10 @@ facts:
     samples_per_role: 3
     sample_chars: 1200
 
-# The RAG the dataset evaluates (`medrageval index / ask / eval`): chunks of
-# the parse output, a hybrid BM25 + dense retriever, and a small local model
-# behind vLLM's OpenAI-compatible server. A judge on OpenRouter grades its
-# answers.
+# Evaluation of the RAG application (the `medrag` package, configured in
+# configs/rag.yaml). Only the judge and the scoring live here: what the
+# application does with the PDF is its own business.
 rag:
-  # Evaluation of the RAG application (the `medrag` package, configured in
-  # configs/rag.yaml). Only the judge and the scoring live here: what the
-  # application does with the PDF is its own business.
   judge:
     # Always OpenRouter (OPENROUTER_API_KEY), never the answering model's
     # server: a small model cannot grade itself. null model / base_url: those of `generate`.
