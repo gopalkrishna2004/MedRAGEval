@@ -291,11 +291,12 @@ generate:
   # source item's rewrite. Numbers in a question are never altered.
   messy:
     enabled: true
-    # severity sets how many habits the rewrite applies and how much surface noise follows
-    severity_mix: {light: 0.4, medium: 0.4, heavy: 0.2}
-    habits_per_severity: {light: 1, medium: 2, heavy: 3}
-    # keyword_query is applied alone: a keyword string cannot also ramble
-    habits: [informal, shorthand, lay_terms, keyword_query, statement, grammar, rambling, vague]
+    # severity sets how many habits the rewrite applies and how much surface noise follows. The first
+    # smoke run (0.4/0.4/0.2, one to three habits) read naturally but too tidily, so the mix leans heavy.
+    severity_mix: {light: 0.2, medium: 0.4, heavy: 0.4}
+    habits_per_severity: {light: 2, medium: 3, heavy: 4}
+    # keyword_query keeps only misspell_names beside it: a keyword string cannot also ramble
+    habits: [informal, shorthand, lay_terms, keyword_query, statement, grammar, rambling, vague, misspell_names, fragment]
     personas:
       - a busy oncologist between clinics
       - a health economist checking a figure for a report
@@ -303,11 +304,12 @@ generate:
       - a medical affairs manager at a pharmaceutical company
       - a patient advocate reading the committee papers
       - a pharmacy student writing an essay
-    # per word: a typo (letter swap, drop, double or keyboard neighbour); per question: lower case, punctuation stripped
+    # per word: a typo (letter swap, drop, double or keyboard neighbour), a text-speak spelling (u, pls, w/, abt, &) where
+    # the word has one, a missing space to the next word; per question: lower case, punctuation stripped
     surface:
-      light: {typo_rate: 0.03, lowercase: 0.3, drop_punctuation: 0.3}
-      medium: {typo_rate: 0.08, lowercase: 0.6, drop_punctuation: 0.6}
-      heavy: {typo_rate: 0.15, lowercase: 0.9, drop_punctuation: 0.9}
+      light: {typo_rate: 0.05, textspeak: 0.3, join_words: 0.02, lowercase: 0.5, drop_punctuation: 0.5}
+      medium: {typo_rate: 0.12, textspeak: 0.5, join_words: 0.04, lowercase: 0.8, drop_punctuation: 0.8}
+      heavy: {typo_rate: 0.2, textspeak: 0.7, join_words: 0.07, lowercase: 1.0, drop_punctuation: 1.0}
     min_word_len: 4            # shorter words are left alone (a typo in "PFS" or "OS" changes the term)
 
   judge:
@@ -462,11 +464,11 @@ rag:
   judge:
     # Always OpenRouter (OPENROUTER_API_KEY), never the answering model's
     # server: a small model cannot grade itself. null model / base_url: those of `generate`.
-    model: z-ai/glm-5.3-flash
+    model: openai/gpt-6-luna
     base_url: null
-    reasoning: {enabled: True, max_tokens: 4000}    # as generate.judge_reasoning; this model refuses a request with reasoning disabled
+    reasoning: null                # the model's default
     temperature: 0.0               # deterministic verdicts
-    max_tokens: 7000               # reasoning counts against this: 3,000 stay for the verdict with its claim list; a cut-off reply is a lost verdict
+    max_tokens: 3000               # the verdict with its claim list; a cut-off reply is a lost verdict
     max_workers: 6
     max_chars_per_passage: 4000    # a table chunk can run to ~1,500 tokens; the judge should see it whole
   eval:

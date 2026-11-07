@@ -88,3 +88,65 @@ def test_memory_store_persists(tmp_path):
     assert again.dense_search("t", HashEmbedder().embed(["EAG ICER £52,681"])[0], 1)[0][0] == "c2"
     with pytest.raises(RuntimeError):
         Retriever(again, "missing", CFG)
+
+
+def test_rrf_weights_scale_each_ranking():
+    assert rrf([["a"], ["b"]], 60, [1.0, 0.5])[0][0] == "a"
+    assert rrf([["a"], ["b"]], 60, [0.5, 1.0])[0][0] == "b"
+
+
+def test_dense_weight_changes_the_fused_order():
+    r = Retriever(store(), "t", {**CFG, "rrf_weights": {"bm25": 1.0, "dense": 0.0}}, HashEmbedder())
+    hits = r.search("ICER per QALY", mode="hybrid", k=4)
+    assert [h.ranks["bm25"] for h in hits[:2]] == [1, 2]       # with dense at zero the fused order is BM25's; dense-only finds follow
+
+
+def test_document_hint_boosts_the_named_document():
+    other = mk("c5", "The EAG considered the uncertainty in the cost-effectiveness estimates substantial.", 540)
+    other.document_title, other.text = "EAG Report", other.text.replace("Doc |", "EAG Report |")
+    s = MemoryStore(dim=64)
+    s.replace_collection("t", {}, CHUNKS + [other], HashEmbedder().embed([c.text for c in CHUNKS + [other]]))
+    hints = [{"query": r"\bEAG\b", "title": "EAG Report"}]
+    plain = Retriever(s, "t", {**CFG, "document_hints": hints, "hint_boost": 0.0}, HashEmbedder()).search("EAG ICER", mode="bm25", k=1)
+    boosted = Retriever(s, "t", {**CFG, "document_hints": hints, "hint_boost": 5.0}, HashEmbedder()).search("EAG ICER", mode="bm25", k=1)
+    assert plain[0].chunk.chunk_id == "c2" and boosted[0].chunk.chunk_id == "c5"
+    unnamed = Retriever(s, "t", {**CFG, "document_hints": hints, "hint_boost": 5.0}, HashEmbedder()).search("company ICER £24,567", mode="bm25", k=1)
+    assert unnamed[0].chunk.chunk_id == "c1"                 # no party named: no boost
+
+
+def test_neighbours_follow_the_ranked_hits_under_the_same_heading():
+    r = Retriever(store(), "t", {**CFG, "neighbours": 1, "max_passages": 4}, HashEmbedder())
+    hits, pool = r.retrieve("median PFS months", mode="bm25", k=1)
+    assert hits[0].chunk.chunk_id == "c3" and [c.chunk_id for c in pool] == ["c3"]      # neighbours are shown, not pooled
+    assert [h.chunk.chunk_id for h in hits[1:]] == ["c2", "c4"] and all(h.ranks == {"neighbour_of": "c3"} for h in hits[1:])
+    assert [h.rank for h in hits] == [1, 2, 3]
+    capped = Retriever(store(), "t", {**CFG, "neighbours": 1, "max_passages": 2}, HashEmbedder()).search("median PFS months", mode="bm25", k=1)
+    assert len(capped) == 2
+    assert len(r.search("median PFS months", mode="bm25", k=1, plain=True)) == 1
+
+
+class FakeLLM:
+    def __init__(self, reply):
+        self.reply, self.calls = reply, []
+
+    def complete(self, messages, tag=""):
+        self.calls.append(messages)
+        return self.reply, {}
+
+
+def test_rewrite_fuses_the_restated_queries():
+    llm = FakeLLM('1. "EAG base-case ICER £52,681 per QALY"\n- EAG base-case ICER £52,681 per QALY\nshort one\n')
+    cfg = {**CFG, "rewrite": {"enabled": True, "max_queries": 2, "passages": 2, "weight": 0.7}}
+    r = Retriever(store(), "t", cfg, HashEmbedder(), llm=llm, topic="an appraisal")
+    full = r.retrieve_full("assessment group estimate", mode="bm25", k=2)       # words the chunks never use: the first pass finds nothing
+    hits = full.hits
+    assert full.queries == ["assessment group estimate", "EAG base-case ICER £52,681 per QALY"]   # dedupe, list marks and quotes stripped, fragments dropped
+    assert hits[0].chunk.chunk_id == "c2" and hits[0].ranks["bm25@1"] == 1 and hits[0].ranks["bm25"] is None
+    assert "an appraisal" in llm.calls[0][0]["content"] and "Question: assessment group estimate" in llm.calls[0][1]["content"]
+    plain = r.retrieve_full("assessment group estimate", mode="bm25", k=2, plain=True)
+    assert len(llm.calls) == 1 and plain.queries == ["assessment group estimate"]    # plain: no rewrite
+
+
+def test_parse_queries():
+    from medrag.retrieve import parse_queries
+    assert parse_queries("Q one here\n\n2) Q one here\n“Q two here”\nno", "Q ONE here", 5) == ["Q two here"]

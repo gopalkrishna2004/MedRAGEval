@@ -5,6 +5,7 @@ from medrageval.config import load_config
 from medrageval.facts import draft as draft_stage
 from medrageval.facts import extract as extract_stage
 from medrageval.generate import generate as generate_stage
+from medrageval.generate import messy as messy_stage
 from medrageval.parse.pipeline import parse_pdf, print_report
 from medrageval.rag import evaluate as rag_eval
 
@@ -29,6 +30,9 @@ def main() -> None:
     g = sub.add_parser("generate", help="generate an evaluation dataset from a parse output directory and its fact sheet")
     generate_stage.add_arguments(g)
 
+    m = sub.add_parser("messy", help="rewrite an existing dataset's messy question twins in place (question_messy), nothing else")
+    messy_stage.add_arguments(m)
+
     v = sub.add_parser("eval", help="run the RAG application (medrag) over evaluation datasets and score its answers")
     rag_eval.add_arguments(v)
 
@@ -46,6 +50,8 @@ def main() -> None:
         extract_stage.run_cli(args)
     elif args.command == "generate":
         generate_stage.run_cli(args)
+    elif args.command == "messy":
+        messy_stage.run_cli(args)
     elif args.command == "ablate":
         rag_eval.run_ablate_cli(args)
     elif args.command == "eval":

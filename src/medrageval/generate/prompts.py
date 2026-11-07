@@ -349,6 +349,8 @@ HABITS = {
     "grammar": "the English of a fluent non-native speaker: dropped or wrong articles, odd prepositions, unusual word order, agreement slips",
     "rambling": "extra context a real user would add and the answer does not need: why they ask, what they were just reading, a tangent",
     "vague": "one specific detail blurred into something vaguer (\"the new drug\", \"that trial\", \"the EAG or whoever it was\"), still enough for someone who knows the appraisal to tell what is meant",
+    "misspell_names": "drug, trial and party names spelled as they sound or half-remembered (capivasirtib, fulvestrent, capitello 291, the ERG), never corrected",
+    "fragment": "not a finished sentence: it trails off, starts mid-thought, or jams two thoughts together with no punctuation between them",
 }
 
 
@@ -358,8 +360,10 @@ def build_messy(question: str, persona: str, habits: list[str]) -> list[dict]:
     system = ("You turn well-formed questions about a health technology appraisal into the way real users type them into a chat box or search bar. "
               "Users are hurried, informal and inconsistent; they do not write like a document. You are shown the clean question, who is typing and "
               "which habits to apply. Keep the same intent: the same thing is asked about the same subject, so the same answer is right. Keep every "
-              "number, unit and name of a drug, trial or party that the clean question has, in whatever spelling or shorthand the habits call for; "
-              "never add the answer or facts the clean question does not state. One or two lines at most. "
-              'Return only a JSON object: {"question": str}.')
+              "number and unit exactly, and keep the drug, trial and party names the clean question has, in whatever spelling or shorthand the "
+              "habits call for; never add the answer or facts the clean question does not state. "
+              "Make it rougher than feels natural: a real user does not polish. Drop articles and small words, leave sentences unfinished, "
+              "skip capitals, repeat yourself, use no punctuation or the wrong punctuation. Nothing a copy editor would pass. "
+              'One or two lines at most. Return only a JSON object: {"question": str}.')
     user = f"Clean question: {question}\n\nTyped by: {persona}\n\nApply these habits, all of them, and nothing else:\n{lines}"
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]

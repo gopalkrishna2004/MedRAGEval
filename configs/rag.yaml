@@ -51,6 +51,54 @@ retrieval:
   rerank_candidates: 30
   max_context_chars: 12000           # ~3.5k tokens of passages
 
+  # Settings for the ways a bundle of committee papers defeats plain retrieval.
+  # All off here, so this file is the baseline; an ablation turns them on with
+  # `medrageval rag-eval ... --set retrieval.<key>=<value>`.
+  #
+  # Every chunk is about the same drug, so dense similarity tells sections
+  # apart poorly: on the first 142-item run its top 30 held the evidence for
+  # 53% of questions against BM25's 69%, and the fused order was below BM25
+  # alone at six passages. A weight under 1 keeps dense's own finds without
+  # letting its tail outvote a strong lexical match.
+  rrf_weights: {bm25: 1.0, dense: 1.0}
+  # A question that names a party ("the EAG report", "the company submission",
+  # "in its clarification response") wants that document: 52 of 116 answerable
+  # questions named one and 46 of those had all their evidence in it. Chunks of
+  # the matching document have their fused score raised by hint_boost (0.5 =
+  # half as much again). A boost, not a filter: the party is sometimes quoted
+  # in another document (the EAG report quotes the company).
+  hint_boost: 0.0
+  document_hints:                    # query: pattern in the question; title: pattern in the chunk's document title
+    - {query: '\bEAG\b|assessment group', title: 'EAG Report'}
+    - {query: "company('s)? (evidence )?submission|\bDocument B\b", title: 'Document B'}
+    - {query: 'clarification', title: 'Clarification'}
+    - {query: 'patient organisation', title: 'Patient organisation|Breast Cancer Now|Make 2nds|METUPUK'}
+    - {query: 'summary (of information )?for patients|lay summary', title: '\bSIP\b'}
+    - {query: 'clinical expert', title: 'Clinical expert statement'}
+    - {query: 'patient expert', title: 'Patient expert statement'}
+    - {query: 'factual accuracy', title: 'FAC response'}
+  # An overview question is answered by several adjacent chunks of one section,
+  # of which retrieval finds one or two (summary items: evidence shown for 44%,
+  # all of it for 11%). Each shown chunk brings the chunks within `neighbours`
+  # positions of it under the same heading, after the ranked passages, up to
+  # max_passages in all; raise max_context_chars with it (the reader has an
+  # 8k window: 20000 chars is about 5.5k tokens of passages).
+  neighbours: 0
+  max_passages: 12
+  # A question that describes a thing instead of naming it ("the comparator the
+  # company considers relevant for PIK3CA-mutated disease") finds the passage
+  # about the thing, not the one with the figure (multi-hop items: 0 of 10 on
+  # the first run). With rewrite on, the first pass's top `passages` go to the
+  # answering model, which restates the question up to max_queries ways with
+  # the names filled in and the documents' own terms; their rankings are fused
+  # with the original's at `weight`. One extra model call per question, cached.
+  rewrite:
+    enabled: false
+    max_queries: 2
+    passages: 4
+    snippet_chars: 500
+    weight: 0.7
+
 llm:
   # vLLM's OpenAI-compatible server on the GPU machine: `vllm serve Qwen/Qwen2.5-3B-Instruct --port 8003`
   model: Qwen/Qwen2.5-3B-Instruct

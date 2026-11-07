@@ -4,7 +4,7 @@ from random import Random
 from synthetic import config
 
 from medrageval.generate.llm import FakeLLM, LLMJsonError
-from medrageval.generate.messy import messy_pass, pick, rewrite, surface_noise, typo
+from medrageval.generate.messy import messy_pass, pick, retwin, rewrite, surface_noise, typo
 from medrageval.generate.prompts import HABITS, build_messy
 
 Q = "What was the median progression-free survival with capivasertib plus fulvestrant in CAPItello-291, in months?"
@@ -29,7 +29,7 @@ def test_pick_is_seeded_and_keyword_query_stands_alone():
         seen.add(sev)
         assert len(habits) <= m["habits_per_severity"][sev]
         if "keyword_query" in habits:
-            assert habits == ["keyword_query"]
+            assert habits[0] == "keyword_query" and set(habits[1:]) <= {"misspell_names"}
     assert seen == {"light", "medium", "heavy"}
 
 
@@ -51,6 +51,18 @@ def test_surface_noise_never_touches_numbers_and_is_reproducible():
     assert surface_noise(Q, Random(7), rates, 4) == surface_noise(Q, Random(7), rates, 4)
     quiet = {"typo_rate": 0.0, "lowercase": 0.0, "drop_punctuation": 0.0}
     assert surface_noise(Q, Random(7), quiet, 4) == (Q, [])
+
+
+def test_textspeak_and_missing_spaces_leave_numbers_alone():
+    rates = {"typo_rate": 0.0, "textspeak": 1.0, "join_words": 0.0, "lowercase": 0.0, "drop_punctuation": 0.0}
+    text, ops = surface_noise("Please compare treatment with fulvestrant, about 7.3 months", Random(1), rates, 4)
+    assert text == "pls compare tx w/ fulvestrant, abt 7.3 mo"   # the number stays; the words around it do not
+    assert all(op.startswith("textspeak:") for op in ops) and "textspeak:Please>pls" in ops
+    text, _ = surface_noise("for the pts to see", Random(1), {**rates, "textspeak": 0.0}, 4)
+    assert text == "for the pts to see"
+    rates = {"typo_rate": 0.0, "textspeak": 0.0, "join_words": 1.0, "lowercase": 0.0, "drop_punctuation": 0.0}
+    text, ops = surface_noise("median pfs was 7.3 months in the trial", Random(1), rates, 4)
+    assert text == "medianpfs was 7.3 monthsin thetrial" and ops == ["join:median pfs", "join:months in", "join:the trial"]   # never onto "7.3"
 
 
 def test_build_messy_names_the_persona_and_the_habits_only():
@@ -88,3 +100,19 @@ def test_messy_pass_copies_the_source_twin_onto_unanswerable_items():
     assert rep["items"] == 4 and rep["rewritten"] == 3 and rep["copied_from_source"] == 1 and rep["errors"] == []
     assert sum(rep["severity"].values()) == 4
     json.dumps(acc)   # serialisable as written to dataset.jsonl
+
+
+def test_retwin_replaces_the_twins_in_place_and_nothing_else(tmp_path):
+    rows = [{**item("factual-001"), "answer": "x", "question_messy": {"text": "old", "severity": "light", "habits": [], "surface": []}},
+            item("unanswerable-001", type="unanswerable", source_item_id="factual-001", withheld={"answer": "x"})]
+    (tmp_path / "dataset.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (tmp_path / "generate_report.json").write_text(json.dumps({"items": 2, "per_type": {"factual": {}}}))
+    gen = FakeLLM(lambda messages, tag: {"question": "new " + tag})
+    rep = retwin(tmp_path, config(), gen, seed=3)
+    out = [json.loads(l) for l in (tmp_path / "dataset.jsonl").open()]
+    assert [o["item_id"] for o in out] == ["factual-001", "unanswerable-001"] and out[0]["answer"] == "x" and out[1]["withheld"] == {"answer": "x"}
+    assert out[0]["question_messy"]["rewrite"] == "new messy:factual-001" and out[1]["question_messy"] == out[0]["question_messy"]
+    assert rep["rewritten"] == 1 and rep["copied_from_source"] == 1 and len(gen.calls) == 1
+    report = json.loads((tmp_path / "generate_report.json").read_text())
+    assert report["per_type"] == {"factual": {}} and report["messy"]["seed"] == 3 and report["messy"]["model"] == "fake"
+    assert report["messy"]["rewritten"] == 1 and report["messy"]["retwinned_at"]

@@ -6,7 +6,7 @@ printed as [REDACTED], and one fixed sentence when the passages do not answer.
 `passages` bypasses retrieval and answers over the given chunks, which the
 evaluation harness uses for questions whose evidence it withholds. The reply
 carries the passages shown and, for a retrieved answer, the candidate pool the
-reranker chose from.
+reranker chose from and the queries run (the question, then any rewrites).
 """
 
 import time
@@ -55,14 +55,15 @@ class RAG:
     def answer(self, question: str, tag: str = "", passages: list[Chunk] | None = None, mode: str | None = None) -> dict:
         t0 = time.time()
         if passages is None:
-            hits, candidates = self.retriever.retrieve(question, mode=mode)
-            context = "retrieved"
+            r = self.retriever.retrieve_full(question, mode=mode)
+            hits, candidates, queries, context = r.hits, r.pool, r.queries, "retrieved"
         else:
             hits = [Hit(c, i, None, {}) for i, c in enumerate(passages[:self.cfg["retrieval"]["top_k"]], start=1)]
-            candidates, context = None, "fixed"
+            candidates, queries, context = None, None, "fixed"
         shown = self.fit([h.chunk for h in hits])
         shown_ids = {c.chunk_id for c in shown}
         text, usage = self.llm.complete(build_prompt(question, shown, self.topic), tag or f"rag:{question[:60]}")
         return {"answer": text.strip(), "passages": shown, "context": context, "candidates": candidates,
+                "queries": queries,
                 "retrieved": [{**h.to_json(), "in_context": h.chunk.chunk_id in shown_ids} for h in hits],
                 "context_chars": sum(len(c.text) for c in shown), "usage": usage, "latency_s": round(time.time() - t0, 2)}

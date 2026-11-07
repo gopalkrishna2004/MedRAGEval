@@ -39,6 +39,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import yaml
+
 from medrag.app import App, collection_name
 from medrag.chunk import Chunk
 from medrag.generate import PROMPT_VERSION, RAG
@@ -133,7 +135,7 @@ def standin_passages(item: dict, rag: RAG, screener, ecfg: dict, top_k: int, mod
     gold_ids = {c.chunk_id for c in gold}
     queries = [c.text for c in gold] or [e["quote"] for e in withheld.get("evidence") or [] if e.get("quote")] or [item["question"]]
     k = ecfg.get("standin_search_k", 10)
-    ranked = [[h.chunk for h in rag.retriever.search(q, mode, k, rerank=False)] for q in queries]
+    ranked = [[h.chunk for h in rag.retriever.search(q, mode, k, rerank=False, plain=True)] for q in queries]
     pool: dict[str, Chunk] = {}
     for i in range(k):   # interleaved, so every gold chunk's neighbours are represented when the pool is cut
         for r in ranked:
@@ -264,6 +266,7 @@ def make_row(it: dict, a: dict, judge: dict | None, patterns: list[str], speaker
                          for c in a["passages"]],
             "retrieved": [{**h, "in_context": h.get("in_context")} for h in a["retrieved"]],
             "candidates": [c.chunk_id for c in candidates] if candidates is not None else None,   # the fused pool, before reranking
+            "queries": a.get("queries"),
             "context_chars": a["context_chars"], "usage": a["usage"], "latency_s": a["latency_s"]}
 
 
@@ -396,6 +399,9 @@ def _common(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--question", choices=QUESTION_SETTINGS, default="clean",
                     help="question setting: clean, as generated, or messy, the question_messy twin as a user would type it (default: clean)")
     ap.add_argument("--no-cache", action="store_true", help="ignore and do not write the response caches")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="override a value of the application's config, as YAML, e.g. --set retrieval.candidates=100 "
+                         "--set retrieval.neighbours=1 (repeatable; a retrieval setting is then part of the run)")
 
 
 def add_arguments(ap: argparse.ArgumentParser) -> None:
@@ -433,6 +439,15 @@ def _app(args: argparse.Namespace, chunk_tokens: int | None = None) -> App:
         app.cfg["llm"]["base_url"] = args.base_url
     if getattr(args, "top_k", None):
         app.cfg["retrieval"]["top_k"] = args.top_k
+    for kv in getattr(args, "set", None) or []:
+        key, _, value = kv.partition("=")
+        if not _ or not key:
+            raise SystemExit(f"error: --set wants KEY=VALUE, got {kv!r}")
+        node = app.cfg
+        *path, last = key.split(".")
+        for part in path:
+            node = node.setdefault(part, {})
+        node[last] = yaml.safe_load(value)
     if chunk_tokens:
         app.cfg["chunking"]["target_tokens"] = chunk_tokens
         app.cfg["chunking"]["max_tokens"] = max(chunk_tokens + 64, round(chunk_tokens * 1.28))

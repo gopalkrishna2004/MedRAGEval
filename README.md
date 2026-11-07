@@ -117,7 +117,7 @@ uv run medrageval generate data/interim/ta1063               # full run: 146 ite
 
 Outputs:
 - `dataset.jsonl`: one item per line, with the facts it was written from, its group, its evidence and `also_in`. An unanswerable item also carries `source_item_id`, `withheld` (the answer, keys and evidence taken away) and `distractors` (the passages it is read with), plus the screening verdict on every candidate passage.
-- Every item also carries `question_messy`, the **second question setting**: the same question as a real user would type it. The generator rewrites the clean question in one to three user habits picked by the seed (informal, shorthand, lay terms, keyword query, statement, non-native grammar, rambling, vague), with a severity (light, medium, heavy) that also sets how much surface noise code then adds: typos, lower case, dropped punctuation. Numbers are never altered. Nothing checks the rewrite: the setting measures what sloppy wording costs, and a rewrite that drifts is part of that cost. The field holds `text` (what is asked), `rewrite` (before the surface noise), `severity`, `persona`, `habits` and `surface`; an unanswerable item copies its source item's twin. `--no-messy` or `messy.enabled: false` skips the pass; `generate_report.json` has the mix under `messy`.
+- Every item also carries `question_messy`, the **second question setting**: the same question as a real user would type it. The generator rewrites the clean question in two to four user habits picked by the seed (informal, shorthand, lay terms, keyword query, statement, non-native grammar, rambling, vague, misspelt names, unfinished fragments), told to be rougher than feels natural, with a severity (light, medium, heavy) that also sets how much surface noise code then adds: typos, text-speak spellings, missing spaces, lower case, dropped punctuation. Numbers are never altered. Nothing checks the rewrite: the setting measures what sloppy wording costs, and a rewrite that drifts is part of that cost. The field holds `text` (what is asked), `rewrite` (before the surface noise), `severity`, `persona`, `habits` and `surface`; an unanswerable item copies its source item's twin. `--no-messy` or `messy.enabled: false` skips the pass; `generate_report.json` has the mix under `messy`. `uv run medrageval messy data/datasets/ta1063` runs the pass again on an existing dataset, replacing the twins and nothing else (one generator call per answerable item), for a changed `messy` config without regenerating the items.
 - `rejects.jsonl`: every rejected candidate, with the reason.
 - `generate_report.json`: counts per type, group and reason, fact-sheet stats and LLM usage.
 
@@ -203,7 +203,17 @@ from the outside, by page numbers and verbatim quotes.
   word would outrank a rare trial id); dense vectors from `BAAI/bge-m3` for
   paraphrase, 30 candidates each, fused by reciprocal rank; then the
   `BAAI/bge-reranker-v2-m3` cross-encoder reorders the fused top 30 and the top 6
-  are shown. Modes `bm25 | dense | hybrid`, reranking on or off.
+  are shown. Modes `bm25 | dense | hybrid`, reranking on or off. Four settings,
+  off in `rag.yaml` so that file stays the baseline, answer the failure modes
+  the first full run showed (`retrieval` section of the config): `rrf_weights`
+  (dense counts for less in the fusion: every chunk is about the same drug, so
+  dense similarity separates sections poorly), `document_hints` + `hint_boost`
+  (a question naming a party, "the EAG report", raises that document's chunks),
+  `neighbours` (each shown chunk brings its same-section neighbours, for
+  overview questions whose evidence spans adjacent chunks) and `rewrite` (the
+  answering model restates a question that describes a thing instead of naming
+  it, using the first pass's passages; the restated queries' rankings are fused
+  in). `medrageval eval --set retrieval.<key>=<value>` turns any of them on for a run.
 - **Answering** ([generate.py](src/medrag/generate.py), [llm.py](src/medrag/llm.py)):
   the top 6 chunks, up to 12,000 chars, as numbered passages to the model on
   [vLLM](https://docs.vllm.ai)'s OpenAI-compatible server, temperature 0. One
@@ -257,10 +267,12 @@ uv run medrageval eval data/datasets/ta1063 --question messy                    
 
 `eval` builds the application from `configs/rag.yaml` (`--rag-config`) and asks
 it each question through its Python interface. Options: `--mode`, `--top-k`,
-`--no-rerank`, `--model` and `--base-url` (the answering server), `--judge-model`
-(an OpenRouter id; the judge never runs on the answering server), `--no-judge`,
-`--limit N`. Answers and verdicts are cached, so a rerun makes no calls and a
-judge change makes no answering calls. `ablate` runs `bm25`, `dense`, `hybrid`
+`--no-rerank`, `--set retrieval.candidates=100` (any value of the application's
+config, repeatable: a retrieval setting is then an arm of the ablation), `--model`
+and `--base-url` (the answering server), `--judge-model` (an OpenRouter id; the
+judge never runs on the answering server), `--no-judge`, `--limit N`. Answers
+and verdicts are cached, so a rerun makes no calls and a judge change makes no
+answering calls. `ablate` runs `bm25`, `dense`, `hybrid`
 and `hybrid+rerank` (and, with `--chunk-tokens`, ingests one collection per
 size) into `data/runs/ablation/<run>/` with a summary table in `ablation.json`.
 Whether hybrid beats BM25 is a result of that table, not a precondition of

@@ -54,8 +54,10 @@ class App:
             rc = self.cfg["retrieval"]
             mode = mode or rc["mode"]
             rerank = rc.get("rerank", False) if rerank is None else rerank
+            rewrite = (rc.get("rewrite") or {}).get("enabled", False)
             self._retriever = Retriever(self.store, collection_name(self.cfg), rc,
-                                        self.embedder if mode != "bm25" else None, self.reranker if rerank else None)
+                                        self.embedder if mode != "bm25" else None, self.reranker if rerank else None,
+                                        self.llm if rewrite else None, self.cfg.get("topic"))
         return self._retriever
 
     @property
