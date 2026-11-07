@@ -36,7 +36,7 @@ def main() -> None:
     ask.add_argument("--base-url", help="override llm.base_url")
     ask.add_argument("--no-cache", action="store_true")
 
-    srv = sub.add_parser("serve", help="the demo: ask questions and read an evaluation run in a browser")
+    srv = sub.add_parser("serve", help="the browser page (the same as `medrageval serve`)")
     srv.add_argument("--pdf", help=PDF_HELP)
     srv.add_argument("--host", default="127.0.0.1")
     srv.add_argument("--port", type=int, default=8000)
@@ -73,7 +73,7 @@ def main() -> None:
             head, _, body = c.text.partition("\n")
             print(f"  [{i}] {c.chunk_id} {head}\n      {' '.join(body.split())[:160]}")
     elif a.command == "serve":
-        from medrag.server import serve
+        from medrageval.server import serve   # the page also builds datasets, so it lives with the benchmark; imported here only
         serve(app, a.run, a.host, a.port)
     sys.stdout.flush()
 

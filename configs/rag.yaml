@@ -113,7 +113,7 @@ llm:
   cache_dir: data/cache/llm          # answers cached by (model, temperature, messages)
 
 demo:
-  # `medrag serve`: the evaluation run the page shows, and a reader that fails in
+  # `medrageval serve`: the evaluation run the page shows first, and a reader that fails in
   # front of an audience within a minute rather than after 20 of retries.
   run: data/runs/ta1063
   llm_timeout: 60

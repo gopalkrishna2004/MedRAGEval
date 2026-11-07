@@ -39,6 +39,13 @@ def main() -> None:
     ab = sub.add_parser("ablate", help="eval under every retrieval mode (and chunk size), with a summary table")
     rag_eval.add_ablate_arguments(ab)
 
+    sv = sub.add_parser("serve", help="the browser page: ask a document, build a dataset from a PDF, evaluate, read a run")
+    sv.add_argument("--pdf", type=Path, help="the document shown first (default: the application's pdf)")
+    sv.add_argument("--run", type=Path, help="the evaluation run shown first (default: the application's demo.run)")
+    sv.add_argument("--rag-config", type=Path, help="the application's config; default configs/rag.yaml")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8000)
+
     args = ap.parse_args()
     if args.command == "parse":
         out = args.out or Path("data/interim") / args.pdf.stem
@@ -56,6 +63,10 @@ def main() -> None:
         rag_eval.run_ablate_cli(args)
     elif args.command == "eval":
         rag_eval.run_cli(args)
+    elif args.command == "serve":
+        from medrag.app import App
+        from medrageval.server import serve
+        serve(App(args.rag_config, pdf=args.pdf), args.run, args.host, args.port)
 
 
 if __name__ == "__main__":

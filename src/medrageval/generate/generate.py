@@ -485,12 +485,24 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--out", type=Path, help="dataset directory (default: data/datasets/<interim dir name>)")
     ap.add_argument("--config", type=Path)
     ap.add_argument("--per-type", type=int, help="override every type's target (smoke runs)")
+    ap.add_argument("--target", action="append", default=[], metavar="TYPE=N", help="items for one type (repeatable); the others keep their targets")
     ap.add_argument("--types", help="comma-separated subset of types to run")
     ap.add_argument("--no-cache", action="store_true", help="ignore and do not write the LLM response cache")
     ap.add_argument("--dry-run", action="store_true", help="only load the corpus and fact sheet and count candidates; no LLM calls")
     ap.add_argument("--seed", type=int)
     ap.add_argument("--facts", type=Path, help="fact sheet (default: <interim dir>/factsheet.jsonl from `medrageval extract`)")
     ap.add_argument("--no-messy", action="store_true", help="skip the messy question twins (config messy.enabled)")
+
+
+def parse_targets(pairs: list[str]) -> dict[str, int]:
+    """--target TYPE=N pairs as a targets dict; a bad pair is a usage error."""
+    out = {}
+    for pair in pairs:
+        t, _, n = pair.partition("=")
+        if t not in TYPES or not n.isdigit():
+            raise SystemExit(f"error: --target wants TYPE=N with a type from {TYPES}, got {pair!r}")
+        out[t] = int(n)
+    return out
 
 
 def run_cli(args: argparse.Namespace) -> None:
@@ -501,7 +513,7 @@ def run_cli(args: argparse.Namespace) -> None:
         return
     gen, judge = make_llms(cfg, use_cache=not args.no_cache)
     out = args.out or Path("data/datasets") / args.interim_dir.name
-    targets = {t: args.per_type for t in TYPES} if args.per_type else None
+    targets = {**({t: args.per_type for t in TYPES} if args.per_type else {}), **parse_targets(args.target)} or None
     types = args.types.split(",") if args.types else None
     try:
         report = generate_dataset(args.interim_dir, out, cfg, gen, judge, targets, types, args.seed, fcfg, args.facts,

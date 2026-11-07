@@ -381,3 +381,13 @@ def test_each_type_continues_the_group_rotation_from_earlier_types(tmp_path, mon
     generate_dataset(interim, tmp_path / "out", config(), llm, llm, targets={"factual": 2, "numerical": 1}, types=["factual", "numerical"])
     items = [json.loads(l) for l in (tmp_path / "out" / "dataset.jsonl").open()]
     assert seen == [Counter(i["group"] for i in items if i["type"] == "factual")]   # the numerical selector started from the factual items' groups
+
+
+def test_target_flag_sets_one_type():
+    from medrageval.generate.generate import parse_targets
+    assert parse_targets(["factual=3", "unanswerable=2"]) == {"factual": 3, "unanswerable": 2}
+    assert parse_targets([]) == {}
+    with pytest.raises(SystemExit):
+        parse_targets(["riddle=3"])
+    with pytest.raises(SystemExit):
+        parse_targets(["factual=many"])

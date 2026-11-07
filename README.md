@@ -102,6 +102,14 @@ uv run medrageval generate data/interim/my-doc    # writes data/datasets/my-doc
 
 `extract` and `generate` make paid API calls. Add `--dry-run` to either one to see the plan first.
 
+**Or do it in the browser**
+
+```bash
+uv run medrageval serve          # http://127.0.0.1:8000
+```
+
+The Build tab walks through the same stages: upload a PDF, parse it, choose or draft a fact-sheet schema and review it, extract facts, generate a small dataset, ingest the PDF into the RAG and evaluate, with a preview before each paid step and the command's output alongside. Datasets can also be uploaded as a `dataset.jsonl`. Results open in the Evaluation tab. Keep the server on 127.0.0.1: the page can start paid API calls.
+
 **Build the RAG**
 
 ```bash
@@ -125,8 +133,8 @@ uv run medrageval eval data/datasets/my-doc --question messy --pdf path/to/docum
 # Compare retrieval modes
 uv run medrageval ablate data/datasets/my-doc --out-root data/runs/my-doc-ablation --pdf path/to/document.pdf
 
-# Browse a run in the browser, at http://127.0.0.1:8000
-uv run medrag serve --run data/runs/my-doc --pdf path/to/document.pdf
+# Browse a run in the browser, at http://127.0.0.1:8000 (`medrag serve` does the same)
+uv run medrageval serve --run data/runs/my-doc --pdf path/to/document.pdf
 ```
 
 ---
