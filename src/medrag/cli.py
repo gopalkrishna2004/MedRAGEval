@@ -4,6 +4,8 @@ import sys
 from medrag.app import App
 from medrag.retrieve import MODES
 
+PDF_HELP = "the ingested PDF to use; default: the config's pdf"
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(prog="medrag", description="RAG application over a PDF bundle")
@@ -20,12 +22,14 @@ def main() -> None:
 
     se = sub.add_parser("search", help="show the chunks retrieved for a question")
     se.add_argument("question")
+    se.add_argument("--pdf", help=PDF_HELP)
     se.add_argument("--mode", choices=MODES)
     se.add_argument("--k", type=int)
     se.add_argument("--no-rerank", action="store_true")
 
     ask = sub.add_parser("ask", help="answer a question")
     ask.add_argument("question")
+    ask.add_argument("--pdf", help=PDF_HELP)
     ask.add_argument("--mode", choices=MODES)
     ask.add_argument("--no-rerank", action="store_true")
     ask.add_argument("--model", help="override llm.model")
@@ -33,12 +37,13 @@ def main() -> None:
     ask.add_argument("--no-cache", action="store_true")
 
     srv = sub.add_parser("serve", help="the demo: ask questions and read an evaluation run in a browser")
+    srv.add_argument("--pdf", help=PDF_HELP)
     srv.add_argument("--host", default="127.0.0.1")
     srv.add_argument("--port", type=int, default=8000)
     srv.add_argument("--run", help="evaluation run directory; default: the config's demo.run")
 
     a = ap.parse_args()
-    app = App(a.config, use_cache=not getattr(a, "no_cache", False))
+    app = App(a.config, use_cache=not getattr(a, "no_cache", False), pdf=getattr(a, "pdf", None))
     if getattr(a, "model", None):
         app.cfg["llm"]["model"] = a.model
     if getattr(a, "base_url", None):

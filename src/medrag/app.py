@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from medrag.config import load_config
+from medrag.config import load_config, use_pdf
 from medrag.embed import make_embedder
 from medrag.generate import RAG
 from medrag.llm import make_llm
@@ -25,8 +25,10 @@ def collection_name(cfg: dict, pdf: str | Path | None = None) -> str:
 class App:
     """Lazily built components, so `medrag search --mode bm25` loads no model."""
 
-    def __init__(self, cfg: dict | str | Path | None = None, use_cache: bool = True):
+    def __init__(self, cfg: dict | str | Path | None = None, use_cache: bool = True, pdf: str | Path | None = None):
         self.cfg = cfg if isinstance(cfg, dict) else load_config(cfg)
+        if pdf:
+            self.cfg = use_pdf(self.cfg, pdf)
         self.use_cache = use_cache
         self._store = self._embedder = self._reranker = self._retriever = self._llm = None
 

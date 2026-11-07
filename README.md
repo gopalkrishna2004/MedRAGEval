@@ -36,7 +36,12 @@ your PDF
 | `summary` | An overview, scored on keypoints |
 | `unanswerable` | An answerable question with its evidence withheld |
 
-Every question also has a messy version, worded the way a real user might type it.
+Every question also has a messy version, worded the way a real user might type it. For example, from the TA1063 dataset:
+
+| Version | Question |
+|:--------|:---------|
+| Clean | In the overall CAPItello-291 trial population, how many patients were randomised to placebo plus fulvestrant? |
+| Messy | in oevrall capitello-291 trial how many pts got assigned to llacebo + fulv |
 
 ---
 
@@ -100,67 +105,38 @@ uv run medrageval generate data/interim/my-doc    # writes data/datasets/my-doc
 
 **Build the RAG**
 
-Set `pdf`, `topic` and `llm.model` in [configs/rag.yaml](configs/rag.yaml), then:
-
 ```bash
-uv run medrag db init
-uv run medrag ingest
-uv run medrag ask "your question"
+uv run medrag ingest path/to/document.pdf
+
+# Optional: a quick check before running eval
+uv run medrag ask "your question" --pdf path/to/document.pdf
 ```
 
 **Evaluate it**
 
-```bash
-# Quick check: 5 questions, keys only, no paid calls
-uv run medrageval eval data/datasets/my-doc --limit 5 --no-judge --out data/runs/my-doc-smoke
+Pass the same PDF with `--pdf`. Without it, a command uses the `pdf` set in [configs/rag.yaml](configs/rag.yaml), which is TA1063.
 
+```bash
 # Full run, writes data/runs/my-doc
-uv run medrageval eval data/datasets/my-doc
+uv run medrageval eval data/datasets/my-doc --pdf path/to/document.pdf
 
 # The same questions, worded the way users type them
-uv run medrageval eval data/datasets/my-doc --question messy
+uv run medrageval eval data/datasets/my-doc --question messy --pdf path/to/document.pdf
 
 # Compare retrieval modes
-uv run medrageval ablate data/datasets/my-doc --out-root data/runs/my-doc-ablation
+uv run medrageval ablate data/datasets/my-doc --out-root data/runs/my-doc-ablation --pdf path/to/document.pdf
 
 # Browse a run in the browser, at http://127.0.0.1:8000
-uv run medrag serve --run data/runs/my-doc
+uv run medrag serve --run data/runs/my-doc --pdf path/to/document.pdf
 ```
 
-**Test**
-
-```bash
-uv run pytest
-```
-
----
-
-## Make it your own
-
-| To change | Set |
-|:----------|:----|
-| Questions per type | `generate.targets` in [configs/default.yaml](configs/default.yaml). A document that can't support a target gives fewer. |
-| Generation and judge models | `generate.model`, `generate.judge_model` and `rag.judge.model`. Any OpenRouter model works. |
-| The small LLM | `llm.model` in [configs/rag.yaml](configs/rag.yaml), or `--model` and `--base-url` on `eval` |
-| Chunking and retrieval | [configs/rag.yaml](configs/rag.yaml), or `--set retrieval.top_k=8` on `eval` to try a value for one run |
-| Which facts matter | A schema in [configs/schema/](configs/schema/) |
-
-The included schema, document-role patterns and some generation prompts are written for NICE appraisals. For a different kind of document, draft a schema and review it:
-
-```bash
-uv run medrageval schema draft data/interim/my-doc --out configs/schema/my-doc.yaml
-```
-
-Then set `facts.schema` and `generate.roles` in your config, and expect to adjust the prompts.
-
----
-
+## 
 ## Scores: NICE TA1063
 
-The repo includes a full run on [TA1063](https://www.nice.org.uk/guidance/ta1063/evidence/draft-guidance-consultation-committee-papers-pdf-15313389517), a 578-page bundle of 13 documents. It produced [142 questions](data/datasets/ta1063/dataset.jsonl), tested on a RAG using Qwen2.5-3B. The [runs](data/runs/) are committed too.
+The repo includes a full run on [TA1063](https://www.nice.org.uk/guidance/ta1063/evidence/draft-guidance-consultation-committee-papers-pdf-15313389517), a 578-page bundle of 13 documents. It produced [142 questions](data/datasets/ta1063/dataset.jsonl), tested on a RAG using Qwen2.5-3B. The [runs](data/runs/) are committed.
 
-| Run | Score (95% CI) | Evidence shown |
-|:----|:--------------:|:--------------:|
+| Run | Score (95% CI) | Hit rate |
+|:----|:--------------:|:--------:|
 | Hybrid retrieval + reranker | 0.542 (0.468–0.616) | 0.603 |
 | Same, messy questions | 0.412 (0.345–0.482) | 0.569 |
 | Boosted retrieval | 0.592 (0.525–0.669) | 0.707 |
@@ -168,12 +144,10 @@ The repo includes a full run on [TA1063](https://www.nice.org.uk/guidance/ta1063
 To try the evaluation on this dataset, use the default `configs/rag.yaml` and pick a new `--out`, so the committed run isn't replaced:
 
 ```bash
-uv run medrag db init
 uv run medrag ingest
 uv run medrageval eval data/datasets/ta1063 --out data/runs/my-rerun
 ```
 
-TA1063 is the only document taken all the way through so far. A second NICE appraisal, `data/raw/document2.pdf`, has been parsed and planned, but no dataset has been generated from it.
 
 ---
 

@@ -17,6 +17,15 @@ def load_config(path: str | Path | None = None) -> dict:
     return cfg
 
 
+def use_pdf(cfg: dict, pdf: str | Path) -> dict:
+    """The config pointed at another PDF. Its topic describes the configured PDF, so a different file goes without one."""
+    path = Path(pdf)
+    if not path.is_file():
+        raise SystemExit(f"error: no such PDF: {path}")
+    same = cfg.get("pdf") and path.resolve() == Path(cfg["pdf"]).resolve()
+    return {**cfg, "pdf": str(path), "topic": cfg.get("topic") if same else None}
+
+
 def env_or(section: dict, env_key: str, default_key: str | None = None, fallback: str = "") -> str:
     """The value of the environment variable named by `section[env_key]`, else `section[default_key]`, else `fallback`."""
     name = section.get(env_key) or ""

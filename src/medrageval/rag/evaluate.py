@@ -389,6 +389,7 @@ def _common(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("datasets", type=Path, nargs="+", help="dataset directories (or dataset.jsonl files) from `medrageval generate`")
     ap.add_argument("--config", type=Path, help="benchmark config (judge, scoring); default configs/default.yaml")
     ap.add_argument("--rag-config", type=Path, help="the application's config; default configs/rag.yaml")
+    ap.add_argument("--pdf", type=Path, help="the ingested PDF to evaluate (default: the application's pdf)")
     ap.add_argument("--model", help="answering model id on the vLLM server (default: the application's llm.model)")
     ap.add_argument("--base-url", help="the answering server (default: the application's llm.base_url)")
     ap.add_argument("--judge-model", help="OpenRouter model id for the judge (default: rag.judge.model, else generate.model)")
@@ -431,7 +432,7 @@ def _types(args: argparse.Namespace) -> list[str] | None:
 
 
 def _app(args: argparse.Namespace, chunk_tokens: int | None = None) -> App:
-    app = App(args.rag_config, use_cache=not args.no_cache)
+    app = App(args.rag_config, use_cache=not args.no_cache, pdf=args.pdf)
     if args.model:
         app.cfg["llm"]["model"] = args.model
     if args.base_url:
