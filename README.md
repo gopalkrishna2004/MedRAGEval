@@ -2,8 +2,7 @@
 
 > Build evaluation datasets from your medical documents, and find out whether your RAG actually works on them.
 
-Give it a PDF and it writes questions with gold answers and evidence, then runs them through a RAG and scores the replies. 
-
+Give it a PDF and it writes questions with gold answers and evidence, then runs them through a RAG and scores the replies.
 
 ---
 
@@ -130,7 +129,25 @@ uv run medrageval ablate data/datasets/my-doc --out-root data/runs/my-doc-ablati
 uv run medrag serve --run data/runs/my-doc --pdf path/to/document.pdf
 ```
 
-## 
+---
+
+## Evaluation metrics
+
+| Metric | What it measures |
+|:-------|:-----------------|
+| Score | Answer quality from 0 to 1: the judge marks each answer correct (1), partial (0.5), or incorrect or declined (0). An unanswerable question scores 1 only if the RAG declines. Reported with a 95% bootstrap CI. |
+| Hit rate | Share of answerable questions with at least one gold evidence quote in the passages shown to the reader |
+| Evidence recall | Share of a question's gold evidence quotes found in those passages |
+| MRR | How high the first passage holding gold evidence ranks |
+| Key recall | Share of a question's answer keys found in the reply, checked by code rather than the judge |
+| Faithfulness | Share of the reply's factual claims that the passages support |
+| Keypoint completeness | Share of a summary question's keypoints the reply covers |
+| Outcome category | Why an answer scored as it did: `correct`, `retrieval_miss`, `reader_error`, `false_abstention`, `correct_abstention` or `hallucinated_answer` |
+
+Each run writes these to `eval_report.json`, overall and per question type.
+
+---
+
 ## Scores: NICE TA1063
 
 The repo includes a full run on [TA1063](https://www.nice.org.uk/guidance/ta1063/evidence/draft-guidance-consultation-committee-papers-pdf-15313389517), a 578-page bundle of 13 documents. It produced [142 questions](data/datasets/ta1063/dataset.jsonl), tested on a RAG using Qwen2.5-3B. The [runs](data/runs/) are committed.
@@ -148,10 +165,9 @@ uv run medrag ingest
 uv run medrageval eval data/datasets/ta1063 --out data/runs/my-rerun
 ```
 
-
 ---
 
-## Go Deeper
+## Go deeper
 
 **[docs/WRITEUP.md](docs/WRITEUP.md)** covers the methodology, design decisions, dataset format, metrics and analysis of the results.
 
