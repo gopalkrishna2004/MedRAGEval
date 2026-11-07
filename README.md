@@ -148,25 +148,6 @@ Each run writes these to `eval_report.json`, overall and per question type.
 
 ---
 
-## Scores: NICE TA1063
-
-The repo includes a full run on [TA1063](https://www.nice.org.uk/guidance/ta1063/evidence/draft-guidance-consultation-committee-papers-pdf-15313389517), a 578-page bundle of 13 documents. It produced [142 questions](data/datasets/ta1063/dataset.jsonl), tested on a RAG using Qwen2.5-3B. The [runs](data/runs/) are committed.
-
-| Run | Score (95% CI) | Hit rate |
-|:----|:--------------:|:--------:|
-| Hybrid retrieval + reranker | 0.542 (0.468–0.616) | 0.603 |
-| Same, messy questions | 0.412 (0.345–0.482) | 0.569 |
-| Boosted retrieval | 0.592 (0.525–0.669) | 0.707 |
-
-To try the evaluation on this dataset, use the default `configs/rag.yaml` and pick a new `--out`, so the committed run isn't replaced:
-
-```bash
-uv run medrag ingest
-uv run medrageval eval data/datasets/ta1063 --out data/runs/my-rerun
-```
-
----
-
 ## Go deeper
 
 **[docs/WRITEUP.md](docs/WRITEUP.md)** explains how the dataset is built and the RAG is tested, with metrics and results across the tested settings.
