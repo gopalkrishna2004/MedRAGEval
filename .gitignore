@@ -10,6 +10,7 @@ docs/*.pdf
 # delivered results are tracked: caches, archives and other runs stay local.
 data/*
 !data/raw/
+data/raw/document2.pdf
 !data/interim/
 data/interim/*
 !data/interim/ta1063/
