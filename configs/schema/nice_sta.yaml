@@ -32,6 +32,45 @@
 name: NICE single technology appraisal
 version: 1
 
+# How the prompts speak of an appraisal (facts/framing.py): what the documents
+# are, who asks about them, whose analyses they report, who types the messy
+# questions, and the examples the prompt rules give. These are the TA1063
+# prompts' own words, so the prompts for this schema are unchanged by the
+# move; a schema for another family gives its own or takes the neutral ones.
+framing:
+  subject: one health technology appraisal
+  bundle: a bundle of documents from one health technology appraisal
+  kind: a health technology appraisal
+  askers: a clinician, health economist or appraisal committee member
+  askers_short: a clinician, health economist or committee member
+  purpose: the appraisal
+  abbreviations: PFS, OS, ICER, QALY, EAG, NHS
+  standard_abbreviations: PFS, OS, ICER, QALY, HR
+  owners: [company, EAG]
+  personas:
+    - a busy oncologist between clinics
+    - a health economist checking a figure for a report
+    - an appraisal committee member preparing for a meeting
+    - a medical affairs manager at a pharmaceutical company
+    - a patient advocate reading the committee papers
+    - a pharmacy student writing an essay
+  examples:
+    extract_shorthand: '("Capi + ful" -> "capivasertib plus fulvestrant", "TFSC" -> "time to first subsequent chemotherapy or death")'
+    identifiers: DCO1, CAPItello-291
+    numbers: '("7.3 months", "40.0%", "£24,567 per QALY gained", "0.50 (95% CI 0.38 to 0.65)")'
+    spell_out: '("the company''s cost-effectiveness model", not "the company''s CEM")'
+    regimen: '("everolimus plus exemestane", not "Everolimus + exemestane (Everolimus with exemestane)")'
+    described: '("the comparator the company considers relevant for ...", "the company''s scenario that changes ...")'
+    voice: '("our model", "the submission", "the EAG''s critique")'
+    summary: '("What scenario analyses did the company run on its base case for capivasertib plus fulvestrant?", not "How did the company present the cost-effectiveness evidence?")'
+    table_shorthand: '("Capi + ful" is capivasertib plus fulvestrant)'
+    key_label: '("0", not "Placebo plus fulvestrant: 0")'
+  habits:
+    shorthand: clinical and texting shorthand where a colleague would use it (pts, tx, w/, vs, b/c, abt, HR, CE model, cap + fulv)
+    statement: 'a request or statement instead of a question ("need the ICER for ...", "looking for the company''s figure on ...")'
+    vague: 'one specific detail blurred into something vaguer ("the new drug", "that trial", "the EAG or whoever it was"), still enough for someone who knows the appraisal to tell what is meant'
+    misspell_names: drug, trial and party names spelled as they sound or half-remembered (capivasirtib, fulvestrent, capitello 291, the ERG), never corrected
+
 groups:
   decision_problem:
     weight: 0.08

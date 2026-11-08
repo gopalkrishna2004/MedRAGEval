@@ -81,6 +81,9 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
 .doc-pick { position: relative; display: flex; align-items: center; min-width: 0; }
 .doc-pick > svg.i { position: absolute; left: 10px; width: 15px; height: 15px; color: var(--text-3); pointer-events: none; }
 .doc-pick select.field { padding-left: 32px; max-width: 320px; height: 34px; }
+.reader-pick { position: relative; display: flex; align-items: center; min-width: 0; }
+.reader-pick > .dot { position: absolute; left: 13px; pointer-events: none; }
+.reader-pick select.field { padding-left: 29px; max-width: 300px; height: 34px; }
 .status { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 12.5px; font-weight: 500; color: var(--text-2); white-space: nowrap; background: var(--surface); }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); flex: none; }
 .dot.up { background: var(--good); box-shadow: 0 0 0 3px rgba(12, 163, 12, .16); }
@@ -353,6 +356,7 @@ textarea.yaml:focus { outline: none; border-color: var(--accent-fill); backgroun
   .charts { grid-template-columns: minmax(0, 1fr); }
   .status-text { display: none; }
   .status { padding: 0 9px; }
+  .reader-pick select.field { max-width: 210px; }
 }
 @media (max-width: 900px) {
   .ask-grid, .build-grid { grid-template-columns: minmax(0, 1fr); }
@@ -368,7 +372,7 @@ textarea.yaml:focus { outline: none; border-color: var(--accent-fill); backgroun
   .tabs { order: 3; width: 100%; }
   .tab { flex: 1; justify-content: center; }
   .tab span { display: inline; }
-  .doc-pick select.field { max-width: 130px; }
+  .doc-pick select.field, .reader-pick select.field { max-width: 130px; }
   .ask-hero { margin-top: 12px; }
   .ask-hero h1 { font-size: 27px; }
   .example-grid { grid-template-columns: minmax(0, 1fr); }
@@ -407,7 +411,7 @@ textarea.yaml:focus { outline: none; border-color: var(--accent-fill); backgroun
     <div class="top-right">
       <label class="doc-pick"><svg class="i" viewBox="0 0 24 24" aria-hidden="true" data-i="file"></svg><select class="field doc" id="doc-select" aria-label="Document"></select></label>
       <div class="status" id="services" role="status" title=""><span class="dot" id="services-dot"></span><span class="status-text" id="services-text">Services</span></div>
-      <div class="status" id="reader" role="status"><span class="dot" id="reader-dot"></span><span class="status-text" id="reader-text">Checking model</span></div>
+      <label class="reader-pick" id="reader" title="Checking the answering model"><span class="dot" id="reader-dot"></span><select class="field" id="reader-select" aria-label="Answering model"></select></label>
       <button class="icon-btn" id="theme" type="button" aria-label="Switch colour theme"><svg class="i" viewBox="0 0 24 24" aria-hidden="true" data-i="theme"></svg></button>
     </div>
   </div>
@@ -418,7 +422,7 @@ textarea.yaml:focus { outline: none; border-color: var(--accent-fill); backgroun
     <div class="ask-hero">
       <div class="eyebrow" id="intro-chip"><svg class="i" viewBox="0 0 24 24" aria-hidden="true" data-i="file"></svg><span>Loading document</span></div>
       <h1 id="intro-h1">Ask the document</h1>
-      <p id="intro-sub">A small local model answers from the document's passages and shows the sources it read.</p>
+      <p id="intro-sub">A small model answers from the document's passages and shows the sources it read.</p>
     </div>
     <div class="ask-box-wrap">
       <div class="notice" id="ask-notice" hidden></div>
@@ -571,6 +575,9 @@ let doc = null;          // the selected document's slug
 let status = null;       // /api/status for it
 let documents = [];      // /api/documents
 let initialRun = null;   // the run the server was started with
+let reader = (() => {    // {provider, model}: the answering model this page asks, one of status.readers
+  try { const r = JSON.parse(store("medrag-reader") || "null"); return r && r.provider && r.model ? r : null; } catch { return null; }
+})();
 
 /* Views */
 const VIEWS = ["ask", "build", "evaluation"];
@@ -634,25 +641,33 @@ async function selectDocument(slug) {
 function setChip(text) { $("intro-chip").replaceChildren(icon("file"), el("span", {text})); }
 
 async function refreshStatus() {
+  const qs = new URLSearchParams();
+  if (doc) qs.set("document", doc);
+  if (reader) qs.set("provider", reader.provider);
   try {
-    status = await api(`/api/status${doc ? `?document=${encodeURIComponent(doc)}` : ""}`);
+    status = await api(`/api/status${qs.toString() ? `?${qs}` : ""}`);
   } catch (err) {
-    $("reader-dot").className = "dot down"; $("reader-text").textContent = err.status === 404 ? "Document missing" : "Server unreachable";
     if (err.status === 404 && doc) { doc = null; store("medrag-doc", ""); return refreshStatus(); }
+    if (err.status === 422 && reader) { reader = null; store("medrag-reader", ""); return refreshStatus(); }
+    $("reader-dot").className = "dot down";
+    $("services-dot").className = "dot down"; $("services-text").textContent = err.status === 404 ? "Document missing" : "Server unreachable";
     return;
   }
   doc = status.document;
   initialRun = status.run;
-  $("reader-dot").className = `dot ${status.reader_up ? "up" : "down"}`;
-  $("reader-text").textContent = `${short(status.model)} ${status.reader_up ? "online" : "offline"}`;
-  $("reader").title = status.reader_up ? `${short(status.model)}: the answering model is reachable` : `${short(status.model)}: the answering model is unreachable. Questions already asked still answer from the cache.`;
+  if (!reader || !status.readers.some((p) => p.id === reader.provider && p.models.includes(reader.model))) {
+    if (reader) store("medrag-reader", "");
+    reader = status.reader;
+  }
+  if (status.reader_provider !== reader.provider) return refreshStatus();
+  renderReader();
   const problems = [!status.key_set && "no API key (OPENROUTER_API_KEY): drafting, extraction, generation and judging are off", !status.postgres_up && "the database is unreachable: ingest and evaluation are off"].filter(Boolean);
   $("services-dot").className = `dot ${problems.length === 2 ? "down" : problems.length ? "part" : "up"}`;
   $("services-text").textContent = problems.length ? `${problems.length} service${problems.length > 1 ? "s" : ""} off` : "Services ready";
   $("services").title = problems.length ? problems.join("; ") : "API key set, database reachable";
   if (status.ingested) {
     setChip(`${doc} · ${n(status.pages)} pages · ${n(status.chunks)} passages`);
-    $("intro-sub").textContent = "A small local model answers from the document's passages, cites them, and shows each source page beside the answer.";
+    $("intro-sub").textContent = "A small model answers from the document's passages, cites them, and shows each source page beside the answer.";
     $("ask-notice").hidden = true;
     $("question").disabled = $("ask-btn").disabled = false;
   } else {
@@ -670,6 +685,36 @@ async function refreshStatus() {
   if (status.job && polling !== status.job) pollJob(status.job);
 }
 setInterval(refreshStatus, 30000);
+
+/* The answering model: one choice for the Ask tab and the Build tab's evaluation, kept in this browser. */
+const providerLabel = (id) => ((status && status.readers.find((p) => p.id === id)) || {label: id}).label;
+const readerName = (r) => r ? `${short(r.model)} · ${providerLabel(r.provider)}` : "the model";
+const readerReady = () => !!(status && status.reader_up && !status.reader_key);
+const readerChoices = () => status ? status.readers.flatMap((p) => p.models.map((model) => ({provider: p.id, model}))) : [];
+function readerOptions(sel) {
+  const choices = readerChoices();
+  sel.replaceChildren(...status.readers.map((p) => el("optgroup", {label: p.label}, ...p.models.map((m) => el("option", {
+    value: String(choices.findIndex((c) => c.provider === p.id && c.model === m)), text: `${short(m)} · ${p.label}`,
+    selected: !!reader && reader.provider === p.id && reader.model === m})))));
+  return sel;
+}
+function renderReader() {
+  readerOptions($("reader-select"));
+  const name = readerName(reader);
+  $("reader-dot").className = `dot ${readerReady() ? "up" : "down"}`;
+  $("reader").title = status.reader_key ? `${name}: ${status.reader_key} is not set, so it cannot answer`
+    : status.reader_up ? `${name}: the answering model is reachable`
+    : `${name}: the answering model is unreachable. Questions already asked still answer from the cache.`;
+}
+async function setReader(choice) {
+  if (!choice) return;
+  reader = choice;
+  store("medrag-reader", JSON.stringify(choice));
+  $("reader-dot").className = "dot";
+  await refreshStatus();
+  if (!$("view-build").hidden) renderBuild();
+}
+$("reader-select").addEventListener("change", (e) => setReader(readerChoices()[Number(e.target.value)]));
 
 /* Ask */
 const MODES = [
@@ -730,7 +775,7 @@ async function ask(text) {
     const view = sourcesView(hits, slug);
     $("result").replaceChildren(answerSlot, view.node);
     const t0 = Date.now();
-    setProgress(`Reading ${shown.length} passages with ${short(status && status.model) || "the model"}`, true, t0);
+    setProgress(`Reading ${shown.length} passages with ${short(reader && reader.model) || "the model"}`, true, t0);
     await readAnswer(id, question, slug, hits, answerSlot, view, r.latency_s);
   } catch (err) {
     if (id !== askId) return;
@@ -744,7 +789,7 @@ async function ask(text) {
 
 async function readAnswer(id, question, slug, hits, slot, view, retrievalS) {
   try {
-    const a = await api("/api/answer", {question, chunk_ids: hits.map((h) => h.chunk_id), document: slug});
+    const a = await api("/api/answer", {question, chunk_ids: hits.map((h) => h.chunk_id), document: slug, reader});
     if (id !== askId) return;
     slot.replaceChildren(answerCard(a, view));
     setProgress(`Retrieved in ${retrievalS.toFixed(1)}s, answered ${a.cached ? "from cache" : `in ${a.latency_s.toFixed(1)}s`}`);
@@ -932,7 +977,7 @@ const needIdle = () => [busy(), "a job is running"];
 function defaultOpen(d) {
   if (!d) return new Set(["document"]);
   const st = d.stages;
-  const order = [["parse", st.parsed], ["schema", st.schema && st.schema.valid], ["facts", st.facts], ["generate", st.datasets.length], ["eval", st.runs.length]];
+  const order = [["parse", st.parsed], ["schema", st.schema && st.schema.valid], ["facts", factsReady(st.facts)], ["generate", st.datasets.length], ["eval", st.runs.length]];
   const first = order.find(([, ok]) => !ok);
   return new Set([first ? first[0] : "eval"]);
 }
@@ -991,8 +1036,11 @@ function stepParse(st) {
   const p = st.parsed;
   const force = el("input", {type: "checkbox", checked: form.parse.force, onchange: (e) => { form.parse.force = e.target.checked; }});
   const why = reason(needIdle());
+  // the document types extraction will see: a schema reads documents by type, so this is what it can read
+  const types = p && p.types ? el("p", {class: "counts", text: "Document types: " + p.types.map((t) => `${t.label}${t.n > 1 ? ` (${t.n})` : ""}`).join(" · ")}) : null;
   return step("parse", 2, "Parse", Boolean(p), p ? `${n(p.documents)} documents · ${n(p.sections)} sections · ${n(p.elements)} elements${p.warnings ? ` · ${p.warnings} warnings` : ""}` : "Not parsed yet",
     "Pages to documents, sections and tables, with OCR on scanned pages. Takes minutes for a large bundle.",
+    types,
     el("div", {class: "row"}, actionButton(p ? "Parse again" : "Parse", () => startJob("parse", {force: form.parse.force}), why), check(force, "Re-run even if cached")));
 }
 
@@ -1003,7 +1051,16 @@ function stepSchema(st) {
     try { await api(`/api/documents/${encodeURIComponent(doc)}/schema/select`, {path: sel.value}); f.text = null; f.note = null; loadBuild(); }
     catch (err) { f.note = {err: true, text: err.message}; renderBuild(); }
   }, reason(needIdle(), [!schemasList.length, "no schema files found"]), true);
-  const draft = actionButton("Draft with the model", () => startJob("draft", {}), reason(needIdle(), [!st.parsed, "parse first"], needKey()), true);
+  const types = (st.parsed && st.parsed.types) || null;
+  const draft = actionButton("Draft with the model", () => startJob("draft", {}),
+    reason(needIdle(), [!st.parsed, "parse first"], [types && types.every((t) => t.role === "cover"), "only cover pages to draft from"], needKey()), true);
+  // a schema reads documents by type: say when this one reads none, or only some, of this PDF's
+  const kinds = types ? types.map((t) => t.label).join(", ") : "";
+  const coverage = s && s.valid && s.readable === 0
+    ? el("div", {class: "notice err"}, el("span", {text: `This schema reads none of this PDF's documents (${kinds}). Draft a schema for this kind of document, review it and save it.`}))
+    : s && s.valid && s.unread && s.unread.length
+      ? el("div", {class: "notice"}, el("span", {text: `No document of this PDF for ${s.unread.length} of the schema's groups (${s.unread.join(", ")}): extraction skips them.`}))
+      : null;
   const editor = el("textarea", {class: "yaml", spellcheck: "false", "aria-label": "Schema YAML", placeholder: "Choose a schema or draft one; its YAML appears here for review."});
   editor.value = f.text !== null ? f.text : "";
   editor.addEventListener("input", () => { f.text = editor.value; });
@@ -1022,19 +1079,33 @@ function stepSchema(st) {
   }, reason([!editor.value.trim(), "nothing to save"]));
   const state = s ? `${s.name || s.path} · ${s.source === "config" ? "reviewed" : "draft"} · ${s.valid ? `${s.groups} groups` : "invalid"}` : "None chosen";
   return step("schema", 3, "Schema", Boolean(s && s.valid), state,
-    "The kinds of fact to extract, per document role. A reviewed schema exists for NICE appraisal bundles; for another document family, draft one and review it here before extracting.",
+    "The kinds of fact to extract, per document type, and how the prompts describe the documents (its framing). A reviewed schema exists for NICE appraisal bundles; for any other kind of document, draft one from this parse and review it here before extracting.",
     el("div", {class: "row"}, sel, choose, el("span", {class: "reason", text: "or"}), draft),
-    editor, noteBox,
+    coverage, editor, noteBox,
     el("div", {class: "row"}, save, validate, s && !s.valid ? el("span", {class: "reason bad", text: s.error || "invalid"}) : null));
+}
+
+function factsReady(fs) {
+  // a fact sheet generation can use: it has facts, and the chosen schema is the one they were extracted with
+  return Boolean(fs && fs.facts > 0 && fs.schema_matches);
 }
 
 function stepFacts(st) {
   const fs = st.facts;
   const why = reason(needIdle(), [!st.parsed, "parse first"], [!(st.schema && st.schema.valid), "choose a valid schema first"]);
-  return step("facts", 4, "Extract facts", Boolean(fs), fs ? `${n(fs.facts)} facts from ${n(fs.batches)} batches · ${short(fs.model) || ""}` : "No fact sheet yet",
+  const unreadable = [Boolean(st.schema && st.schema.readable === 0), "the schema reads none of this PDF's documents"];
+  const state = !fs ? "No fact sheet yet"
+    : !fs.facts ? `Empty: no facts from ${n(fs.batches)} batches`
+    : !fs.schema_matches ? `${n(fs.facts)} facts, extracted with ${fs.schema_name || fs.schema}: extract again with the chosen schema`
+    : `${n(fs.facts)} facts from ${n(fs.batches)} batches · ${short(fs.model) || ""}`;
+  const warn = fs && !fs.facts
+    ? el("div", {class: "notice err"}, el("span", {text: "The fact sheet is empty: the schema found nothing to extract in this PDF's documents. Check the schema step, then extract again."}))
+    : null;
+  return step("facts", 4, "Extract facts", factsReady(fs), state,
     `Reads the document in batches with ${short(buildCfg.models.facts)} and keeps every fact that has a verbatim quote. The preview lists the batches without extracting.`,
+    warn,
     el("div", {class: "row"},
-      actionButton(fs ? "Extract again" : "Extract", () => startJob("extract", {dry_run: false}), reason(...[why && [true, why]].filter(Boolean), needKey())),
+      actionButton(fs ? "Extract again" : "Extract", () => startJob("extract", {dry_run: false}), reason(...[why && [true, why]].filter(Boolean), unreadable, needKey())),
       actionButton("Preview the plan", () => startJob("extract", {dry_run: true}), why, true)));
 }
 
@@ -1060,7 +1131,8 @@ function stepGenerate(st) {
   const nameNote = () => { exists.textContent = datasetsList.some((x) => x.name === g.name) ? "Exists: tick Replace to overwrite it." : ""; };
   nameNote();
   const targets = () => Object.fromEntries(types.filter((t) => g.enabled[t]).map((t) => [t, g.targets[t]]));
-  const why = reason(needIdle(), [!st.facts, "extract the fact sheet first"]);
+  const why = reason(needIdle(), [!st.facts, "extract the fact sheet first"], [st.facts && !st.facts.facts, "the fact sheet is empty"],
+    [st.facts && !st.facts.schema_matches, "extract again with the chosen schema"]);
   const opts = (dry) => ({name: g.name, targets: targets(), messy: g.messy, seed: g.seed === "" ? null : Number(g.seed), dry_run: dry, replace: g.replace});
   const live = lastJob && lastJob.stage === "generate" && lastJob.state === "running" && lastJob.progress && lastJob.progress.targets;
   const counts = live ? el("p", {class: "counts", text: "Accepted so far: " + Object.entries(live.progress.targets).map(([t, k]) => `${typeName(t)} ${live.progress.accepted[t] || 0}/${k}`).join(" · ")}) : null;
@@ -1121,10 +1193,12 @@ function stepEvaluate(st) {
   const iforce = el("input", {type: "checkbox", checked: form.ingest.force, onchange: (ev) => { form.ingest.force = ev.target.checked; }});
   const ingState = ing === "unknown" ? "Database unreachable" : ing ? `${n(ing.chunks)} passages stored` : "Not ingested";
   const ingWhy = reason(needIdle(), [ing === "unknown", "the database is unreachable"]);
-  const evWhy = reason(needIdle(), [!ing, "ingest first"], [!e.dataset || e.upload, "choose a dataset"], [!(status && status.reader_up), "the answering model is offline"],
+  const rsel = status ? readerOptions(el("select", {class: "field", "aria-label": "Answering model", onchange: (ev) => setReader(readerChoices()[Number(ev.target.value)])})) : el("select", {class: "field", disabled: true});
+  const evWhy = reason(needIdle(), [!ing, "ingest first"], [!e.dataset || e.upload, "choose a dataset"],
+    [!readerReady(), status && status.reader_key ? `${status.reader_key} is not set` : "the answering model is offline"],
     ...(e.judge ? [needKey()] : []), [!e.name, "name the run"]);
   const evOpts = () => ({dataset: e.dataset, name: e.name, question: e.question, mode: e.mode || null, rerank: e.rerank, top_k: e.top_k ? Number(e.top_k) : null,
-    limit: e.limit ? Number(e.limit) : null, types: e.types, judge: e.judge, replace: e.replace});
+    limit: e.limit ? Number(e.limit) : null, types: e.types, judge: e.judge, replace: e.replace, reader});
   return step("eval", 6, "Ingest and evaluate", st.runs.length > 0, st.runs.length ? `${st.runs.length} run${st.runs.length > 1 ? "s" : ""}: ${st.runs.slice(0, 4).join(", ")}${st.runs.length > 4 ? "…" : ""}` : "No run yet",
     "The application reads the PDF its own way and stores passages with their embeddings (about an hour for a large bundle without a GPU). The evaluation then asks it every question and a judge model scores each answer.",
     el("h3", {class: "sub-h", text: "Ingest"}),
@@ -1132,7 +1206,8 @@ function stepEvaluate(st) {
       actionButton(ing && ing !== "unknown" ? "Ingest again" : "Ingest", () => startJob("ingest", {force: form.ingest.force}), ingWhy, true), check(iforce, "Rebuild")),
     el("h3", {class: "sub-h", text: "Evaluate"}),
     el("div", {class: "form-grid", style: "margin-top:0"},
-      fld("Dataset", dsel, "span-4"),
+      fld("Dataset", dsel, "span-2"),
+      fld("Answering model", rsel, "span-2"),
       uploadBox,
       fld("Questions", qsel), fld("Retrieval", msel), fld("Top-k", topk), fld("Limit", limit),
       group("Question types (none selected = all)", "span-4", chips),
@@ -1315,7 +1390,7 @@ function renderEval() {
         el("h1", {text: "How well the small model answers"}),
         el("div", {class: "meta-chips"},
           run.document ? mchip("file", run.document) : null,
-          mchip("cpu", short(run.model)),
+          mchip("cpu", run.provider ? `${short(run.model)} · ${providerLabel(run.provider)}` : short(run.model)),
           mchip("search", retrievalName),
           mchip("list", `${o.items} questions${run.question_setting === "messy" ? ", messy wording" : ""}`),
           mchip("scale", `judged by ${short(run.judge_model) || "answer keys"}`))),

@@ -26,8 +26,9 @@ def pdf_sha256(path: str | Path) -> str:
 
 
 def clean_title(raw: str) -> str:
-    """A bookmark title fit for a chunk header: enumerators, ids, tags, version and date stamps and underscores removed."""
-    t = _TAGS.sub(" ", raw)
+    """A bookmark title fit for a chunk header: byte-order marks (a journal's bookmarks carry one), enumerators, ids, tags,
+    version and date stamps and underscores removed."""
+    t = _TAGS.sub(" ", raw.replace("\ufeff", ""))
     t = _ENUM.sub("", t)
     t = _ID.sub(" ", t)
     t = _REDACTED.sub(" ", t)

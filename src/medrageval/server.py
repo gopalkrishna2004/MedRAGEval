@@ -3,12 +3,14 @@
 Retrieval and answering are two calls, so the page can show the sources while the model is still reading them. The
 answer goes through `RAG.answer` over the retrieved chunks, which builds the same prompt as `medrag ask` and shares its
 cache. The Build tab starts the pipeline's stages as child processes (`workbench`) and streams their output; the
-evaluation view only reads a run's files. Neither the page nor this module sends the model server's address, which
-stays in .env. The page can start paid API calls, so the server listens on 127.0.0.1 unless told otherwise.
+evaluation view only reads a run's files. The page can pick the answering model from those the application's config
+offers (`llm.providers`), never another server, and it is never sent a server's address, which stays in .env. The
+page can start paid API calls, so the server listens on 127.0.0.1 unless told otherwise.
 """
 
 import logging
 import json
+import ssl
 import threading
 import time
 import urllib.error
@@ -23,8 +25,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, StringConstraints, ValidationError, conint
 
 from medrag.app import App
-from medrag.generate import ABSTAIN
-from medrag.llm import LLMError
+from medrag.config import check_reader, default_reader, missing_key, providers, use_reader
+from medrag.generate import ABSTAIN, RAG
+from medrag.llm import LLMError, make_llm
 from medrag.retrieve import MODES
 from medrageval.config import load_config as load_bench_config
 from medrageval.facts.schema import SchemaError
@@ -36,9 +39,26 @@ PAGE = Path(__file__).parent / "web" / "index.html"
 PAGE_DPI = 144
 READER_CHECK_TIMEOUT = 3
 
+
+def _tls_context() -> ssl.SSLContext:
+    """certifi's roots, as the reader's own client (httpx) uses: urllib alone takes the interpreter's, which a uv or
+    python.org build may not have, and then every https reader looks down."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
 Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 Slug = Annotated[str, StringConstraints(pattern=SLUG.pattern)]
 TypeName = Literal[tuple(TYPES)]
+ProviderName = Annotated[str, StringConstraints(min_length=1, max_length=64)]
+
+
+class ReaderChoice(BaseModel):
+    """The answering model: one of a provider's models in the application's config."""
+    provider: ProviderName
+    model: Annotated[str, StringConstraints(min_length=1, max_length=200)]
 
 
 class RetrieveRequest(BaseModel):
@@ -52,6 +72,7 @@ class AnswerRequest(BaseModel):
     question: Question
     chunk_ids: list[str] = Field(min_length=1, max_length=50)
     document: Slug | None = None
+    reader: ReaderChoice | None = None
 
 
 class SchemaText(BaseModel):
@@ -108,6 +129,7 @@ class EvalOptions(BaseModel):
     types: list[TypeName] = Field(default_factory=list)
     judge: bool = True
     replace: bool = False
+    reader: ReaderChoice | None = None
 
 
 OPTIONS = {"parse": ParseOptions, "draft": DraftOptions, "extract": ExtractOptions, "generate": GenerateOptions, "ingest": IngestOptions, "eval": EvalOptions}
@@ -116,7 +138,7 @@ OPTIONS = {"parse": ParseOptions, "draft": DraftOptions, "extract": ExtractOptio
 def reader_up(base_url: str) -> bool:
     """Any HTTP reply counts: a server started with --api-key answers 401 here and is still up."""
     try:
-        urllib.request.urlopen(f"{base_url.rstrip('/')}/models", timeout=READER_CHECK_TIMEOUT).close()
+        urllib.request.urlopen(f"{base_url.rstrip('/')}/models", timeout=READER_CHECK_TIMEOUT, context=_tls_context()).close()
     except urllib.error.HTTPError:
         return True
     except OSError:
@@ -133,7 +155,7 @@ def load_run(run_dir: Path) -> dict | None:
     rag = report.get("rag") or {}
     with (run_dir / "responses.jsonl").open() as f:
         items = [{k: v for k, v in json.loads(line).items() if k != "candidates"} for line in f if line.strip()]
-    return {"name": run_dir.name, "model": rag.get("model"), "embedding_model": rag.get("embedding_model"),
+    return {"name": run_dir.name, "provider": rag.get("provider"), "model": rag.get("model"), "embedding_model": rag.get("embedding_model"),
             "reranker": rag.get("reranker"), "retrieval": rag.get("retrieval"), "judge_model": report.get("judge_model"),
             "question_setting": report.get("question_setting"), "datasets": report.get("datasets"),
             "overall": report.get("overall"), "answerable": report.get("answerable"), "unanswerable": report.get("unanswerable"),
@@ -157,6 +179,22 @@ def create_app(app: App, run_dir: str | Path | None = None, root: str | Path = "
         initial_run = None
     if initial_run and not (wb.run_dir(initial_run) / "eval_report.json").exists():
         initial_run = None
+    offered = providers(app.cfg["llm"])
+    default = default_reader(app.cfg["llm"])
+    readers = [{"id": k, "label": p.get("label") or k, "needs_key": bool(p.get("needs_key")),
+                "models": ([default[1]] if k == default[0] and default[1] not in p.get("models", []) else []) + list(p.get("models", []))}
+               for k, p in offered.items()]
+    llms: dict[tuple[str, str], object] = {}
+    llms_lock = threading.Lock()
+
+    def reader_llm(choice: tuple[str, str]):
+        """The configured reader is the application's own client; another is built on first use and kept."""
+        if choice == default:
+            return app.llm
+        with llms_lock:
+            if choice not in llms:
+                llms[choice] = make_llm(use_reader(app.cfg, *choice)["llm"], app.use_cache)
+            return llms[choice]
 
     def document(slug: str) -> dict:
         try:
@@ -196,16 +234,22 @@ def create_app(app: App, run_dir: str | Path | None = None, root: str | Path = "
         return FileResponse(PAGE, media_type="text/html")
 
     @api.get("/api/status")
-    def status(document_: Annotated[Slug | None, Query(alias="document")] = None) -> dict:
+    def status(document_: Annotated[Slug | None, Query(alias="document")] = None, provider: ProviderName | None = None) -> dict:
+        """The document's state, and whether the answering server of `provider` (default: the configured one) is up."""
         slug = document_ or primary
         d = document(slug)
+        if provider is not None and provider not in offered:
+            raise HTTPException(422, f"no answering provider named {provider}")
+        llm = use_reader(app.cfg, provider)["llm"]
         ing = d["stages"]["ingested"]
         rc = app.cfg["retrieval"]
         chunks = len(wb.app_for(slug).retriever().chunks) if isinstance(ing, dict) else 0
         running = wb.jobs.running()
         return {"document": slug, "run": initial_run, "chunks": chunks, "pages": d["pages"], "ingested": ing if isinstance(ing, dict) else None,
                 "postgres_up": ing != "unknown", "key_set": key_set(), "job": running.id if running else None,
-                "model": app.cfg["llm"]["model"], "reader_up": reader_up(app.cfg["llm"]["base_url"]), "embedding_model": app.cfg["embedding"]["model"],
+                "model": default[1], "readers": readers, "reader": {"provider": default[0], "model": default[1]},
+                "reader_provider": llm["provider"], "reader_up": reader_up(llm["base_url"]), "reader_key": missing_key(llm),
+                "embedding_model": app.cfg["embedding"]["model"],
                 "reranker": rc.get("rerank_model") if rc.get("rerank") else None, "top_k": rc["top_k"], "mode": rc["mode"],
                 "examples": (app.cfg.get("demo") or {}).get("examples", []) if slug == primary else []}
 
@@ -229,8 +273,17 @@ def create_app(app: App, run_dir: str | Path | None = None, root: str | Path = "
         missing = [cid for cid in req.chunk_ids if cid not in by_id]
         if missing:
             raise HTTPException(404, f"unknown chunk ids: {', '.join(missing)}")
+        choice = (req.reader.provider, req.reader.model) if req.reader else default
+        if choice != default:
+            try:
+                check_reader(app.cfg["llm"], *choice)
+            except ValueError as e:
+                raise HTTPException(422, str(e)) from None
+        if key := missing_key(use_reader(app.cfg, *choice)["llm"]):
+            raise HTTPException(503, f"{key} is not set: {offered[choice[0]].get('label') or choice[0]} needs an API key to answer.")
         try:
-            res = a.rag().answer(req.question, tag=f"demo:{req.question[:60]}", passages=[by_id[cid] for cid in req.chunk_ids])
+            res = RAG(a.retriever(), reader_llm(choice), a.cfg).answer(req.question, tag=f"demo:{req.question[:60]}",
+                                                                       passages=[by_id[cid] for cid in req.chunk_ids])
         except LLMError as e:
             log.warning("reader failed: %s", e)
             raise HTTPException(503, "The answering model did not reply. The sources are still valid; try again when its server is back.") from e

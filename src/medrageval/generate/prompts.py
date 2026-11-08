@@ -9,15 +9,18 @@ has no table number or column header to copy.
 
 PROMPT_VERSION is written into the system message, so a prompt change
 invalidates the response cache and is recorded in every item's provenance.
-The prompts never name the appraisal or its documents themselves: the corpus
-supplies the topic and document roles, so the same prompts work on another
-bundle.
+The prompts never name a document family or its documents themselves: the
+corpus supplies the topic and document roles, and the schema's framing
+(facts/framing.py) what the documents are, who asks about them and the
+examples the rules give, so the same prompts work on another family.
 """
 
 import json
 import re
 
 from medrageval.facts.factsheet import Fact, FactSheet
+from medrageval.facts.framing import HABITS as FAMILY_HABITS
+from medrageval.facts.framing import Framing
 from medrageval.generate.candidates import Candidate
 from medrageval.generate.corpus import Corpus, Unit
 
@@ -30,8 +33,8 @@ RULES = """Rules for every item:
 1. The question must be answerable from the facts and excerpts given, and must stand on its own for a reader who has not seen them: name the drug, trial, population, comparator, outcome, analysis or document involved. Never write "this table", "the excerpt", "above", "the following", or a document id ("d04"): the reader does not see ids. Keep it under 35 words.
 2. The system answering will search all the documents listed above. Similar figures exist elsewhere in the bundle, so the question must say what sets this one apart; when the task lists terms the question must name, name them.
 3. Ask for one thing. Never join two questions ("what was X, and how did it affect Y?", "which tool and which estimate"); only the comparative and summary tasks combine facts, as they say.
-4. Ask as a clinician, health economist or appraisal committee member would. Never mention table or figure numbers, column headers such as "(N=155)", rows, columns, or how a document is laid out. Spell out abbreviations a reader may not know ("the company's cost-effectiveness model", not "the company's CEM"); common ones (PFS, OS, ICER, QALY, EAG, NHS) are fine. Put the question in your own words: reuse the excerpt's wording only for names, numbers and technical terms.
-5. Name each drug, arm or regimen once, in plain words, even when the documents spell it differently ("everolimus plus exemestane", not "Everolimus + exemestane (Everolimus with exemestane)").
+4. Ask as {askers} would. Never mention table or figure numbers, column headers such as "(N=155)", rows, columns, or how a document is laid out. Spell out abbreviations a reader may not know {spell_out}; common ones ({abbreviations}) are fine. Put the question in your own words: reuse the excerpt's wording only for names, numbers and technical terms.
+5. Name each drug, arm or regimen once, in plain words, even when the documents spell it differently {regimen}.
 6. Claim no more than the excerpts say. Put a qualifier (data cut, timepoint, population, scenario, whose analysis) in the question only if the excerpts or their Context state it: a fact may carry qualifiers its excerpt does not show, so leave those out. Describe a position in the excerpt's own terms ("suggested" is not "preferred", "considered" is not "concluded").
 7. Do not put the answer in the question, and do not use knowledge from outside the facts and excerpts. Never ask for a value shown as [REDACTED].
 8. "answer": one sentence, specific. "answer_keys": 1 to 4 strings a correct answer must contain, each a number with its unit, a name, or a phrase of at most four words, never a clause, written as in the fact's value or the quotes. A key is the value itself, never "label: value". An estimate with its interval is two keys ("0.50" and "0.38 to 0.65"), never one ("0.50 (95% CI 0.38 to 0.65)"). Each key answers the question as asked.
@@ -58,7 +61,7 @@ TYPE_INSTRUCTIONS = {
                 "Add \"hop_a\" and \"hop_b\": one short sentence each on what each fact contributes. Quote from both excerpts.",
     "multihop_described": "Write a MULTI-HOP question. Fact {f0} describes the {via} \"{via_value}\" as: \"{bridge_value}\". Fact {f1} gives a value for that {via}: {value}. "
                 "Ask for that value, but refer to the {via} only through fact {f0}'s description, in your own words and saying whose description it is "
-                "(\"the comparator the company considers relevant for ...\", \"the company's scenario that changes ...\"), never by name: the question must not contain \"{via_value}\" or any part of it. "
+                "{ex_described}, never by name: the question must not contain \"{via_value}\" or any part of it. "
                 "A reader must find the first fact to know which {via} is meant, then the second for the value. "
                 "The second excerpt also reports {rival}; add nothing that would single out the asked value without the first fact, but name everything else that tells it apart. "
                 "That the second excerpt names the {via} is expected: without the first fact a reader cannot tell which of its named things the description means, so do not skip for that. "
@@ -67,11 +70,11 @@ TYPE_INSTRUCTIONS = {
     "attribution": "Write an ATTRIBUTION question: fact {f0} records a position held by {speaker_label}: \"{claim}\". Ask WHO took it (\"Who argued that ...?\", \"Which party considered that ...?\"), "
                    "stating the position precisely enough to identify it, but do NOT name or hint at the speaker in the question. "
                    "Keep the part of the claim that is this party's own (its argument, judgement, survey or experience), not background any party could state. "
-                   "No first person, no wording only the speaker would use (\"our model\", \"the submission\", \"the EAG's critique\"). "
+                   "No first person, no wording only the speaker would use {ex_voice}. "
                    "The answer must be exactly \"{answer}\" and answer_keys must be [\"{answer_key}\"]. Quote the sentence that carries the claim.",
     "summary": "Write a SUMMARY question: the facts below are all about {group_describe}, in the {doc}{respondent}, under the heading \"{theme}\". "
                "That heading is their theme: ask one open question about it, in plain words (not the heading's numbering or wording), naming the theme, the drug and the document{or_respondent} "
-               "(\"What scenario analyses did the company run on its base case for capivasertib plus fulvestrant?\", not \"How did the company present the cost-effectiveness evidence?\"). "
+               "{ex_summary}. "
                "Do not list the facts in the question. If the heading is too generic to name a theme (\"Other issues\") and the facts share none a reader would ask about, return {{\"skip\": reason}}. "
                "\"answer\": one sentence per keypoint, in order, and nothing beyond them. "
                "\"keypoints\": [{{\"point\": one sentence stating one fact, \"fact_id\": that fact's id}}, ...], one per fact. "
@@ -83,11 +86,22 @@ def _doc_list(corpus: Corpus) -> str:
     return "\n".join(f"- {d.doc_id}: {d.label} (pages {d.start_page}-{d.end_page})" for d in corpus.docs.values() if d.role != "cover")
 
 
-def system_message(corpus: Corpus) -> str:
-    return (f"You write evaluation items for a question-answering system over a bundle of documents from one health technology appraisal: "
+def _fill(template: str, values: dict[str, str]) -> str:
+    """{name} placeholders replaced from `values`; every other brace (the JSON shapes in the rules) left as it is."""
+    return re.sub(r"\{(\w+)\}", lambda m: values.get(m.group(1), m.group(0)), template)
+
+
+def rules(fr: Framing) -> str:
+    return _fill(RULES, {"askers": fr.askers, "spell_out": fr.example("spell_out"), "abbreviations": fr.abbreviations,
+                         "regimen": fr.example("regimen")})
+
+
+def system_message(corpus: Corpus, framing: Framing | None = None) -> str:
+    fr = framing or Framing()
+    return (f"You write evaluation items for a question-answering system over {fr.bundle_text}: "
             f"\"{corpus.topic}\".\nThe documents in the bundle are:\n{_doc_list(corpus)}\n\n"
             f"You will be given facts from the bundle's fact sheet, each headed by its id, and the excerpts they come from, each headed by its id in brackets, document, section and pages. "
-            f"Write exactly what the task asks, as one JSON object with this shape: {SCHEMA} (plus any extra fields the task names).\n\n{RULES}\n"
+            f"Write exactly what the task asks, as one JSON object with this shape: {SCHEMA} (plus any extra fields the task names).\n\n{rules(fr)}\n"
             f"(prompt version {PROMPT_VERSION})")
 
 
@@ -106,7 +120,8 @@ def fact_lines(f: Fact, sheet: FactSheet) -> str:
     return "\n".join(lines)
 
 
-def must_mention_text(sets: list[list[str]], cfg: dict) -> str:
+def must_mention_text(sets: list[list[str]], cfg: dict, framing: Framing | None = None) -> str:
+    fr = framing or Framing()
     if not sets:
         return ""
     shorthand = {k: v for k, v in cfg["validate"].get("shorthand", {}).items() if any(re.search(rf"\b{re.escape(k)}\b", t, re.I) for s in sets for t in s)}
@@ -114,7 +129,7 @@ def must_mention_text(sets: list[list[str]], cfg: dict) -> str:
     return ("\nThe bundle reports this for other cases too, so the question must name "
             + " and ".join("(" + " or ".join(f"\"{t}\"" for t in s) + ")" for s in sets)
             + ", in these or equivalent words. Work them into the sentence as a reader would say them: expand table shorthand "
-            f"(\"Capi + ful\" is capivasertib plus fulvestrant){spell}, and never open with a bare label (\"For Female sex, ...\").")
+            f"{fr.example('table_shorthand')}{spell}, and never open with a bare label (\"For Female sex, ...\").")
 
 
 def _context(u: Unit, corpus: Corpus, cfg: dict) -> str:
@@ -137,6 +152,7 @@ def _excerpts(cand: Candidate, corpus: Corpus, cfg: dict, max_chars: int = 3500)
 
 
 def build_generation(cand: Candidate, corpus: Corpus, cfg: dict, sheet: FactSheet) -> list[dict]:
+    fr = sheet.schema.framing
     h, facts = cand.hint, cand.facts
     key = f"{cand.type}_{cand.subtype}" if cand.type == "multihop" else cand.type
     f0 = facts[0] if facts else None
@@ -156,11 +172,12 @@ def build_generation(cand: Candidate, corpus: Corpus, cfg: dict, sheet: FactShee
         group_describe=h.get("group_describe", ""), doc=h.get("doc", ""), theme=h.get("theme") or "-",
         respondent=f", submitted by {speaker_name}" if speaker_name else "", or_respondent=" or the respondent" if speaker_name else "",
         max_sentences=max(3, len(facts) + 1),
+        ex_described=fr.example("described"), ex_voice=fr.example("voice"), ex_summary=fr.example("summary"),
     )
-    task = TYPE_INSTRUCTIONS[key].format(**fmt) + must_mention_text(h.get("must_mention") or [], cfg)
+    task = TYPE_INSTRUCTIONS[key].format(**fmt) + must_mention_text(h.get("must_mention") or [], cfg, fr)
     fact_block = "\n".join(fact_lines(f, sheet) for f in facts)
     body = f"Facts:\n{fact_block}\n\n{_excerpts(cand, corpus, cfg)}"
-    return [{"role": "system", "content": system_message(corpus)},
+    return [{"role": "system", "content": system_message(corpus, fr)},
             {"role": "user", "content": f"{task}\n\n{body}"}]
 
 
@@ -178,13 +195,14 @@ JUDGE_CRITERIA = {
 }
 
 
-def build_judge(item: dict, cand: Candidate, corpus: Corpus, cfg: dict) -> list[dict]:
+def build_judge(item: dict, cand: Candidate, corpus: Corpus, cfg: dict, framing: Framing | None = None) -> list[dict]:
     """The item with its excerpts, each preceded by the Context the writer saw.
 
     Without the context the judge rejected sound items: a results table under
     a section that names the data cut "does not identify DCO1" on its own (four
     of the fresh smoke run's judge failures).
     """
+    fr = framing or Framing()
     units = {u.unit_id: u for u in cand.units}
     quoted = [q["unit_id"] for q in item.get("quotes", []) if isinstance(q, dict) and q.get("unit_id") in units]
     chosen = [units[u] for u in dict.fromkeys(quoted)] or cand.units
@@ -196,12 +214,12 @@ def build_judge(item: dict, cand: Candidate, corpus: Corpus, cfg: dict) -> list[
     payload = {k: item.get(k) for k in ("question", "answer", "answer_keys", "keypoints", "quotes") if k in item}
     return [
         {"role": "system", "content":
-            f"You check evaluation items for a question-answering system over documents of one health technology appraisal: \"{corpus.topic}\". "
+            f"You check evaluation items for a question-answering system over documents of {fr.subject}: \"{corpus.topic}\". "
             "Be strict: an item passes only if every criterion holds. Return only a JSON object: "
             '{"pass": bool, "answer_supported": bool, "self_contained": bool, "type_fits": bool, "realistic": bool, '
             '"answerable_from_single_excerpt": {"<unit_id>": bool, ...}, "issues": [str, ...]}. '
             "\"self_contained\" means a reader with access to the whole document bundle but not to these excerpts could tell what is being asked. "
-            "\"realistic\" means a clinician, health economist or appraisal committee member could plausibly ask it: it does not depend on table or figure numbers, column headers or the layout of a document, and the answer matters to the appraisal. "
+            f"\"realistic\" means {fr.askers} could plausibly ask it: it does not depend on table or figure numbers, column headers or the layout of a document, and the answer matters to {fr.purpose}. "
             "Text headed Context is the passage before an excerpt in its section: what it states (the trial, population, data cut, whose analysis) supports the question as much as the excerpt does. "
             "\"answerable_from_single_excerpt\" gives, for each excerpt id, whether that excerpt alone suffices: it does only if that excerpt contains both the information the question uses to identify its subject and the answer. "
             "Judge from the excerpts' own words, never from what you know: an excerpt that names a drug, endpoint or scenario does not thereby state what the question says about it "
@@ -213,11 +231,12 @@ def build_judge(item: dict, cand: Candidate, corpus: Corpus, cfg: dict) -> list[
     ]
 
 
-def build_alone_check(question: str, unit: Unit, corpus: Corpus, cfg: dict) -> list[dict]:
+def build_alone_check(question: str, unit: Unit, corpus: Corpus, cfg: dict, framing: Framing | None = None) -> list[dict]:
     """The question with ONE excerpt: can a reader holding only this passage answer it, and by which of its words?"""
+    fr = framing or Framing()
     return [
         {"role": "system", "content":
-            f"You answer a question about one health technology appraisal (\"{corpus.topic}\") from ONE passage and nothing else. "
+            f"You answer a question about {fr.subject} (\"{corpus.topic}\") from ONE passage and nothing else. "
             'Return only a JSON object: {"answer": str | null, "identified_by": str | null, "reason": str}. '
             "Give the answer when the passage settles it: it states the answer for the subject the question describes; or only one item in the passage can be meant, "
             "given everything else the question says; or the answer is the same whichever item in the passage is meant. "
@@ -243,7 +262,7 @@ FEEDBACK = {
     "answer_lacks_winning_label": "The answer must name the side with the higher value.",
     "answer_not_speaker": "The answer must be exactly the speaker named in the task.",
     "answer_too_long": "The answer is too long.",
-    "answer_key_has_label": "The answer key \"{d}\" carries a label: a key is the value itself (\"0\", not \"Placebo plus fulvestrant: 0\").",
+    "answer_key_has_label": "The answer key \"{d}\" carries a label: a key is the value itself {key_label}.",
     "comparison_too_small": "The two values are small counts ({d}): compare something a decision-maker would care about, or skip.",
     "bridge_named_in_question": "The question names the bridged {d}: refer to it only through the description the task gives.",
     "comparative_labels_missing": "Fill label_a and label_b with the two things compared.",
@@ -279,14 +298,16 @@ FEEDBACK = {
     "judge:answer_supported": "A reviewer found the answer is not supported by the quotes.",
     "judge:self_contained": "A reviewer could not tell what is asked without the excerpts: name the drug, trial, population, comparator or document.",
     "judge:type_fits": "A reviewer found the item does not do what its type asks.",
-    "judge:realistic": "A reviewer found the question is not one a clinician, health economist or committee member would ask: ask about what matters in the appraisal, not about the document's layout.",
+    "judge:realistic": "A reviewer found the question is not one {askers} would ask: ask about what matters in {purpose}, not about the document's layout.",
     "judge:answerable_from_single_excerpt": "A reviewer found that one excerpt answers the question alone: it must need both.",
     "answerable_from": "Given only excerpt {d}, a reader answered \"{answer}\", identifying the subject by \"{span}\": describe the subject only through the other fact, or ask for something only the two together give.",
 }
 
 
-def rewrite_feedback(results: list[dict], cand: Candidate) -> list[str]:
+def rewrite_feedback(results: list[dict], cand: Candidate, framing: Framing | None = None) -> list[str]:
     """Why the item failed, one instruction per failed check, plus the reviewer's issues and what one excerpt alone answered."""
+    fr = framing or Framing()
+    family = {"key_label": fr.example("key_label"), "askers": fr.askers_short_text, "purpose": fr.purpose}
     lines = []
     for r in results:
         if r["stage"] not in ("programmatic", "judge"):
@@ -298,7 +319,7 @@ def rewrite_feedback(results: list[dict], cand: Candidate) -> list[str]:
                 lines.append(FEEDBACK[code].format(d=detail, answer=alone.get("answer"), span=alone.get("identified_by")))
             else:
                 text = FEEDBACK.get(reason) or FEEDBACK.get(code)
-                lines.append(text.format(d=detail) if text else reason)
+                lines.append(text.format(d=detail, **family) if text else reason)
         if r["stage"] == "judge":
             lines += [f"Reviewer: {i}" for i in (r.get("judge") or {}).get("issues") or [] if isinstance(i, str)]
     return list(dict.fromkeys(lines))
@@ -315,19 +336,22 @@ def build_rewrite(messages: list[dict], raw: dict, feedback: list[str]) -> list[
     ]
 
 
-def build_withhold_check(question: str, answer: str, passages: list[Unit], corpus: Corpus, max_chars: int = 1500) -> list[dict]:
+def build_withhold_check(question: str, answer: str, passages: list[Unit], corpus: Corpus, max_chars: int = 1500,
+                         framing: Framing | None = None) -> list[dict]:
     """Every candidate distractor against the question and the answer it must not give, all in one call."""
-    return withhold_check("\n\n".join(corpus.render(u, max_chars) for u in passages), question, answer, corpus.topic)
+    return withhold_check("\n\n".join(corpus.render(u, max_chars) for u in passages), question, answer, corpus.topic, framing=framing)
 
 
-def withhold_check(shown: str, question: str, answer: str, topic: str, id_key: str = "unit_id", every_entry: bool = False) -> list[dict]:
+def withhold_check(shown: str, question: str, answer: str, topic: str, id_key: str = "unit_id", every_entry: bool = False,
+                   framing: Framing | None = None) -> list[dict]:
     """The screening prompt over already rendered passages, each headed by its id in brackets. The evaluator uses it on
     the application's chunks (`id_key` "chunk_id", `every_entry` set: a passage without an entry cannot be shown, and the
     judge has been seen to list only the passages it found answering); the generator on benchmark units."""
+    fr = framing or Framing()
     note = " Include an entry for every passage, those that do not answer as well: a passage without an entry is discarded." if every_entry else ""
     return [
         {"role": "system", "content":
-            f"You screen passages retrieved from the documents of one health technology appraisal (\"{topic}\"). "
+            f"You screen passages retrieved from the documents of {fr.subject} (\"{topic}\"). "
             "A question and its correct answer are given; the evidence that answer rests on has been removed. For each passage, decide whether a reader holding it could answer the question. "
             f'Return only a JSON object: {{"results": [{{"{id_key}": str, "answers": "yes" | "partly" | "no", "answer_if_any": str | null}}, ...]}} with one entry per passage, in order, using the id shown in brackets. '
             "\"yes\" means the passage states the answer, or the answer follows directly from what it states; "
@@ -340,24 +364,33 @@ def withhold_check(shown: str, question: str, answer: str, topic: str, id_key: s
 
 
 # ----- the messy question setting: the same question as a user would type it -----
+# The habits the config mixes. Four of them name a family's things (its shorthand, its parties, its drug names): their
+# wording here is the neutral one, and a schema's framing may give its family's own.
 HABITS = {
     "informal": "chatty and casual: openers, fillers and hedges (\"hey quick one\", \"so basically\", \"I think\", \"or whatever it was\")",
-    "shorthand": "clinical and texting shorthand where a colleague would use it (pts, tx, w/, vs, b/c, abt, HR, CE model, cap + fulv)",
+    "shorthand": FAMILY_HABITS["shorthand"],
     "lay_terms": "lay words in place of technical terms where a non-specialist would use them (\"how long before the cancer got worse\" for progression-free survival), keeping any term that has no plain equivalent",
     "keyword_query": "a search-engine keyword string, not a sentence: the key terms in any order, no question word, no verb",
-    "statement": "a request or statement instead of a question (\"need the ICER for ...\", \"looking for the company's figure on ...\")",
+    "statement": FAMILY_HABITS["statement"],
     "grammar": "the English of a fluent non-native speaker: dropped or wrong articles, odd prepositions, unusual word order, agreement slips",
     "rambling": "extra context a real user would add and the answer does not need: why they ask, what they were just reading, a tangent",
-    "vague": "one specific detail blurred into something vaguer (\"the new drug\", \"that trial\", \"the EAG or whoever it was\"), still enough for someone who knows the appraisal to tell what is meant",
-    "misspell_names": "drug, trial and party names spelled as they sound or half-remembered (capivasirtib, fulvestrent, capitello 291, the ERG), never corrected",
+    "vague": FAMILY_HABITS["vague"],
+    "misspell_names": FAMILY_HABITS["misspell_names"],
     "fragment": "not a finished sentence: it trails off, starts mid-thought, or jams two thoughts together with no punctuation between them",
 }
 
 
-def build_messy(question: str, persona: str, habits: list[str]) -> list[dict]:
+def habit_text(habit: str, framing: Framing | None = None) -> str:
+    """What a habit asks for: the family's wording for the habits that name its things, else the shared wording."""
+    fr = framing or Framing()
+    return fr.habits.get(habit) or HABITS[habit]
+
+
+def build_messy(question: str, persona: str, habits: list[str], framing: Framing | None = None) -> list[dict]:
     """Rewrite a clean evaluation question as a real user would type it. No checks follow: the rewrite is the setting."""
-    lines = "\n".join(f"- {h}: {HABITS[h]}" for h in habits)
-    system = ("You turn well-formed questions about a health technology appraisal into the way real users type them into a chat box or search bar. "
+    fr = framing or Framing()
+    lines = "\n".join(f"- {h}: {habit_text(h, fr)}" for h in habits)
+    system = (f"You turn well-formed questions about {fr.kind_text} into the way real users type them into a chat box or search bar. "
               "Users are hurried, informal and inconsistent; they do not write like a document. You are shown the clean question, who is typing and "
               "which habits to apply. Keep the same intent: the same thing is asked about the same subject, so the same answer is right. Keep every "
               "number and unit exactly, and keep the drug, trial and party names the clean question has, in whatever spelling or shorthand the "

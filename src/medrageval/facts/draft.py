@@ -30,8 +30,9 @@ def outline(corpora: list[Corpus], max_titles: int, samples_per_role: int, sampl
     samples: dict[str, list[str]] = defaultdict(list)
     for corpus in corpora:
         for d in corpus.docs.values():
-            if d.role in ("cover", "other"):
+            if d.role == "cover":   # "other" stays: a document family the role patterns do not know is all "other"
                 continue
+            titles.setdefault(d.role, [])   # a document without sections still names its role
             for s in corpus.sections.values():
                 if s["doc_id"] == d.doc_id and s.get("depth", 1) <= 3:
                     t = "  " * (s.get("depth", 1) - 1) + " ".join(s["title"].split())[:100]
@@ -49,6 +50,8 @@ def draft_schema(interim_dirs: list[Path], cfg: dict, fcfg: dict, llm) -> dict:
     corpora = [load_corpus(p, cfg) for p in interim_dirs]
     dc = fcfg["draft"]
     titles, samples = outline(corpora, dc["max_titles_per_role"], dc["samples_per_role"], dc["sample_chars"])
+    if not any(titles.values()) and not any(samples.values()):
+        raise ValueError(f"nothing to draft from: no section titles or passages outside cover pages in {', '.join(map(str, interim_dirs))}")
     roles = sorted(titles)
     return llm.complete_json(build_schema_draft(corpora[0].topic, titles, samples, roles), "schema:draft")
 
@@ -64,7 +67,10 @@ def run_cli(args: argparse.Namespace) -> None:
     full = load_config(args.config)
     cfg, fcfg = full["generate"], full["facts"]
     llm = make_llm(fcfg, cfg, use_cache=not args.no_cache)
-    data = draft_schema(args.interim_dirs, cfg, fcfg, llm)
+    try:
+        data = draft_schema(args.interim_dirs, cfg, fcfg, llm)
+    except ValueError as e:
+        raise SystemExit(f"error: {e}") from None
     try:
         parse_schema(data, known_roles(cfg))
         error = None

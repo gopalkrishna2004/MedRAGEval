@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from random import Random
 
+from medrageval.facts.framing import Framing
 from medrageval.generate.llm import LLMError, LLMJsonError
 from medrageval.generate.prompts import build_messy
 
@@ -115,13 +116,13 @@ def surface_noise(text: str, rng: Random, rates: dict, min_word_len: int) -> tup
     return out, ops
 
 
-def rewrite(item: dict, gen, mcfg: dict, seed: int) -> dict:
+def rewrite(item: dict, gen, mcfg: dict, seed: int, framing: Framing | None = None) -> dict:
     """The messy twin of one item's question. On an LLM failure the clean question gets surface noise alone, and says so."""
     rng = Random(f"{seed}:messy:{item['item_id']}")
     severity, persona, habits = pick(rng, mcfg)
     out = {"severity": severity, "persona": persona, "habits": habits}
     try:
-        raw = gen.complete_json(build_messy(item["question"], persona, habits), f"messy:{item['item_id']}")
+        raw = gen.complete_json(build_messy(item["question"], persona, habits, framing), f"messy:{item['item_id']}")
         text = str(raw.get("question") or "").strip()
     except LLMJsonError as e:
         text, out["error"] = "", f"no_json:{str(e)[:120]}"
@@ -135,12 +136,15 @@ def rewrite(item: dict, gen, mcfg: dict, seed: int) -> dict:
     return out
 
 
-def messy_pass(accepted: list[dict], gen, mcfg: dict, seed: int, max_workers: int) -> dict:
+def messy_pass(accepted: list[dict], gen, mcfg: dict, seed: int, max_workers: int, framing: Framing | None = None) -> dict:
     """Add `question_messy` to every accepted record, in place, and return the pass's report. Unanswerable items copy their
-    source item's twin when it is in the run; otherwise they get one of their own."""
+    source item's twin when it is in the run; otherwise they get one of their own. The framing's personas, when it has
+    any, replace the config's: who types the questions belongs to the document family."""
+    if framing is not None and framing.personas:
+        mcfg = {**mcfg, "personas": list(framing.personas)}
     own = [r for r in accepted if not (r.get("source_item_id") and r["source_item_id"] in {a["item_id"] for a in accepted})]
     with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
-        twins = list(pool.map(lambda r: rewrite(r, gen, mcfg, seed), own))
+        twins = list(pool.map(lambda r: rewrite(r, gen, mcfg, seed, framing), own))
     by_id = {r["item_id"]: t for r, t in zip(own, twins)}
     for r in accepted:
         r["question_messy"] = dict(by_id[r["source_item_id"]] if r["item_id"] not in by_id else by_id[r["item_id"]])
@@ -153,15 +157,16 @@ def messy_pass(accepted: list[dict], gen, mcfg: dict, seed: int, max_workers: in
 
 
 # ----- standalone: twins for an existing dataset -----
-def retwin(dataset_dir: Path, cfg: dict, gen, seed: int | None = None) -> dict:
+def retwin(dataset_dir: Path, cfg: dict, gen, seed: int | None = None, framing: Framing | None = None) -> dict:
     """Write (or replace) `question_messy` on every item of an existing dataset.jsonl, in place, and record the pass under
-    `messy` in its generate_report.json. Nothing else about the items changes, so a hand-edited dataset keeps its edits."""
+    `messy` in its generate_report.json. Nothing else about the items changes, so a hand-edited dataset keeps its edits.
+    `framing`: the dataset's document family (see `dataset_framing`)."""
     path = dataset_dir / "dataset.jsonl"
     items = [json.loads(line) for line in path.open() if line.strip()]
     if not items:
         raise RuntimeError(f"no items in {path}")
     seed = cfg["seed"] if seed is None else seed
-    report = messy_pass(items, gen, cfg["messy"], seed, cfg["max_workers"])
+    report = messy_pass(items, gen, cfg["messy"], seed, cfg["max_workers"], framing)
     with path.open("w") as f:
         for it in items:
             f.write(json.dumps(it, ensure_ascii=False) + "\n")
@@ -183,9 +188,12 @@ def run_cli(args) -> None:
     from medrageval.config import load_config
     from medrageval.generate.llm import make_llms
 
-    cfg = load_config(args.config)["generate"]
+    from medrageval.facts.schema import dataset_framing
+
+    full = load_config(args.config)
+    cfg = full["generate"]
     gen, _ = make_llms(cfg, use_cache=not args.no_cache)
-    report = retwin(args.dataset_dir, cfg, gen, args.seed)
+    report = retwin(args.dataset_dir, cfg, gen, args.seed, dataset_framing(args.dataset_dir, full))
     print(f"{report['items']} items in {args.dataset_dir}: {report['rewritten']} rewritten, {report['copied_from_source']} copied from source items, "
           f"{len(report['errors'])} fell back to surface noise")
     print(f"  severity {report['severity']}; habits {report['habits']}; surface {report['surface']}")

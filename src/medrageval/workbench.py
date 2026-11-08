@@ -27,8 +27,9 @@ import yaml
 from dotenv import load_dotenv
 
 from medrag.app import App, collection_name
-from medrag.config import use_pdf
-from medrageval.facts.schema import REPO_ROOT, SchemaError, known_roles, parse_schema
+from medrag.config import check_reader, missing_key, use_pdf, use_reader
+from medrageval.facts.schema import REPO_ROOT, SchemaError, known_roles, parse_schema, resolve_path
+from medrageval.generate.corpus import detect_roles
 from medrageval.generate.generate import TYPES, attempts_per_item
 from medrageval.generate.llm import ENV_KEY
 
@@ -81,6 +82,11 @@ def pdf_sha(path: Path) -> str:
     if key not in _sha:
         _sha[key] = hashlib.sha256(path.read_bytes()).hexdigest()
     return _sha[key]
+
+
+def _same_file(a: str, b: str) -> bool:
+    """Two schema paths as the page and a report write them (relative to the working directory or the repository) name one file."""
+    return resolve_path(a).resolve() == resolve_path(b).resolve()
 
 
 def _read_json(path: Path) -> dict | None:
@@ -334,6 +340,7 @@ class Workbench:
         self.jobs.on_finish(self._after_job)
         self.apps: dict[str, App] = {}
         self._pages: dict[tuple, int] = {}
+        self._types: dict[tuple, list[dict]] = {}
 
     # paths
     def pdf_path(self, slug: str) -> Path:
@@ -387,10 +394,49 @@ class Workbench:
         interim = self.interim_dir(slug)
         datasets = [d["name"] for d in self.datasets() if d["document"] == slug]
         runs = [r["name"] for r in self.runs() if r["document"] == slug]
+        parsed, schema, facts = self._parsed(interim), self.schema_record(slug), self._facts(interim)
+        types = self.doc_types(interim) if parsed else None
+        if parsed:
+            parsed["types"] = types
+        if schema and schema["valid"] and types is not None:
+            schema.update(self._coverage(schema["path"], {t["role"] for t in types}))
+        if facts:   # generation reads the fact sheet under the schema it was extracted with; the page's choice must be that one
+            facts["schema_matches"] = not (schema and facts["schema"]) or _same_file(schema["path"], facts["schema"])
         return {"slug": slug, "pdf": self._rel(pdf), "size": pdf.stat().st_size, "pages": self.pages(slug), "sha10": pdf_sha(pdf)[:10],
                 "interim": self._rel(interim) if interim else None,
-                "stages": {"parsed": self._parsed(interim), "schema": self.schema_record(slug), "facts": self._facts(interim),
+                "stages": {"parsed": parsed, "schema": schema, "facts": facts,
                            "datasets": datasets, "ingested": self.ingest_state(slug), "runs": runs}}
+
+    def doc_types(self, interim: Path) -> list[dict] | None:
+        """The parse's documents by type, as extraction will see them ([{role, label, n}], most first); None when the parse
+        has no documents.json or elements.jsonl. Cached on their modification times: elements.jsonl runs to megabytes."""
+        docs_p, els_p = interim / "documents.json", interim / "elements.jsonl"
+        if not docs_p.exists() or not els_p.exists():
+            return None
+        key = (str(interim.resolve()), docs_p.stat().st_mtime_ns, els_p.stat().st_mtime_ns)
+        if key not in self._types:
+            try:
+                docs = json.loads(docs_p.read_text())
+                elements = [json.loads(line) for line in els_p.open() if line.strip()]
+                roles = detect_roles(docs, elements, self.bench["generate"])
+            except (ValueError, KeyError, TypeError):   # a parse from an older version, or half written
+                return None
+            labels = self.bench["generate"]["roles"]["labels"]
+            counts = Counter(role for role, _ in roles.values())
+            self._types[key] = [{"role": r, "label": labels.get(r, r), "n": n} for r, n in counts.most_common()]
+        return self._types[key]
+
+    def _coverage(self, schema_path: str, roles: set[str]) -> dict:
+        """Which of the schema's groups this parse has a document for: `unread` lists the weighted groups whose roles no
+        document has (extraction plans no batch for them), `readable` counts the rest."""
+        p = resolve_path(schema_path)
+        try:
+            s = parse_schema(yaml.safe_load(p.read_text()), self.roles, p)
+        except (SchemaError, yaml.YAMLError, OSError):
+            return {}
+        weighted = [g for g in s.groups.values() if g.weight > 0]
+        unread = [g.id for g in weighted if not set(g.roles) & roles]
+        return {"unread": unread, "readable": len(weighted) - len(unread)}
 
     def interim_dir(self, slug: str) -> Path | None:
         """The parse output of this PDF: the directory named after it when its recorded hash matches, else any other that
@@ -433,8 +479,10 @@ class Workbench:
         if not r or not (interim / "factsheet.jsonl").exists():
             return None
         llm = r.get("llm") or {}
+        schema = r.get("schema") or {}
         return {"facts": r.get("facts"), "batches": r.get("batches", sum((g.get("batches") or 0) for g in (r.get("per_group") or {}).values())),
-                "model": r.get("model"), "calls": llm.get("calls"), "generated_at": _mtime(interim / "factsheet.jsonl")}
+                "model": r.get("model"), "calls": llm.get("calls"), "generated_at": _mtime(interim / "factsheet.jsonl"),
+                "schema": schema.get("path") if schema.get("path") not in (None, "None") else None, "schema_name": schema.get("name")}
 
     def ingest_state(self, slug: str):
         """{collection, chunks} when the store holds the PDF, None when not, "unknown" when the store cannot be reached."""
@@ -612,11 +660,21 @@ class Workbench:
             raise StageError(f"{ENV_KEY} is not set: this step makes paid API calls")
         if stage in ("draft", "extract", "generate") and not st["parsed"]:
             raise StageError("parse the document first")
+        types = st["parsed"].get("types") if st["parsed"] else None
+        if stage == "draft" and types is not None and all(t["role"] == "cover" for t in types):
+            raise StageError("every document of this parse looks like a cover or contents page: there is nothing to draft a schema from")
         if stage == "extract" and not (st["schema"] and st["schema"]["valid"]):
             raise StageError("choose or draft a valid schema first")
+        if stage == "extract" and not dry and st["schema"].get("readable") == 0:
+            kinds = ", ".join(t["label"] for t in types or [])
+            raise StageError(f"the schema reads no document of this PDF ({kinds}): draft a schema for this kind of document first")
         if stage == "generate":
             if not st["facts"]:
                 raise StageError("extract the fact sheet first")
+            if not st["facts"]["facts"]:
+                raise StageError("the fact sheet is empty: extract with a schema that reads this PDF's documents")
+            if not st["facts"]["schema_matches"]:
+                raise StageError(f"the fact sheet was extracted with {st['facts']['schema_name'] or st['facts']['schema']}, not the chosen schema: extract again")
             targets = opts.get("targets") or {}
             if not targets:
                 raise StageError("choose at least one question type")
@@ -628,6 +686,13 @@ class Workbench:
         if stage == "eval":
             if not (self.dataset_dir(opts["dataset"]) / "dataset.jsonl").is_file():
                 raise StageError(f"no dataset named {opts['dataset']}")
+            if choice := opts.get("reader"):
+                try:
+                    check_reader(self.cfg["llm"], choice["provider"], choice["model"])
+                except ValueError as e:
+                    raise StageError(str(e)) from None
+                if missing := missing_key(use_reader(self.cfg, choice["provider"], choice["model"])["llm"]):
+                    raise StageError(f"{missing} is not set: {choice['provider']} needs an API key to answer")
             if st["ingested"] is None:
                 raise StageError("ingest the document first")
             if (self.run_dir(opts["name"]) / "eval_report.json").exists() and not opts.get("replace"):
@@ -668,6 +733,8 @@ class Workbench:
                          "--question", opts.get("question", "clean")]
             if rag_opt:
                 argv += ["--rag-config"] + rag_opt
+            if choice := opts.get("reader"):
+                argv += ["--provider", choice["provider"], "--model", choice["model"]]
             if opts.get("mode"):
                 argv += ["--mode", opts["mode"]]
             if not opts.get("rerank", True):

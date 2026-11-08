@@ -100,11 +100,25 @@ retrieval:
     weight: 0.7
 
 llm:
-  # vLLM's OpenAI-compatible server on the GPU machine: `vllm serve Qwen/Qwen2.5-3B-Instruct --port 8003`
+  # The answering model and the server it runs on, one of `providers` below. The
+  # page's top bar switches between the providers' models, and
+  # `medrageval eval --provider openrouter --model ...` does the same for a run.
+  provider: vllm
   model: Qwen/Qwen2.5-3B-Instruct
-  base_url: http://localhost:8003/v1
-  base_url_env: VLLM_BASE_URL       # overrides base_url when set; a remote server's address stays in .env
-  api_key_env: VLLM_API_KEY          # read when the server runs with --api-key; "EMPTY" otherwise
+  providers:
+    vllm:
+      # vLLM's OpenAI-compatible server on the GPU machine: `vllm serve Qwen/Qwen2.5-3B-Instruct --port 8003`
+      label: vLLM
+      base_url: http://localhost:8003/v1
+      base_url_env: VLLM_BASE_URL    # overrides base_url when set; a remote server's address stays in .env
+      api_key_env: VLLM_API_KEY      # read when the server runs with --api-key; "EMPTY" otherwise
+      models: [Qwen/Qwen2.5-3B-Instruct]   # the one the server was started with
+    openrouter:
+      label: OpenRouter
+      base_url: https://openrouter.ai/api/v1
+      api_key_env: OPENROUTER_API_KEY
+      needs_key: true
+      models: [qwen/qwen-2.5-7b-instruct]  # OpenRouter has no Qwen2.5-3B
   temperature: 0.0
   max_tokens: 512
   context_window: 8192

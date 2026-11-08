@@ -298,12 +298,13 @@ generate:
     habits_per_severity: {light: 2, medium: 3, heavy: 4}
     # keyword_query keeps only misspell_names beside it: a keyword string cannot also ramble
     habits: [informal, shorthand, lay_terms, keyword_query, statement, grammar, rambling, vague, misspell_names, fragment]
+    # who types the questions, for a schema whose framing names no personas of its own (the NICE schema does)
     personas:
-      - a busy oncologist between clinics
-      - a health economist checking a figure for a report
-      - an appraisal committee member preparing for a meeting
+      - a busy clinician between appointments
+      - a researcher checking a figure for a paper
+      - a hospital pharmacist answering a colleague
       - a medical affairs manager at a pharmaceutical company
-      - a patient advocate reading the committee papers
+      - a patient advocate reading up on a treatment
       - a pharmacy student writing an essay
     # per word: a typo (letter swap, drop, double or keyboard neighbour), a text-speak spelling (u, pls, w/, abt, &) where
     # the word has one, a missing space to the next word; per question: lower case, punctuation stripped

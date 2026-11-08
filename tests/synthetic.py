@@ -199,14 +199,52 @@ def build_corpus(cfg: dict | None = None, elements=None, documents=None) -> Corp
     return Corpus(Path("synthetic"), copy.deepcopy(documents or DOCUMENTS), copy.deepcopy(SECTIONS), copy.deepcopy(elements or ELEMENTS), cfg or config())
 
 
-def write_interim(path: Path, elements=None) -> Path:
+def write_interim(path: Path, elements=None, sections=None, documents=None) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     with open(path / "elements.jsonl", "w") as f:
         for e in elements or ELEMENTS:
             f.write(json.dumps(e) + "\n")
-    (path / "sections.json").write_text(json.dumps(SECTIONS))
-    (path / "documents.json").write_text(json.dumps(DOCUMENTS))
+    (path / "sections.json").write_text(json.dumps(sections or SECTIONS))
+    (path / "documents.json").write_text(json.dumps(documents or DOCUMENTS))
     return path
+
+
+# ----- a document of another family -----
+# One short trial report: no heading or phrase of an appraisal bundle, so its one document is "other".
+_PAPER_PATH = {"m": ["Methods"], "r": ["Results"], "s": ["Results", "Safety"]}
+PAPER_ELEMENTS = [
+    _el("p01", 1, "Drug X in adults with chronic kidney disease: a randomised trial", "heading", section="p01-s001", path=["Drug X in adults with chronic kidney disease"]),
+    _el("p01", 2, "We randomly assigned 412 adults with stage 3 chronic kidney disease to drug X 10 mg daily or placebo for 52 weeks.",
+        section="p01-s002", path=_PAPER_PATH["m"], page=2),
+    _el("p01", 3, "The primary outcome was the change in estimated glomerular filtration rate from baseline to week 52.",
+        section="p01-s002", path=_PAPER_PATH["m"], page=2),
+    _el("p01", 4, "At week 52 the estimated glomerular filtration rate had fallen by 1.2 mL/min with drug X and by 3.9 mL/min with placebo "
+        "(difference 2.7 mL/min; 95% CI 1.4 to 4.0).", section="p01-s003", path=_PAPER_PATH["r"], page=4),
+    _el("p01", 5, _table([("Drug X (N=206)", "1.2", "18"), ("Placebo (N=206)", "3.9", "31")], ("Group", "eGFR decline (mL/min)", "Kidney failure, n")),
+        "table", section="p01-s003", path=_PAPER_PATH["r"], caption="**Table 2. Outcomes at week 52**", page=5),
+    _el("p01", 6, "Hyperkalaemia occurred in 9% of patients receiving drug X and 4% of those receiving placebo.",
+        section="p01-s004", path=_PAPER_PATH["s"], page=6),
+]
+PAPER_SECTIONS = [
+    {"section_id": "p01-s001", "doc_id": "p01", "parent_id": None, "depth": 1, "title": "Drug X in adults with chronic kidney disease", "page": 1},
+    {"section_id": "p01-s002", "doc_id": "p01", "parent_id": None, "depth": 1, "title": "Methods", "page": 2},
+    {"section_id": "p01-s003", "doc_id": "p01", "parent_id": None, "depth": 1, "title": "Results", "page": 4},
+    {"section_id": "p01-s004", "doc_id": "p01", "parent_id": "p01-s003", "depth": 2, "title": "Safety", "page": 6},
+]
+PAPER_DOCUMENTS = [{"doc_id": "p01", "start_page": 1, "end_page": 8, "n_pages": 8, "signals": [], "running_text": None,
+                    "headings": ["Drug X in adults with chronic kidney disease: a randomised trial"]}]
+# A schema drafted for such reports reads its "other" document.
+PAPER_SCHEMA = {
+    "name": "trial report", "version": 1,
+    "groups": {"efficacy": {"weight": 0.6, "describe": "trial results", "roles": ["other"], "sections": ["results"], "keywords": ["glomerular filtration"],
+                            "slots": {"outcome_result": {"kind": "number", "describe": "an outcome's result per arm", "qualifiers": ["outcome", "timepoint"], "per": "arm"}}},
+               "safety": {"weight": 0.4, "describe": "adverse events", "roles": ["other"], "sections": ["safety"], "keywords": ["hyperkalaemia"],
+                          "slots": {"adverse_event": {"kind": "number", "describe": "an adverse event's rate per arm", "qualifiers": ["event"], "per": "arm"}}}},
+}
+
+
+def write_paper_interim(path: Path) -> Path:
+    return write_interim(path, PAPER_ELEMENTS, PAPER_SECTIONS, PAPER_DOCUMENTS)
 
 
 # ----- fact sheet fixtures -----

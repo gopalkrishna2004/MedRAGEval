@@ -27,7 +27,7 @@ from random import Random
 
 from medrageval.config import load_config
 from medrageval.facts.factsheet import FactSheet
-from medrageval.facts.schema import known_roles, load_schema
+from medrageval.facts.schema import known_roles, load_schema, recorded_schema_path
 from medrageval.generate.candidates import SELECTORS, Candidate, candidate_counts, idents, interleave, spread
 from medrageval.generate.corpus import Corpus, Unit, load_corpus
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llms
@@ -82,7 +82,7 @@ class Run:
         raw, results = self._attempt(cand, messages, cand.candidate_id)
         if not self._rewritable(results):
             return results
-        retry = build_rewrite(messages, raw, rewrite_feedback(results, cand))
+        retry = build_rewrite(messages, raw, rewrite_feedback(results, cand, self.sheet.schema.framing))
         _, rewritten = self._attempt(cand, retry, f"{cand.candidate_id}:rewrite")
         first = {"item": {k: raw[k] for k in ("question", "answer", "answer_keys", "keypoints", "questions") if k in raw},
                  "reasons": [reason for r in results for reason in r["reasons"]]}
@@ -112,7 +112,7 @@ class Run:
         if cand.type not in self.cfg["judge_types"]:
             return raw, [{"cand": cand, "item": raw, "stage": "accepted", "reasons": [], "verdict": verdict, "judge": None}]
         try:
-            judge = self.judge.complete_json(build_judge(raw, cand, self.corpus, self.cfg), f"judge:{tag}")
+            judge = self.judge.complete_json(build_judge(raw, cand, self.corpus, self.cfg, self.sheet.schema.framing), f"judge:{tag}")
         except LLMJsonError as e:
             return raw, [self._no_verdict(cand, raw, e, verdict=verdict)]
         reasons = []
@@ -157,7 +157,8 @@ class Run:
         description = set(cand.hint.get("description") or [])
         out = {}
         for u in cand.units:
-            r = self.judge.complete_json(build_alone_check(str(raw.get("question") or ""), u, self.corpus, self.cfg), f"alone:{cand.candidate_id}:{u.unit_id}")
+            r = self.judge.complete_json(build_alone_check(str(raw.get("question") or ""), u, self.corpus, self.cfg, self.sheet.schema.framing),
+                                         f"alone:{cand.candidate_id}:{u.unit_id}")
             answer, span = str(r.get("answer") or ""), str(r.get("identified_by") or "")
             matches = bool(answer and keys) and all(contains_quote(k, answer) for k in keys)
             grounded = not description or bool(span and contains_quote(span, u.plain) and description & (token_set(span) | idents(span)))
@@ -187,7 +188,8 @@ class Run:
         if len(pool) < uc["min_distractors"]:
             return {"cand": cand, "item": item, "stage": "withhold", "reasons": [f"too_few_distractors:{len(pool)}"]}
         try:
-            check = self.judge.complete_json(build_withhold_check(question, answer, pool, self.corpus, uc["max_chars_per_passage"]), f"withhold:{cand.candidate_id}")
+            check = self.judge.complete_json(build_withhold_check(question, answer, pool, self.corpus, uc["max_chars_per_passage"], self.sheet.schema.framing),
+                                             f"withhold:{cand.candidate_id}")
         except LLMJsonError as e:
             return self._no_verdict(cand, item, e)
         verdicts = {str(r.get("unit_id")): r for r in (check.get("results") or []) if isinstance(r, dict)}
@@ -352,26 +354,35 @@ class Run:
                 "caption": u.caption, "quote": quote}
 
 
-def load_sheet(interim_dir: Path, cfg: dict, fcfg: dict, facts_path: Path | None = None) -> tuple[Corpus, FactSheet]:
+def sheet_schema(facts_path: Path, fcfg: dict, schema_path: str | Path | None = None) -> str | Path:
+    """The schema a fact sheet was extracted with: `schema_path` when given, else the one its extraction report
+    (factsheet_report.json beside it) names, else the config's. A fact sheet only loads under its own schema."""
+    return schema_path or recorded_schema_path(facts_path.parent / "factsheet_report.json", fcfg["schema"])
+
+
+def load_sheet(interim_dir: Path, cfg: dict, fcfg: dict, facts_path: Path | None = None,
+               schema_path: str | Path | None = None) -> tuple[Corpus, FactSheet]:
     """The corpus and its fact sheet; fails loudly when `medrageval extract` has not run."""
     corpus = load_corpus(interim_dir, cfg)
-    schema = load_schema(fcfg["schema"], known_roles(cfg))
-    sheet = FactSheet.load(Path(facts_path or Path(interim_dir) / "factsheet.jsonl"), schema, corpus, cfg, fcfg)
+    facts_path = Path(facts_path or Path(interim_dir) / "factsheet.jsonl")
+    schema = load_schema(sheet_schema(facts_path, fcfg, schema_path), known_roles(cfg))
+    sheet = FactSheet.load(facts_path, schema, corpus, cfg, fcfg)
     return corpus, sheet
 
 
 def generate_dataset(interim_dir: Path, out_dir: Path, cfg: dict, gen, judge, targets: dict[str, int] | None = None,
                      types: list[str] | None = None, seed: int | None = None, fcfg: dict | None = None,
-                     facts_path: Path | None = None, messy: bool | None = None) -> dict:
+                     facts_path: Path | None = None, messy: bool | None = None, schema_path: str | Path | None = None) -> dict:
     """Generate the dataset into out_dir and return the report. Raises after writing if a type fell short.
     `messy` overrides `cfg["messy"]["enabled"]` (the second question setting)."""
     t0 = time.time()
     seed = cfg["seed"] if seed is None else seed
     targets = {**cfg["targets"], **(targets or {})}
     types = [t for t in TYPES if t in (types or TYPES) and targets.get(t, 0) > 0]
-    corpus, sheet = load_sheet(interim_dir, cfg, fcfg or load_config()["facts"], facts_path)
+    corpus, sheet = load_sheet(interim_dir, cfg, fcfg or load_config()["facts"], facts_path, schema_path)
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"{interim_dir}: {len(corpus.units)} evidence units in {len(corpus.docs)} documents, {len(sheet)} facts; topic: {corpus.topic[:70]}")
+    print(f"{interim_dir}: {len(corpus.units)} evidence units in {len(corpus.docs)} documents, {len(sheet)} facts; topic: {corpus.topic[:70]}; "
+          f"schema: {sheet.schema.name}")
     run = Run(corpus, sheet, cfg, gen, judge, out_dir, seed)
     error = None
     try:
@@ -386,7 +397,7 @@ def generate_dataset(interim_dir: Path, out_dir: Path, cfg: dict, gen, judge, ta
         run.close()
     messy_report = None
     if (cfg["messy"]["enabled"] if messy is None else messy) and run.accepted and error is None:
-        messy_report = messy_pass(run.accepted, gen, cfg["messy"], seed, cfg["max_workers"])
+        messy_report = messy_pass(run.accepted, gen, cfg["messy"], seed, cfg["max_workers"], sheet.schema.framing)
         with (out_dir / "dataset.jsonl").open("w") as f:   # the same records, now with their messy twin
             for rec in run.accepted:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -420,6 +431,7 @@ def build_report(run: Run, targets: dict, types: list[str], elapsed: float, erro
     return {
         "interim_dir": str(run.corpus.interim_dir),
         "topic": run.corpus.topic,
+        "schema": {"name": run.sheet.schema.name, "path": str(run.sheet.schema.path) if run.sheet.schema.path else None},
         "model": run.gen.model, "judge_model": run.judge.model, "prompt_version": PROMPT_VERSION, "seed": run.seed,
         "items": len(run.accepted),
         "per_type": per_type,
@@ -454,11 +466,13 @@ def print_report(report: dict) -> None:
         print(f"  WARNING: {w}")
 
 
-def dry_run(interim_dir: Path, cfg: dict, fcfg: dict, seed: int | None = None, facts_path: Path | None = None) -> dict:
-    corpus, sheet = load_sheet(interim_dir, cfg, fcfg, facts_path)
+def dry_run(interim_dir: Path, cfg: dict, fcfg: dict, seed: int | None = None, facts_path: Path | None = None,
+            schema_path: str | Path | None = None) -> dict:
+    corpus, sheet = load_sheet(interim_dir, cfg, fcfg, facts_path, schema_path)
     s = corpus.stats()
     print(f"{interim_dir}: {s['units']} units ({s['row_units']} table rows), noise {s['noise']}")
     print(f"  topic: {s['topic']}")
+    print(f"  schema: {sheet.schema.name} ({sheet.schema.path})")
     for d in corpus.docs.values():
         print(f"  {d.doc_id} {d.role:20s} {d.n_units:4d} units  {len(sheet.by_doc.get(d.doc_id, [])):4d} facts  {d.title[:60]}")
     fs = sheet.stats()
@@ -491,6 +505,7 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--dry-run", action="store_true", help="only load the corpus and fact sheet and count candidates; no LLM calls")
     ap.add_argument("--seed", type=int)
     ap.add_argument("--facts", type=Path, help="fact sheet (default: <interim dir>/factsheet.jsonl from `medrageval extract`)")
+    ap.add_argument("--schema", type=Path, help="schema YAML (default: the one the fact sheet was extracted with, from its factsheet_report.json)")
     ap.add_argument("--no-messy", action="store_true", help="skip the messy question twins (config messy.enabled)")
 
 
@@ -509,7 +524,7 @@ def run_cli(args: argparse.Namespace) -> None:
     full = load_config(args.config)
     cfg, fcfg = full["generate"], full["facts"]
     if args.dry_run:
-        dry_run(args.interim_dir, cfg, fcfg, args.seed, args.facts)
+        dry_run(args.interim_dir, cfg, fcfg, args.seed, args.facts, args.schema)
         return
     gen, judge = make_llms(cfg, use_cache=not args.no_cache)
     out = args.out or Path("data/datasets") / args.interim_dir.name
@@ -517,7 +532,7 @@ def run_cli(args: argparse.Namespace) -> None:
     types = args.types.split(",") if args.types else None
     try:
         report = generate_dataset(args.interim_dir, out, cfg, gen, judge, targets, types, args.seed, fcfg, args.facts,
-                                  messy=False if args.no_messy else None)
+                                  messy=False if args.no_messy else None, schema_path=args.schema)
     except RuntimeError as e:
         print_report(json.loads((out / "generate_report.json").read_text()))
         raise SystemExit(f"error: {e}")

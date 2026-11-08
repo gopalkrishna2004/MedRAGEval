@@ -2,6 +2,7 @@ import argparse
 import sys
 
 from medrag.app import App
+from medrag.config import use_reader
 from medrag.retrieve import MODES
 
 PDF_HELP = "the ingested PDF to use; default: the config's pdf"
@@ -32,6 +33,7 @@ def main() -> None:
     ask.add_argument("--pdf", help=PDF_HELP)
     ask.add_argument("--mode", choices=MODES)
     ask.add_argument("--no-rerank", action="store_true")
+    ask.add_argument("--provider", help="answer on another of llm.providers, e.g. openrouter (default: llm.provider)")
     ask.add_argument("--model", help="override llm.model")
     ask.add_argument("--base-url", help="override llm.base_url")
     ask.add_argument("--no-cache", action="store_true")
@@ -44,6 +46,11 @@ def main() -> None:
 
     a = ap.parse_args()
     app = App(a.config, use_cache=not getattr(a, "no_cache", False), pdf=getattr(a, "pdf", None))
+    if getattr(a, "provider", None):
+        try:
+            app.cfg = use_reader(app.cfg, a.provider, a.model)
+        except ValueError as e:
+            raise SystemExit(f"error: {e}") from None
     if getattr(a, "model", None):
         app.cfg["llm"]["model"] = a.model
     if getattr(a, "base_url", None):

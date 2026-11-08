@@ -80,9 +80,15 @@ def root(tmp_path):
     return r
 
 
-def client(root, llm=None, examples=(), ingested=True, run="run"):
+READERS = {"provider": "local", "model": "fake", "providers": {
+    "local": {"label": "Local", "base_url": "http://127.0.0.1:9/v1", "models": ["fake"]},
+    "hosted": {"label": "Hosted", "base_url": "https://hosted.example/v1", "api_key_env": "TEST_HOSTED_KEY", "needs_key": True, "models": ["org/small-7b"]}}}
+
+
+def client(root, llm=None, examples=(), ingested=True, run="run", readers=None):
     pdf = root / "raw" / "bundle.pdf"
-    cfg = {"pdf": str(pdf), "topic": "t", "chunking": CHUNKING, "retrieval": RC, "llm": {"model": "fake", "base_url": "http://127.0.0.1:9/v1"},
+    llm_cfg = {**readers, "base_url": "http://127.0.0.1:9/v1"} if readers else {"model": "fake", "base_url": "http://127.0.0.1:9/v1"}
+    cfg = {"pdf": str(pdf), "topic": "t", "chunking": CHUNKING, "retrieval": RC, "llm": llm_cfg,
            "embedding": {"model": "e"}, "demo": {"examples": list(examples)}}
     store = MemoryStore(dim=4)
     if ingested:
@@ -161,6 +167,44 @@ def test_unknown_chunk_is_a_404(root):
 def test_reader_failure_is_a_503_without_the_server_address(root):
     r = client(root, FakeLLM(LLMError("fake at http://10.0.0.1:8003/v1: refused"))).post("/api/answer", json={"question": "q", "chunk_ids": ["c1"]})
     assert r.status_code == 503 and "10.0.0.1" not in r.text
+
+
+def test_status_lists_the_readers_and_checks_the_chosen_one(root, monkeypatch):
+    checked = []
+    monkeypatch.setattr(server, "reader_up", lambda url: checked.append(url) or True)
+    monkeypatch.delenv("TEST_HOSTED_KEY", raising=False)
+    c = client(root, readers=READERS)
+    s = c.get("/api/status").json()
+    assert s["readers"] == [{"id": "local", "label": "Local", "needs_key": False, "models": ["fake"]},
+                            {"id": "hosted", "label": "Hosted", "needs_key": True, "models": ["org/small-7b"]}]
+    assert (s["reader"], s["reader_provider"], s["reader_key"], checked) == ({"provider": "local", "model": "fake"}, "local", None, ["http://127.0.0.1:9/v1"])
+    s = c.get("/api/status?provider=hosted").json()
+    assert (s["reader_provider"], s["reader_key"], checked[-1]) == ("hosted", "TEST_HOSTED_KEY", "https://hosted.example/v1")
+    assert "hosted.example" not in json.dumps(s) and "127.0.0.1" not in json.dumps(s)
+    assert c.get("/api/status?provider=nope").status_code == 422
+
+
+def test_answer_uses_the_chosen_reader_and_keeps_its_client(root, monkeypatch):
+    made = []
+
+    def fake_make_llm(section, use_cache=True):
+        made.append(section)
+        return FakeLLM(f"From {section['model']} [1].")
+
+    monkeypatch.setattr(server, "make_llm", fake_make_llm)
+    monkeypatch.setenv("TEST_HOSTED_KEY", "sk-test")
+    c = client(root, readers=READERS)
+    body = {"question": "median PFS", "chunk_ids": ["c1"]}
+    hosted = {**body, "reader": {"provider": "hosted", "model": "org/small-7b"}}
+    assert c.post("/api/answer", json=body).json()["answer"] == "Median PFS was 7.3 months [1]."
+    assert c.post("/api/answer", json={**body, "reader": {"provider": "local", "model": "fake"}}).json()["answer"] == "Median PFS was 7.3 months [1]."
+    assert [c.post("/api/answer", json=hosted).json()["answer"] for _ in range(2)] == ["From org/small-7b [1]."] * 2
+    assert len(made) == 1 and (made[0]["base_url"], made[0]["api_key_env"]) == ("https://hosted.example/v1", "TEST_HOSTED_KEY")
+    assert c.post("/api/answer", json={**body, "reader": {"provider": "hosted", "model": "org/unlisted"}}).status_code == 422
+    assert c.post("/api/answer", json={**body, "reader": {"provider": "nope", "model": "fake"}}).status_code == 422
+    monkeypatch.delenv("TEST_HOSTED_KEY")
+    r = c.post("/api/answer", json=hosted)
+    assert r.status_code == 503 and "TEST_HOSTED_KEY is not set" in r.text
 
 
 def test_ask_on_an_uningested_document_is_409(root):

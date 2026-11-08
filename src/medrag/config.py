@@ -13,8 +13,51 @@ def load_config(path: str | Path | None = None) -> dict:
     with p.open() as f:
         cfg = yaml.safe_load(f)
     cfg["_path"] = str(p)
-    cfg["llm"]["base_url"] = env_or(cfg["llm"], "base_url_env", "base_url")
-    return cfg
+    return use_reader(cfg)
+
+
+def providers(llm: dict) -> dict:
+    """The answering servers by name. A config without `providers` has one, its llm section's own server and model."""
+    if llm.get("providers"):
+        return llm["providers"]
+    own = {k: llm[k] for k in ("base_url", "base_url_env", "api_key_env") if k in llm}
+    return {llm.get("provider") or "default": {**own, "models": [llm["model"]]}}
+
+
+def default_reader(llm: dict) -> tuple[str, str]:
+    """(provider, model) the config answers with."""
+    return llm.get("provider") or next(iter(providers(llm))), llm["model"]
+
+
+def use_reader(cfg: dict, provider: str | None = None, model: str | None = None) -> dict:
+    """The config answering with `model` on `provider`: the provider's server and key replace the llm section's.
+    No provider keeps the configured one; no model keeps the configured model there, else the provider's first."""
+    llm = cfg["llm"]
+    ps = providers(llm)
+    default, default_model = default_reader(llm)
+    name = provider or default
+    if name not in ps:
+        raise ValueError(f"no answering provider named {name!r}; the config has {', '.join(ps)}")
+    p = ps[name]
+    model = model or (default_model if name == default else p["models"][0])
+    return {**cfg, "llm": {**llm, "provider": name, "model": model, "base_url": env_or(p, "base_url_env", "base_url"),
+                           "api_key_env": p.get("api_key_env")}}
+
+
+def check_reader(llm: dict, provider: str, model: str) -> None:
+    """A choice from the page must be one the config offers, so the server only asks the servers and models it lists."""
+    ps = providers(llm)
+    if provider not in ps:
+        raise ValueError(f"no answering provider named {provider!r}; the config has {', '.join(ps)}")
+    if model not in ps[provider].get("models", []):
+        raise ValueError(f"{provider} offers {', '.join(ps[provider].get('models', []))}, not {model}")
+
+
+def missing_key(llm: dict) -> str | None:
+    """The environment variable the chosen provider needs for an API key and does not have, if any."""
+    name = llm.get("api_key_env")
+    needs = providers(llm).get(llm.get("provider"), {}).get("needs_key")
+    return name if needs and not os.environ.get(name or "", "").strip() else None
 
 
 def use_pdf(cfg: dict, pdf: str | Path) -> dict:

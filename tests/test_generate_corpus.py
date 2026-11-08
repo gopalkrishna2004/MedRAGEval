@@ -73,6 +73,14 @@ def test_role_override_and_other():
     assert detect_roles(docs, els, CFG)["d09"][0] == "other"
 
 
+def test_a_short_document_is_a_cover_only_inside_a_bundle():
+    paper = {"doc_id": "d09", "headings": ["Something else entirely"], "running_text": None}
+    els = [dict(ELEMENTS[2], doc_id="d09", element_id=f"d09-e{i:04d}") for i in range(5)]
+    assert detect_roles([paper], els, CFG)["d09"][0] == "other"   # a PDF of one short report is that report
+    cover = {"doc_id": "d08", "headings": ["Contents"], "running_text": None}
+    assert detect_roles([cover, paper], els + [dict(ELEMENTS[2], doc_id="d08", element_id="d08-e0001")], CFG)["d08"][0] == "cover"
+
+
 def test_topic_is_the_common_prefix_of_the_most_shared_title():
     titles = [
         "Capivasertib with fulvestrant for treating advanced breast cancer [ID6370] Patient expert statement",

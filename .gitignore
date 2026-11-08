@@ -14,6 +14,8 @@ docs/*
 data/*
 !data/raw/
 data/raw/document2.pdf
+data/raw/s40359-024-02057-1.pdf
+data/raw/mhealth-2024-1-e52179.pdf
 !data/interim/
 data/interim/*
 !data/interim/ta1063/

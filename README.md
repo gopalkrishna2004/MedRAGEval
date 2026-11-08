@@ -88,6 +88,8 @@ pip install vllm
 vllm serve <model> --port 8003
 ```
 
+Without a GPU, the reader can run on OpenRouter instead: pick Qwen2.5-7B in the page's top bar, or pass `--provider openrouter --model qwen/qwen-2.5-7b-instruct` to `medrageval eval`. OpenRouter has no Qwen2.5-3B, so these scores are not comparable with runs on the 3B. The choices are listed under `llm.providers` in [configs/rag.yaml](configs/rag.yaml).
+
 ---
 
 ## Run

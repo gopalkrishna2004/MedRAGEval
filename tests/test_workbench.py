@@ -138,7 +138,7 @@ def test_document_stages_are_derived_from_files(tmp_path):
     doc = wb.document("a")
     assert (doc["pages"], doc["sha10"], doc["interim"]) == (2, sha[:10], str(d))
     st = doc["stages"]
-    assert st["parsed"] == {"dir": str(d), "pages": 2, "documents": 1, "sections": 3, "elements": 9, "warnings": 1}
+    assert st["parsed"] == {"dir": str(d), "pages": 2, "documents": 1, "sections": 3, "elements": 9, "warnings": 1, "types": None}
     assert st["facts"]["facts"] == 7 and st["facts"]["calls"] == 2
     assert st["datasets"] == ["a"] and st["runs"] == ["a", "abl/bm25"]
     assert st["ingested"] == {"collection": workbench.collection_name(wb.cfg, pdf), "chunks": 0}
@@ -146,6 +146,57 @@ def test_document_stages_are_derived_from_files(tmp_path):
     assert (ds_rec["items"], ds_rec["per_type"], ds_rec["messy"], ds_rec["document"], ds_rec["source"], ds_rec["short"]) == (2, {"numerical": 1, "unanswerable": 1}, False, "a", "generated", True)
     assert [(r["name"], r["document"], r["score"]) for r in wb.runs()] == [("a", "a", 0.5), ("abl/bm25", "a", 0.5)] or \
         [(r["name"], r["document"]) for r in wb.runs()] == [("abl/bm25", "a"), ("a", "a")]
+
+
+def test_document_types_gate_the_paid_steps_and_the_fact_sheet_keeps_its_schema(tmp_path, monkeypatch):
+    import yaml
+    from synthetic import PAPER_SCHEMA, write_paper_interim
+    monkeypatch.setattr(workbench, "key_set", lambda: True)
+    pdf = make_pdf(tmp_path / "raw" / "a.pdf")
+    wb = bench(tmp_path)
+    d = write_paper_interim(parsed(tmp_path, "a", pdf_sha(pdf)))   # one trial report: no document of an appraisal bundle
+    st = wb.document("a")["stages"]
+    assert st["parsed"]["types"] == [{"role": "other", "label": "Document", "n": 1}]
+    wb.check_stage("a", "draft", {})
+    # the appraisal schema reads none of it: a real extraction is refused, the preview still runs
+    wb.select_schema("a", "configs/schema/nice_sta.yaml")
+    sch = wb.document("a")["stages"]["schema"]
+    assert sch["readable"] == 0 and len(sch["unread"]) == 9
+    with pytest.raises(StageError, match="reads no document of this PDF \\(Document\\)"):
+        wb.check_stage("a", "extract", {})
+    wb.check_stage("a", "extract", {"dry_run": True})
+    # a schema for trial reports reads it
+    own = wb.save_schema("a", yaml.safe_dump(PAPER_SCHEMA))
+    assert (wb.document("a")["stages"]["schema"]["readable"], wb.document("a")["stages"]["schema"]["unread"]) == (2, [])
+    wb.check_stage("a", "extract", {})
+    gen = {"name": "s", "targets": {"factual": 1}}
+    (d / "factsheet.jsonl").write_text("")
+    (d / "factsheet_report.json").write_text(json.dumps({"facts": 0, "schema": {"name": "trial report", "path": own["path"]}}))
+    assert wb.document("a")["stages"]["facts"]["facts"] == 0
+    with pytest.raises(StageError, match="fact sheet is empty"):
+        wb.check_stage("a", "generate", gen)
+    # facts extracted under one schema while the page has another chosen
+    (d / "factsheet_report.json").write_text(json.dumps({"facts": 3, "schema": {"name": "NICE single technology appraisal", "path": "configs/schema/nice_sta.yaml"}}))
+    assert wb.document("a")["stages"]["facts"]["schema_matches"] is False
+    with pytest.raises(StageError, match="extracted with NICE single technology appraisal, not the chosen schema"):
+        wb.check_stage("a", "generate", gen)
+    (d / "factsheet_report.json").write_text(json.dumps({"facts": 3, "schema": {"name": "trial report", "path": own["path"]}}))
+    assert wb.document("a")["stages"]["facts"]["schema_matches"] is True
+    wb.check_stage("a", "generate", gen)
+
+
+def test_draft_is_refused_when_every_document_is_a_cover_page(tmp_path, monkeypatch):
+    from synthetic import PAPER_ELEMENTS, PAPER_SECTIONS, write_interim
+    monkeypatch.setattr(workbench, "key_set", lambda: True)
+    pdf = make_pdf(tmp_path / "raw" / "a.pdf")
+    wb = bench(tmp_path)
+    docs = [{"doc_id": x, "start_page": i, "end_page": i, "n_pages": 1, "signals": [], "running_text": None, "headings": ["Contents"]}
+            for i, x in enumerate(["p01", "p02"], start=1)]
+    els = PAPER_ELEMENTS + [dict(PAPER_ELEMENTS[5], doc_id="p02", element_id="p02-e0001")]
+    write_interim(parsed(tmp_path, "a", pdf_sha(pdf)), els, PAPER_SECTIONS, docs)
+    assert wb.document("a")["stages"]["parsed"]["types"] == [{"role": "cover", "label": "Cover pages", "n": 2}]
+    with pytest.raises(StageError, match="nothing to draft a schema from"):
+        wb.check_stage("a", "draft", {})
 
 
 def test_interim_dir_is_matched_by_sha_not_name(tmp_path):
@@ -269,6 +320,8 @@ def test_argv_for_each_stage(tmp_path):
     wb.cfg["_path"] = "configs/other.yaml"
     assert wb.argv_for("ingest", "a", {})[0][3:5] == ["--config", "configs/other.yaml"]
     assert "--rag-config" in wb.argv_for("eval", "a", {"dataset": "set1", "name": "r"})[0]
+    argv = wb.argv_for("eval", "a", {"dataset": "set1", "name": "r", "reader": {"provider": "openrouter", "model": "qwen/qwen-2.5-7b-instruct"}})[0]
+    assert argv[argv.index("--provider"):][:4] == ["--provider", "openrouter", "--model", "qwen/qwen-2.5-7b-instruct"]
 
 
 def test_stage_preconditions(tmp_path, monkeypatch):
@@ -307,6 +360,15 @@ def test_stage_preconditions(tmp_path, monkeypatch):
         wb.check_stage("a", "eval", {"dataset": "s", "name": "r"})
     wb.app._store.replace_collection(workbench.collection_name(wb.cfg, pdf), {}, [], None)
     wb.check_stage("a", "eval", {"dataset": "s", "name": "r", "judge": False})
+    with pytest.raises(StageError, match="offers m, not other"):
+        wb.check_stage("a", "eval", {"dataset": "s", "name": "r", "judge": False, "reader": {"provider": "default", "model": "other"}})
+    wb.cfg["llm"]["providers"] = {"default": {"base_url": "http://127.0.0.1:9/v1", "models": ["m"]},
+                                  "hosted": {"base_url": "https://hosted.example/v1", "api_key_env": "TEST_HOSTED_KEY", "needs_key": True, "models": ["h"]}}
+    monkeypatch.delenv("TEST_HOSTED_KEY", raising=False)
+    with pytest.raises(StageError, match="TEST_HOSTED_KEY is not set"):
+        wb.check_stage("a", "eval", {"dataset": "s", "name": "r", "judge": False, "reader": {"provider": "hosted", "model": "h"}})
+    monkeypatch.setenv("TEST_HOSTED_KEY", "sk-test")
+    wb.check_stage("a", "eval", {"dataset": "s", "name": "r", "judge": False, "reader": {"provider": "hosted", "model": "h"}})
     with pytest.raises(StageError):
         wb.check_stage("a", "nope", {})
 

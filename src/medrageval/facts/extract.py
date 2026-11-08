@@ -249,7 +249,8 @@ def extract_factsheet(interim_dir: Path, cfg: dict, fcfg: dict, llm, schema: Sch
     print(f"{interim_dir}: {len(batches)} batches over {len(schema.groups)} groups; topic: {corpus.topic[:70]}")
 
     def call(batch: Batch):
-        msgs = build_extraction(schema.groups[batch.group], batch.units, corpus, batch.doc_id, fcfg["max_facts_per_batch"], fcfg["batch"]["max_unit_chars"])
+        msgs = build_extraction(schema.groups[batch.group], batch.units, corpus, batch.doc_id, fcfg["max_facts_per_batch"], fcfg["batch"]["max_unit_chars"],
+                                schema.framing)
         try:
             return batch, llm.complete_json(msgs, f"extract:{batch.key}"), None
         except (LLMJsonError, LLMError) as e:
@@ -293,7 +294,7 @@ def extract_factsheet(interim_dir: Path, cfg: dict, fcfg: dict, llm, schema: Sch
     warnings = [f"{g}: no facts" for g, grp in schema.groups.items() if grp.weight > 0 and not by_group_doc.get(g)]
     report = {
         "interim_dir": str(interim_dir), "topic": corpus.topic,
-        "schema": {"name": schema.name, "version": schema.version, "path": str(schema.path)},
+        "schema": {"name": schema.name, "version": schema.version, "path": str(schema.path) if schema.path else None},
         "prompt_version": EXTRACT_PROMPT_VERSION, "model": llm.model,
         "batches": len(batches), "facts": len(facts), "redacted": sum(f.redacted for f in facts),
         "with_copies": sum(bool(f.also_in) for f in facts),

@@ -42,11 +42,14 @@ import yaml
 
 from medrag.app import App
 from medrag.chunk import Chunk
+from medrag.config import missing_key, use_reader
 from medrag.generate import PROMPT_VERSION, RAG
 from medrag.llm import LLMError as RagLLMError
 from medrag.retrieve import MODES
 
 from medrageval.config import load_config
+from medrageval.facts.framing import Framing
+from medrageval.facts.schema import dataset_framing
 from medrageval.generate.generate import TYPES
 from medrageval.generate.llm import LLMError, LLMJsonError, make_llm
 from medrageval.generate.prompts import withhold_check
@@ -71,6 +74,7 @@ def load_items(dataset_dirs: list[Path], limit: int | None = None, types: list[s
             if line.strip():
                 it = json.loads(line)
                 it["dataset"] = name
+                it["dataset_dir"] = str(path.parent)
                 it["uid"] = f"{name}/{it['item_id']}" if len(dataset_dirs) > 1 else it["item_id"]
                 it["question_setting"] = question
                 twin = (it.get("question_messy") or {}).get("text") if question == "messy" else None
@@ -120,7 +124,28 @@ def withheld_figures(keys: list[str]) -> set[float]:
     return set()
 
 
-def standin_passages(item: dict, rag: RAG, screener, ecfg: dict, top_k: int, mode: str | None = None) -> dict:
+def dataset_context(item: dict, rag: RAG, full: dict, cache: dict) -> tuple[str, Framing]:
+    """The topic and framing of the evaluator's own prompts (the judge's, the stand-in screening) for one item's dataset.
+
+    Topic: the application's configured topic while it reads its configured PDF, as every earlier run was graded; for
+    another PDF the application has none, so the dataset's own (its generate_report.json), else the application's
+    fallback. Framing: that of the schema the dataset was generated with, else the config's schema's."""
+    key = item.get("dataset_dir") or ""
+    if key not in cache:
+        report_path = Path(key) / "generate_report.json"
+        report = {}
+        if key and report_path.exists():
+            try:
+                report = json.loads(report_path.read_text())
+            except ValueError:
+                report = {}
+        topic = rag.cfg.get("topic") or report.get("topic") or rag.topic
+        cache[key] = (topic, dataset_framing(Path(key), full) if key else Framing())
+    return cache[key]
+
+
+def standin_passages(item: dict, rag: RAG, screener, ecfg: dict, top_k: int, mode: str | None = None,
+                     topic: str | None = None, framing: Framing | None = None) -> dict:
     """The context an unanswerable item is read over, from the application's own chunks.
 
     The chunks nearest to each gold chunk by the application's retrieval (`standin_search_k` each, the gold chunks
@@ -147,7 +172,8 @@ def standin_passages(item: dict, rag: RAG, screener, ecfg: dict, top_k: int, mod
         return result
     def screen(chunks: list[Chunk], tag: str) -> dict[str, dict]:
         shown = "\n\n".join(render_chunk(c, ecfg.get("standin_max_chars", 6000)) for c in chunks)
-        check = screener.complete_json(withhold_check(shown, item["question"], str(withheld.get("answer") or ""), rag.topic, "chunk_id", every_entry=True), tag)
+        check = screener.complete_json(withhold_check(shown, item["question"], str(withheld.get("answer") or ""), topic or rag.topic, "chunk_id",
+                                                      every_entry=True, framing=framing), tag)
         return {str(r.get("chunk_id")): r for r in (check.get("results") or []) if isinstance(r, dict)}
 
     verdicts = screen(candidates, f"screen:{item['uid']}")
@@ -185,6 +211,9 @@ def evaluate(items: list[dict], rag: RAG, judge, full: dict, out_dir: Path, mode
     t0 = time.time()
     out_dir.mkdir(parents=True, exist_ok=True)
     standins: dict[str, dict] = {}
+    contexts: dict[str, tuple[str, Framing]] = {}
+    for it in items:   # read every dataset's report and schema up front, not from the worker threads
+        dataset_context(it, rag, full, contexts)
 
     def answer(it: dict) -> dict:
         fixed = None
@@ -192,7 +221,8 @@ def evaluate(items: list[dict], rag: RAG, judge, full: dict, out_dir: Path, mode
             if judge is None:
                 return {"excluded": "stand-in passages need the judge to screen them (run without --no-judge)"}
             try:
-                s = standins[it["uid"]] = standin_passages(it, rag, judge, ecfg, app_cfg["retrieval"]["top_k"], mode)
+                topic, framing = dataset_context(it, rag, full, contexts)
+                s = standins[it["uid"]] = standin_passages(it, rag, judge, ecfg, app_cfg["retrieval"]["top_k"], mode, topic, framing)
             except LLMJsonError as e:
                 return {"excluded": f"screening gave no verdict: {str(e)[:200]}"}
             except LLMError as e:
@@ -219,7 +249,8 @@ def evaluate(items: list[dict], rag: RAG, judge, full: dict, out_dir: Path, mode
         if judge is None or a.get("error") or a.get("excluded"):
             return None
         try:
-            return judge.complete_json(build_judge(it, a["answer"], a["passages"], rag.topic, rcfg["judge"]["max_chars_per_passage"]),
+            return judge.complete_json(build_judge(it, a["answer"], a["passages"], dataset_context(it, rag, full, contexts)[0],
+                                                   rcfg["judge"]["max_chars_per_passage"]),
                                        f"judge:{it['uid']}")
         except LLMJsonError as e:
             return {"error": str(e)[:300]}
@@ -314,7 +345,7 @@ def build_report(rows: list[dict], items: list[dict], rag: RAG, judge, full: dic
         "messy_missing": missing,
         "items": len(rows),
         "excluded": excluded,   # items run but not scored (see `excluded` in responses.jsonl)
-        "rag": {"model": rag.llm.model, "temperature": app_cfg["llm"].get("temperature"),
+        "rag": {"provider": app_cfg["llm"].get("provider"), "model": rag.llm.model, "temperature": app_cfg["llm"].get("temperature"),
                 "embedding_model": app_cfg["embedding"]["model"] if rag.retriever.embedder else None,
                 "reranker": rag.retriever.reranker.model if rag.retriever.reranker else None,
                 "retrieval": {**app_cfg["retrieval"], "mode": mode or app_cfg["retrieval"]["mode"], "rerank": rag.retriever.reranker is not None},
@@ -390,7 +421,8 @@ def _common(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--config", type=Path, help="benchmark config (judge, scoring); default configs/default.yaml")
     ap.add_argument("--rag-config", type=Path, help="the application's config; default configs/rag.yaml")
     ap.add_argument("--pdf", type=Path, help="the ingested PDF to evaluate (default: the application's pdf)")
-    ap.add_argument("--model", help="answering model id on the vLLM server (default: the application's llm.model)")
+    ap.add_argument("--provider", help="the answering server, one of the application's llm.providers, e.g. openrouter (default: llm.provider)")
+    ap.add_argument("--model", help="answering model id on that server (default: the application's llm.model)")
     ap.add_argument("--base-url", help="the answering server (default: the application's llm.base_url)")
     ap.add_argument("--judge-model", help="OpenRouter model id for the judge (default: rag.judge.model, else generate.model)")
     ap.add_argument("--no-judge", action="store_true", help="score on answer keys only; no OpenRouter calls")
@@ -433,6 +465,13 @@ def _types(args: argparse.Namespace) -> list[str] | None:
 
 def _app(args: argparse.Namespace, chunk_tokens: int | None = None) -> App:
     app = App(args.rag_config, use_cache=not args.no_cache, pdf=args.pdf)
+    if args.provider:
+        try:
+            app.cfg = use_reader(app.cfg, args.provider, args.model)
+        except ValueError as e:
+            raise SystemExit(f"error: {e}") from None
+    if missing := missing_key(app.cfg["llm"]):
+        raise SystemExit(f"error: {missing} is not set: the {app.cfg['llm']['provider']} answering server needs an API key")
     if args.model:
         app.cfg["llm"]["model"] = args.model
     if args.base_url:

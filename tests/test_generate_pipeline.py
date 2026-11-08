@@ -2,10 +2,11 @@ import json
 import re
 
 import pytest
-from synthetic import build_sheet, config, write_factsheet, write_interim
+from synthetic import build_sheet, config, facts_config, write_factsheet, write_interim
 
+from medrageval.facts.schema import SchemaError, resolve_path
 from medrageval.generate.candidates import Candidate
-from medrageval.generate.generate import Run, generate_dataset
+from medrageval.generate.generate import Run, generate_dataset, load_sheet
 from medrageval.generate.llm import FakeLLM, LLMJsonError
 from medrageval.generate.prompts import PROMPT_VERSION, rewrite_feedback
 
@@ -253,6 +254,25 @@ def test_missing_parse_output_or_fact_sheet_fails_loudly(tmp_path):
         generate_dataset(interim, tmp_path / "out", config(), llm, llm)
 
 
+def test_the_fact_sheet_loads_under_the_schema_it_was_extracted_with(tmp_path):
+    interim = write_factsheet(tmp_path / "interim")
+    fcfg = facts_config()
+    # no extraction report: the config's schema
+    assert load_sheet(interim, config(), fcfg)[1].schema.name == "NICE single technology appraisal"
+    # the report names a drafted copy: generation uses it, not the config's
+    nice = resolve_path(fcfg["schema"]).read_text()
+    drafted = tmp_path / "drafted.yaml"
+    drafted.write_text(nice.replace("name: NICE single technology appraisal", "name: drafted family"))
+    (interim / "factsheet_report.json").write_text(json.dumps({"schema": {"name": "drafted family", "path": str(drafted)}}))
+    assert load_sheet(interim, config(), fcfg)[1].schema.name == "drafted family"
+    # --schema overrides the report
+    assert load_sheet(interim, config(), fcfg, schema_path=fcfg["schema"])[1].schema.name == "NICE single technology appraisal"
+    # a recorded schema that is gone fails loudly instead of falling back to another schema
+    drafted.unlink()
+    with pytest.raises(SchemaError, match="pass --schema"):
+        load_sheet(interim, config(), fcfg)
+
+
 def bridged(alone_answers: bool):
     """Multi-hop items reaching a value through the task's bridge; given alone, the value's excerpt answers when alone_answers."""
     keys, sources = {}, {}
@@ -343,14 +363,16 @@ def test_only_failures_the_wording_can_fix_are_rewritten(tmp_path):
 
 
 def test_rewrite_feedback_explains_each_failure():
-    corpus, _ = build_sheet()
+    corpus, sheet = build_sheet()
     c = Candidate("multihop", "bridge", [corpus.units["d02-e0040"], corpus.units["d02-e0003"]], {})
     results = [{"stage": "judge", "item": {"question": "q"}, "reasons": ["judge_failed", "judge:realistic", "answerable_from:d02-e0003"],
                 "judge": {"issues": ["The table alone gives 7.3 months."]}, "alone": {"d02-e0003": {"answer": "7.3 months", "matches": True}}}]
-    lines = rewrite_feedback(results, c)
+    lines = rewrite_feedback(results, c, sheet.schema.framing)
     assert any(l.startswith('Given only excerpt d02-e0003, a reader answered "7.3 months"') for l in lines)
-    assert any("clinician, health economist or committee member" in l for l in lines)
+    assert any("clinician, health economist or committee member would ask: ask about what matters in the appraisal" in l for l in lines)
     assert "Reviewer: The table alone gives 7.3 months." in lines
+    # another family's schema without framing: no appraisal wording
+    assert not any("appraisal" in l or "committee" in l for l in rewrite_feedback(results, c))
     lines = rewrite_feedback([{"stage": "programmatic", "item": {}, "reasons": ["question_lacks_discriminator:DCO2", "table_language:Table 7", "made_up_code"]}], c)
     assert lines == ['The question must name "DCO2" (or equivalent words), so it means only this fact.',
                      'The question mentions a table, figure, column header, row or column ("Table 7"): ask about the subject itself.', "made_up_code"]

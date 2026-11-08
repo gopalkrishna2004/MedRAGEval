@@ -197,8 +197,8 @@ def detect_roles(docs: list[dict], elements: list[dict], cfg: dict) -> dict[str,
                     s += 1
             scores[role] = s
         role = max(scores, key=lambda r: scores[r]) if any(scores.values()) else "other"
-        if scores.get(role, 0) < 2 and len(by_doc[d["doc_id"]]) <= rc["cover_max_units"]:
-            role = "cover"  # no heading hit and few elements: a cover or contents page
+        if len(docs) > 1 and scores.get(role, 0) < 2 and len(by_doc[d["doc_id"]]) <= rc["cover_max_units"]:
+            role = "cover"  # no heading hit and few elements in a bundle: its cover or contents page (a PDF of one short document is that document)
         role = rc.get("override", {}).get(d["doc_id"], role)
         out[d["doc_id"]] = (role, {r: s for r, s in scores.items() if s})
     return out
@@ -207,8 +207,11 @@ def detect_roles(docs: list[dict], elements: list[dict], cfg: dict) -> dict[str,
 _GENERIC_TITLE = re.compile(r"^(national institute|single technology|committee papers|document [a-z]\b|produced by)", re.I)
 
 
-def document_title(d: dict) -> str:
-    for h in d["headings"]:
+def document_title(d: dict, section_titles: list[str] = ()) -> str:
+    """The document's first telling heading. A document whose first pages gave no heading (a journal article set in
+    columns) takes its first telling section title before its running text, which is a citation line
+    ("Pape et al. BMC Psychology (2024) 12:626") rather than the title."""
+    for h in d["headings"] or section_titles:
         if len(h) >= 20 and not _GENERIC_TITLE.match(h):
             return h[:160]
     return (d["headings"] or [d.get("running_text") or d["doc_id"]])[0][:160]
@@ -253,8 +256,9 @@ class Corpus:
         self.docs: dict[str, Document] = {}
         for d in docs:
             role, _ = roles[d["doc_id"]]
+            titles = [" ".join(s["title"].split()) for s in sections if s["doc_id"] == d["doc_id"] and s.get("depth", 1) <= 2]
             self.docs[d["doc_id"]] = Document(d["doc_id"], role, cfg["roles"]["labels"].get(role, role),
-                                              document_title(d), d["start_page"], d["end_page"])
+                                              document_title(d, titles), d["start_page"], d["end_page"])
         self.topic = corpus_topic([d.title for d in self.docs.values()])
 
         self.noise = Counter()

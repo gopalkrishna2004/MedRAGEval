@@ -5,7 +5,8 @@ not one bundle. It has groups of slots, and for each group:
 - the document roles it is read from;
 - section-path patterns and keywords that pick the passages to read;
 - a weight that sets the group's share of the dataset;
-- links between slots, for multi-hop items.
+- links between slots, for multi-hop items;
+- its framing: how the prompts speak of the family (facts/framing.py).
 
 The documents are real, so the schema drives extraction rather than
 document generation.
@@ -13,6 +14,7 @@ document generation.
 which a person reviews before use.
 """
 
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -21,6 +23,7 @@ from pathlib import Path
 import yaml
 
 from medrageval.config import DEFAULT_CONFIG
+from medrageval.facts.framing import Framing, parse_framing
 
 KINDS = {"number", "text", "stance"}
 REPO_ROOT = DEFAULT_CONFIG.parents[1]
@@ -85,6 +88,7 @@ class Schema:
     groups: dict[str, Group]
     links: list[Link]
     path: Path | None = None
+    framing: Framing = field(default_factory=Framing)   # how the prompts speak of the family
 
     @property
     def slots(self) -> dict[str, Slot]:
@@ -154,16 +158,20 @@ def parse_schema(data: dict, roles: Iterable[str], path: Path | None = None) -> 
             per = s.get("per")
             if per is not None and (kind != "number" or not isinstance(per, str)):
                 raise SchemaError(f"{sw}: 'per' is only for number slots")
+            qualifiers = _strs(s.get("qualifiers"), f"{sw}.qualifiers")
+            # extraction matches a model's qualifier keys as lower_snake_case ("data cut" -> data_cut): a key written
+            # otherwise here would never match, and every value of it would be dropped without a word
+            if bad := [q for q in qualifiers + ((per,) if per else ()) if not _ID.match(q)]:
+                raise SchemaError(f"{sw}: qualifiers and per keys are lower_snake_case ids, got {bad}")
             parties = _strs(s.get("parties"), f"{sw}.parties")
             if kind == "stance" and not parties:
                 raise SchemaError(f"{sw}: a stance slot lists its parties")
-            slots[name] = Slot(gid, name, kind, s["describe"].strip(), _strs(s.get("qualifiers"), f"{sw}.qualifiers"),
-                               per, parties, bool(s.get("ask", True)))
+            slots[name] = Slot(gid, name, kind, s["describe"].strip(), qualifiers, per, parties, bool(s.get("ask", True)))
         if not slots:
             raise SchemaError(f"{where}: no slots")
         groups[gid] = Group(gid, float(weight), str(g.get("describe") or gid.replace("_", " ")), group_roles, sections,
                             _strs(g.get("keywords"), f"{where}.keywords"), slots)
-    schema = Schema(str(data.get("name") or "schema"), int(data.get("version") or 1), groups, [], path)
+    schema = Schema(str(data.get("name") or "schema"), int(data.get("version") or 1), groups, [], path, parse_framing(data.get("framing"), SchemaError))
     all_slots = schema.slots
     for i, ln in enumerate(data.get("links") or []):
         where = f"link {i + 1}"
@@ -193,6 +201,23 @@ def resolve_path(path: str | Path) -> Path:
     return p if p.is_absolute() or p.exists() else REPO_ROOT / p
 
 
+def recorded_schema_path(report_path: Path, fallback: str | Path) -> str | Path:
+    """The schema a stage's report (factsheet_report.json, generate_report.json) says it ran with, else `fallback`.
+    A recorded schema that is gone is an error rather than the fallback: another schema's slots and framing are not its."""
+    recorded = None
+    if report_path.exists():
+        try:
+            recorded = (json.loads(report_path.read_text()).get("schema") or {}).get("path")
+        except (ValueError, AttributeError):
+            recorded = None
+    if not recorded or recorded == "None":
+        return fallback
+    p = resolve_path(recorded)
+    if not p.exists():
+        raise SchemaError(f"{report_path} records the schema {recorded}, which is missing; pass --schema")
+    return p
+
+
 def load_schema(path: str | Path, roles: Iterable[str]) -> Schema:
     p = resolve_path(path)
     if not p.exists():
@@ -204,3 +229,10 @@ def load_schema(path: str | Path, roles: Iterable[str]) -> Schema:
 def known_roles(cfg: dict) -> list[str]:
     """Document roles from the generate config: the ones the corpus can assign."""
     return list(cfg["roles"]["patterns"]) + ["other"]
+
+
+def dataset_framing(dataset_dir: Path, full_cfg: dict):
+    """The framing of the schema a dataset was generated with (its generate_report.json), else the config's schema's:
+    a dataset from before reports named their schema, or an uploaded one, is taken to be of the configured family."""
+    path = recorded_schema_path(Path(dataset_dir) / "generate_report.json", full_cfg["facts"]["schema"])
+    return load_schema(path, known_roles(full_cfg["generate"])).framing
