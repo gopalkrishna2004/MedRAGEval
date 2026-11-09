@@ -1,0 +1,36 @@
+{
+  "datasets": [
+    "ta1063"
+  ],
+  "question_setting": "clean",
+  "runs": [
+    {
+      "run": "hybrid+rerank",
+      "chunk_tokens": null,
+      "mode": "hybrid",
+      "rerank": true,
+      "items": 142,
+      "score": 0.553,
+      "ci95": [
+        0.486,
+        0.623
+      ],
+      "hit": 0.69,
+      "all_evidence": 0.578,
+      "evidence_recall": 0.634,
+      "mrr": 0.405,
+      "gold_prec": 0.093,
+      "candidate_recall": 0.753,
+      "key_recall": 0.698,
+      "grounded": 0.519,
+      "faithfulness": 0.759,
+      "categories": {
+        "correct": 53,
+        "retrieval_miss": 36,
+        "reader_error": 27,
+        "correct_abstention": 10,
+        "hallucinated_answer": 16
+      }
+    }
+  ]
+}

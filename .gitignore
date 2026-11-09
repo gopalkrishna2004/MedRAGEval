@@ -27,4 +27,5 @@ data/runs/*
 !data/runs/ta1063/
 !data/runs/ta1063-messy/
 !data/runs/ablation/
+!data/runs/ablation-boost8/
 !data/runs/ablation-boosted/
